@@ -261,10 +261,21 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
         _runBSwap(KEY_C, KEY_D);
         bytes memory executing = _selectSig(same, KEY_D);
 
+        SafeTxEvidence memory evidence;
+        evidence.signedSafeTx.safeTx.to = address(guard);
+        evidence.signedSafeTx.safeTx.nonce = a.nonce();
+        evidence.signedSafeTx.safeTx.data =
+            abi.encodeCall(ISourceAuthorityGuard.selectAuthority, (AuthorityUpdate(_head(a), _hash(same))));
+        evidence.signedSafeTx.signatures = portable;
+        evidence.nestedApprovals = new NestedSafeApproval[](0);
+        bytes32 published = keccak256(abi.encode(evidence, same, new ChildUpdate[](0)));
         vm.expectEmit(true, false, false, true, address(guard));
         emit AuthorityUpdateExecuted(address(a), bytes32(0), _hash(same), portable, new NestedSafeApproval[](0));
         batch.run(_selectCalls(same, new ChildUpdate[](0), executing, portable));
         assertEq(guard.selection(address(a)).authorityHash, _hash(same));
+        assertEq(guard.publishedAuthority(address(a), _head(a)), published);
+        evidence.signedSafeTx.signatures = executing;
+        assertTrue(keccak256(abi.encode(evidence, same, new ChildUpdate[](0))) != published);
     }
 
     function testSourceRejectsWithoutThePreRotationSet() public {

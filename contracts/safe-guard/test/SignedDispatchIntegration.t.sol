@@ -7,6 +7,14 @@ import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
 import {SafeTx} from "../src/ICrossecuteGuard.sol";
 import {SafeHashes} from "../src/SafeHashes.sol";
 import {SafeBatchExecutor, ISafeExec} from "../src/SafeBatchExecutor.sol";
+import {AuthorityUpdate} from "../src/authority/AuthorityUpdateTypes.sol";
+import {AuthorityGraph, AuthorityNode} from "crossecute/messaging/authority/AuthorityGraph.sol";
+import {AuthorityUpdateEncoding} from "crossecute/messaging/authority/AuthorityUpdateEncoding.sol";
+import {ChildUpdate} from "crossecute/messaging/authority/ChildUpdate.sol";
+import {SafeAuthorityGraph} from "crossecute/messaging/signed/SafeAuthorityGraph.sol";
+import {SafeAuthorityRecord} from "crossecute/messaging/signed/types/SafeAuthorityTypes.sol";
+import {NestedApprovalCollector} from "crossecute/messaging/signed/NestedApprovalCollector.sol";
+import {Batch} from "./Batch.sol";
 import {TransceiverConfig} from "crossecute/messaging/transceiver/TransceiverCore.sol";
 import {TransceiverExtension} from "crossecute/messaging/transceiver/TransceiverExtension.sol";
 import {HyperlaneTransceiver} from "crossecute/protocols/hyperlane/HyperlaneTransceiver.sol";
@@ -28,6 +36,7 @@ import {SafeQuorum} from "crossecute/messaging/signed/SafeQuorum.sol";
 import {
     SafeTxEvidence,
     ExecutionLeaf,
+    SignedBootstrap,
     WIRE_STANDALONE
 } from "crossecute/messaging/signed/types/SignedDispatchTypes.sol";
 import {MockHyperlaneMailbox} from "evm-test/protocols/hyperlane/MockHyperlaneMailbox.sol";
@@ -54,6 +63,8 @@ contract IntegrationSink {
 /// @dev Explicit chain deployments use different recorded deployers so storage can coexist.
 ///      Cancun compilation here tests integration, not the production Paris gas schedule.
 contract SignedDispatchIntegrationTest is GuardTestBase {
+    event AuthorityPublished(address indexed sourceSafe, bytes32 indexed updateHead, bytes submission);
+
     uint256 constant SOURCE = 10;
     uint256 constant BASE = 8453;
     uint256 constant ARBITRUM = 42161;
@@ -67,6 +78,7 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
     mapping(uint256 => HyperlaneTransceiver) internal destination;
     mapping(address => uint256) internal keys;
     mapping(address => bool) internal cached;
+    mapping(address => bytes) internal selectedGraphs;
     SignedTransmitter internal st;
     IntegrationSink internal effect;
 
@@ -102,7 +114,7 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         TransceiverConfig memory c;
         c.gateways = new address[](0);
         c.transmitterImplementation = address(new HyperlaneTransmitter(address(mailbox)));
-        c.receiverImplementation = address(new HyperlaneReceiver(address(mailbox)));
+        c.receiverImplementation = address(new HyperlaneReceiver(address(mailbox), address(guard), address(multiSend)));
         c.governorOwner = address(0x5165);
         c.governorHome = Erc7930.encodeEvmChain(SOURCE);
         c.treasury = address(0x7EA5);
@@ -181,6 +193,7 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
 
     /// @notice Create and fund the actual signed transmitter through a signed Safe call.
     function _create() internal {
+        _activateGraph(safe);
         _execute(_evidence(address(source), abi.encodeCall(source.createTransmitter, (USER_SALT)), safe.nonce()));
         st = SignedTransmitter(
             payable(TransceiverExtension(address(source))
@@ -208,11 +221,118 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
 
     /// @notice Sign an empty-setup bootstrap of one destination chain.
     function _bootstrapEvidence(uint256 chain) internal view returns (SafeTxEvidence memory) {
-        bytes memory payload = st.bootstrapPayload(Erc7930.encodeEvmChain(chain), st.payloadForCalls(new Call[](0)));
+        bytes memory body = abi.encode(
+            SignedBootstrap(
+                address(guard),
+                guard.selection(address(safe)).updateHead,
+                selectedGraphs[address(safe)],
+                st.payloadForCalls(new Call[](0))
+            )
+        );
+        bytes memory payload = st.bootstrapPayload(Erc7930.encodeEvmChain(chain), body);
         return
             _evidence(
                 address(st), abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0))), safe.nonce()
             );
+    }
+
+    function _liveGraph(Safe account) internal view returns (AuthorityGraph memory graph) {
+        SafeAuthorityRecord[] memory records = SafeAuthorityGraph.derive(address(account));
+        graph.nodes = new AuthorityNode[](records.length);
+        for (uint256 i = 0; i < records.length; ++i) {
+            graph.nodes[i] =
+                AuthorityNode(records[i], i == 0 ? bytes32(0) : guard.selection(records[i].safe).updateHead);
+        }
+    }
+
+    function _authorityTransaction(
+        Safe account,
+        address to,
+        bytes memory data,
+        Enum.Operation op,
+        AuthorityGraph memory graph
+    ) internal returns (SafeTxEvidence memory evidence) {
+        return _authorityTransaction(account, to, data, op, graph, new ChildUpdate[](0));
+    }
+
+    function _authorityTransaction(
+        Safe account,
+        address to,
+        bytes memory data,
+        Enum.Operation op,
+        AuthorityGraph memory graph,
+        ChildUpdate[] memory children
+    ) internal returns (SafeTxEvidence memory evidence) {
+        evidence.signedSafeTx.safeTx = _safeTx(account, to, data, op);
+        bytes32 digest = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, address(account), SOURCE);
+        _prepareAt(account, digest);
+        evidence.signedSafeTx.signatures = _graphSign(account, digest);
+        evidence.nestedApprovals =
+            NestedApprovalCollector.collect(address(account), digest, evidence.signedSafeTx.signatures);
+        Batch.Call[] memory calls = new Batch.Call[](2);
+        calls[0] = Batch.Call(
+            address(guard),
+            abi.encodeCall(
+                guard.stageUpdate,
+                (address(account), graph, children, evidence.signedSafeTx.signatures, evidence.nestedApprovals)
+            ),
+            false
+        );
+        calls[1] = Batch.Call(
+            address(account),
+            abi.encodeCall(
+                account.execTransaction,
+                (to, 0, data, op, 0, 0, 0, address(0), payable(address(0)), evidence.signedSafeTx.signatures)
+            ),
+            false
+        );
+        if (to == address(multiSend) || bytes4(data) == guard.selectAuthority.selector) {
+            vm.expectEmit(true, true, false, true, address(guard));
+            emit AuthorityPublished(address(account), digest, abi.encode(evidence, graph, children));
+        }
+        batch.run(calls);
+        if (to == address(multiSend) || bytes4(data) == guard.selectAuthority.selector) {
+            assertEq(
+                guard.publishedAuthority(address(account), digest), keccak256(abi.encode(evidence, graph, children))
+            );
+        } else {
+            assertEq(guard.publishedAuthority(address(account), digest), bytes32(0));
+        }
+        selectedGraphs[address(account)] = abi.encode(graph);
+    }
+
+    function _safeTx(Safe account, address to, bytes memory data, Enum.Operation op)
+        internal
+        view
+        returns (SafeTx memory tx_)
+    {
+        tx_.to = to;
+        tx_.data = data;
+        tx_.operation = uint8(op);
+        tx_.nonce = account.nonce();
+    }
+
+    function _activateGraph(Safe root) internal {
+        if (guard.selection(address(root)).authorityHash != bytes32(0)) return;
+        SafeAuthorityRecord[] memory records = SafeAuthorityGraph.derive(address(root));
+        for (uint256 i = 1; i < records.length; ++i) {
+            _activateGraph(Safe(payable(records[i].safe)));
+        }
+        {
+            Safe account = root;
+            bytes memory data = abi.encodeCall(account.setModuleGuard, (address(guard)));
+            bytes32 digest = _txHash(account, address(account), 0, data, Enum.Operation.Call);
+            _prepareAt(account, digest);
+            assertTrue(_execWith(account, address(account), 0, data, Enum.Operation.Call, _graphSign(account, digest)));
+            AuthorityGraph memory graph = _liveGraph(account);
+            _authorityTransaction(
+                account,
+                address(guard),
+                abi.encodeCall(guard.activate, (AuthorityUpdateEncoding.graphHash(SOURCE, graph))),
+                Enum.Operation.Call,
+                graph
+            );
+        }
     }
 
     /// @notice Deliver a recorded bootstrap through the authenticated destination handler.
@@ -262,6 +382,86 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         assertEq(effect.hits(), 1);
     }
 
+    function test_aChildRotationNeedsParentAdoptionAndNeverRefreshesBootstrapImplicitly() public {
+        Safe child = _selectGraph(1);
+        _create();
+        _bootstrap(BASE);
+        bytes32 parentHash = guard.selection(address(safe)).authorityHash;
+        AuthorityGraph memory childGraph = _liveGraph(child);
+        childGraph.nodes[0].record.threshold = 1;
+        Call[] memory mutations = new Call[](1);
+        mutations[0] = Call(address(child), 0, abi.encodeCall(child.changeThreshold, (1)));
+        SafeTxEvidence memory childEvidence = _authorityTransaction(
+            child,
+            address(multiSend),
+            AuthorityUpdateEncoding.ownershipBatchData(
+                address(guard),
+                address(child),
+                AuthorityUpdate(
+                    guard.selection(address(child)).updateHead, AuthorityUpdateEncoding.graphHash(SOURCE, childGraph)
+                ),
+                mutations
+            ),
+            Enum.Operation.DelegateCall,
+            childGraph
+        );
+        assertEq(guard.selection(address(safe)).authorityHash, parentHash);
+        _bootstrap(ARBITRUM);
+        assertEq(_receiver(ARBITRUM).authorityGraph(), parentHash);
+        assertEq(_receiver(ARBITRUM).authorityRecords()[1].threshold, 2);
+
+        SafeTxEvidence memory message = _message(BASE, safe.nonce());
+        _execute(message);
+        uint256 sent = mailbox.sentLength() - 1;
+        vm.chainId(BASE);
+        SignedReceiver staleReceiver = _receiver(BASE);
+        vm.expectRevert();
+        staleReceiver.submitMessage(message);
+        vm.chainId(SOURCE);
+
+        AuthorityGraph memory next = abi.decode(selectedGraphs[address(safe)], (AuthorityGraph));
+        next.nodes[1] = AuthorityNode(childGraph.nodes[0].record, guard.selection(address(child)).updateHead);
+        ChildUpdate[] memory children = new ChildUpdate[](1);
+        children[0] = ChildUpdate(
+            address(child), childEvidence, childGraph.nodes[0].record, AuthorityUpdateEncoding.entries(childGraph)
+        );
+        SafeTxEvidence memory adoption = _authorityTransaction(
+            safe,
+            address(guard),
+            abi.encodeCall(
+                guard.selectAuthority,
+                (AuthorityUpdate(
+                        guard.selection(address(safe)).updateHead, AuthorityUpdateEncoding.graphHash(SOURCE, next)
+                    ))
+            ),
+            Enum.Operation.Call,
+            next,
+            children
+        );
+        for (uint256 i = 0; i < 2; ++i) {
+            uint256 chain = i == 0 ? BASE : ARBITRUM;
+            vm.chainId(SOURCE);
+            bytes memory recipient = Erc7930.encodeEvm(chain, address(_receiver(chain)));
+            bytes memory submission = abi.encode(adoption, next, children);
+            uint256 fee = st.quoteAuthority(recipient, submission, new bytes[](0));
+            // forge-lint: disable-next-line(arbitrary-send-eth) fixture-created transmitter and exact quoted fee
+            st.relayAuthority{value: fee}(recipient, submission, new bytes[](0));
+            uint256 delivery = mailbox.sentLength() - 1;
+            if (i == 0) {
+                vm.chainId(chain);
+                _receiver(chain).submitAuthority(adoption, next, children);
+            }
+            _deliverMessage(chain, delivery);
+            _deliverMessage(chain, delivery);
+            vm.chainId(chain);
+            assertEq(_receiver(chain).authorityRecords()[1].threshold, 1);
+            assertEq(_receiver(chain).selection().updateHead, guard.selection(address(safe)).updateHead);
+        }
+        vm.chainId(SOURCE);
+        _deliverMessage(BASE, sent);
+        assertEq(effect.hits(), 1);
+    }
+
     /// @notice Rotate an owner of the real Safe, then bootstrap a new chain and dispatch to it.
     /// @dev The new chain stores the rotated graph: a send and a root registration signed by the
     ///      previous quorum are rejected there, by direct submission and provider delivery; the
@@ -278,15 +478,28 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
 
         address[] memory owners = safe.getOwners();
         keys[vm.addr(KEY_D)] = KEY_D;
-        _execute(
-            _evidence(
-                address(safe), abi.encodeCall(safe.swapOwner, (address(1), owners[0], vm.addr(KEY_D))), safe.nonce()
-            )
+        AuthorityGraph memory next = abi.decode(selectedGraphs[address(safe)], (AuthorityGraph));
+        next.nodes[0].record.owners[0].owner = vm.addr(KEY_D);
+        Call[] memory mutations = new Call[](1);
+        mutations[0] = Call(address(safe), 0, abi.encodeCall(safe.swapOwner, (address(1), owners[0], vm.addr(KEY_D))));
+        SafeTxEvidence memory rotation = _authorityTransaction(
+            safe,
+            address(multiSend),
+            AuthorityUpdateEncoding.ownershipBatchData(
+                address(guard),
+                address(safe),
+                AuthorityUpdate(
+                    guard.selection(address(safe)).updateHead, AuthorityUpdateEncoding.graphHash(SOURCE, next)
+                ),
+                mutations
+            ),
+            Enum.Operation.DelegateCall,
+            next
         );
         _bootstrap(ARBITRUM);
 
         SignedReceiver ra = _receiver(ARBITRUM);
-        bytes32 rotated = keccak256(TransceiverExtension(address(source)).signedAuthority(address(safe)));
+        bytes32 rotated = guard.selection(address(safe)).authorityHash;
         assertEq(ra.authorityGraph(), rotated);
         assertTrue(_receiver(BASE).authorityGraph() != rotated);
 
@@ -317,6 +530,19 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         st.relayLeaf{value: st.quoteRelay(registration, leaf, new bytes32[](0))}(registration, leaf, new bytes32[](0));
         _deliverMessage(ARBITRUM, mailbox.sentLength() - 1);
         assertEq(effect.hits(), 2);
+        bytes memory submission = abi.encode(rotation, next, new ChildUpdate[](0));
+        bytes memory recipient = Erc7930.encodeEvm(BASE, address(_receiver(BASE)));
+        uint256 fee = st.quoteAuthority(recipient, submission, new bytes[](0));
+        // forge-lint: disable-next-line(arbitrary-send-eth) fixture-created transmitter and exact quoted fee
+        st.relayAuthority{value: fee}(recipient, submission, new bytes[](0));
+        _deliverMessage(BASE, mailbox.sentLength() - 1);
+        vm.chainId(BASE);
+        assertEq(_receiver(BASE).selection().updateHead, guard.selection(address(safe)).updateHead);
+        assertEq(_receiver(BASE).authorityGraph(), rotated);
+        vm.chainId(SOURCE);
+        _execute(_message(BASE, safe.nonce()));
+        _deliverMessage(BASE, mailbox.sentLength() - 1);
+        assertEq(effect.hits(), 3);
     }
 
     /// @notice Direct submission requires neither provider delivery nor source registration.

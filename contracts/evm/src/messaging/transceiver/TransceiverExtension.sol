@@ -214,7 +214,7 @@ contract TransceiverExtension is TransceiverCore {
 
     /// @notice `owner`'s live authority records, `abi.encode(SafeAuthorityRecord[])`, or empty
     ///         when its guard does not advertise `ICrossecuteGuard`. Read at transmitter creation
-    ///         to choose the mode and at each signed bootstrap as the receiver's authority.
+    ///         to choose the mode. Signed bootstraps instead carry the guard's selected graph.
     /// @dev Here rather than in the transceiver for its size.
     function signedAuthority(address owner) external view returns (bytes memory) {
         if (!SafeViewer.isSigned(owner)) return "";

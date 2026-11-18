@@ -93,7 +93,7 @@ contract CcipReceiveTest is ProviderWideSenderSpec, CcipFixture {
 ///         a wrong answer fails silently (no revert: the message just never arrives).
 contract CcipInterfaceSupportTest is Test {
     function test_receiverSupportsIAny2EVMMessageReceiverAndIERC165() public {
-        CcipReceiver receiver = new CcipReceiver(address(0xBEEF));
+        CcipReceiver receiver = new CcipReceiver(address(0xBEEF), address(0), address(0));
         assertTrue(receiver.supportsInterface(type(IAny2EVMMessageReceiver).interfaceId));
         assertTrue(receiver.supportsInterface(type(IERC165).interfaceId));
         assertFalse(receiver.supportsInterface(bytes4(0xdeadbeef)));

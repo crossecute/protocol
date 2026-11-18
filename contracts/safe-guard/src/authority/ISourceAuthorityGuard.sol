@@ -6,7 +6,7 @@ import {ChildUpdate} from "crossecute/messaging/authority/ChildUpdate.sol";
 import {NestedSafeApproval} from "crossecute/messaging/signed/types/SignedDispatchTypes.sol";
 import {AuthoritySelection, AuthorityUpdate} from "./AuthorityUpdateTypes.sol";
 
-/// @notice Proposed #109 additions to the shared guard; the current CrossecuteGuard does not implement them.
+/// @notice Source authority operations and publication implemented by CrossecuteGuard.
 interface ISourceAuthorityGuard {
     /// @notice The signatures destinations accept for an executed activation or update.
     event AuthorityUpdateExecuted(
@@ -16,6 +16,12 @@ interface ISourceAuthorityGuard {
         bytes portableSignatures,
         NestedSafeApproval[] nestedApprovals
     );
+
+    /// @notice Full portable submission verified during source execution, for relay and archival.
+    event AuthorityPublished(address indexed sourceSafe, bytes32 indexed updateHead, bytes submission);
+
+    /// @notice Hash of the exact published submission, or zero if no update was published.
+    function publishedAuthority(address sourceSafe, bytes32 updateHead) external view returns (bytes32);
 
     /// @notice Supplies what the next activation or update of sourceSafe commits to and the
     ///         signatures destinations will verify. Callable by anyone, held for the current

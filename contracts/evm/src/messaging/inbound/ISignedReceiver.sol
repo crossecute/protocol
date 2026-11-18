@@ -5,7 +5,7 @@ import {SafeTxEvidence, ExecutionLeaf} from "../signed/types/SignedDispatchTypes
 
 /// @notice Permissionless submission to a receiver in signed mode.
 interface ISignedReceiver {
-    /// @dev An authenticated repeat of a standalone message this receiver already executed.
+    /// @dev An authenticated repeat of a standalone message or the current authority submission.
     event DuplicateMessage();
 
     /// @notice Submit a signed standalone message directly to its receiver.

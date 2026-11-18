@@ -7,9 +7,9 @@ import {SafeTxEvidence, ExecutionLeaf} from "../signed/types/SignedDispatchTypes
 interface ISignedTransmitter {
     error RootAlreadyRegistered(bytes32 root);
 
-    /// @notice Send the owner's receiver setup with the Safe's live authority records.
-    /// @dev `payload` is `bootstrapPayload(destinationChainIdentifier, payloadForCalls(calls))`,
-    ///      as in plain mode. The guard stages this selector, and the transmitter consumes the
+    /// @notice Send receiver setup with the guard's selected authority head and graph.
+    /// @dev The payload body is abi.encode(SignedBootstrap), whose authority field is
+    ///      abi.encode(AuthorityGraph). The guard stages this selector, and the transmitter consumes the
     ///      record, so only a signed owner transaction can call it.
     function bootstrap(bytes calldata payload, bytes[] calldata attributes) external payable;
 
@@ -17,6 +17,19 @@ interface ISignedTransmitter {
     /// @dev Store only the root: each relayer supplies the signed registration and leaf proof,
     ///      avoiding a stored copy of every signature bundle.
     function registerRoot(bytes32 root) external;
+
+    /// @notice Relay a published abi.encode(SafeTxEvidence, AuthorityGraph, ChildUpdate[]) to
+    ///         this conduit's receiver, funded by the caller. Retries are allowed.
+    function relayAuthority(bytes calldata recipient, bytes calldata submission, bytes[] calldata attributes)
+        external
+        payable
+        returns (bytes32 sendId);
+
+    /// @notice Price the same publication, route and wire bytes as relayAuthority.
+    function quoteAuthority(bytes calldata recipient, bytes calldata submission, bytes[] calldata attributes)
+        external
+        view
+        returns (uint256 fee);
 
     /// @notice Pay to transmit one unused leaf authorized by a registered root and signed
     ///         registration.

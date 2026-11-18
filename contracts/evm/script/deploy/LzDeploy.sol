@@ -10,6 +10,7 @@ import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {check} from "script/deploy/ProxyDeploy.sol";
 import {
     TransceiverDeployment,
+    receiverAuthorityPins,
     deployTransceiverProxy,
     checkGovernorHomeId,
     transceiverExtension,
@@ -19,7 +20,8 @@ import {
 /// @notice LayerZero's contracts. OApp checks the endpoint itself, so no gateway role is granted.
 library LzDeploy {
     function receiverImplementation(address endpoint) internal returns (address) {
-        return address(new LzReceiver(endpoint));
+        (address guard, address multiSend) = receiverAuthorityPins();
+        return address(new LzReceiver(endpoint, guard, multiSend));
     }
 
     function transmitterImplementation(address endpoint) internal returns (address) {

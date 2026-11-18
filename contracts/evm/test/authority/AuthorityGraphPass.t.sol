@@ -40,9 +40,9 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
     function test_movesChildForwardByOneUpdate() public {
         (SafeTxEvidence memory b1, AuthorityGraph memory g1) = _b1(BOB);
         _selectA(_graph(_rA0(), _node(_rB1(), _hash(b1, _b())), _node(_rC0(), _pC0())), _children(_childUpdate(b1, g1)));
-        AuthorityGraph memory stored = receiver.graph(receiver.selection().authorityHash);
-        assertEq(stored.nodes[1].record.owners[0].owner, vm.addr(ERIN));
-        assertEq(stored.nodes[1].position, _hash(b1, _b()));
+        (address firstOwner, bytes32 position) = receiver.selectedNode(1);
+        assertEq(firstOwner, vm.addr(ERIN));
+        assertEq(position, _hash(b1, _b()));
     }
 
     function test_movesChildForwardBySeveralUpdates() public {
@@ -52,7 +52,8 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
             _graph(_rA0(), _node(g2.nodes[0].record, _hash(b2, _b())), _node(_rC0(), _pC0())),
             _children(_childUpdate(b1, g1), _childUpdate(b2, g2))
         );
-        assertEq(receiver.graph(receiver.selection().authorityHash).nodes[1].position, _hash(b2, _b()));
+        (, bytes32 position) = receiver.selectedNode(1);
+        assertEq(position, _hash(b2, _b()));
     }
 
     function test_rejectsChildBehindOrOffItsStoredPosition() public {
@@ -136,7 +137,8 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
 
     function test_addsSafeAsNamed() public {
         _addD(new ChildUpdate[](0), _pD0(), _rD0());
-        assertEq(receiver.graph(receiver.selection().authorityHash).nodes[1].position, _pD0());
+        (, bytes32 position) = receiver.selectedNode(1);
+        assertEq(position, _pD0());
     }
 
     function test_reAddsRemovedSafeAtEarlierPosition() public {
@@ -149,7 +151,8 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         receiver.submitAuthority(_change(_a(), head, _graphA0(), removal, ALICE), _graphA0(), new ChildUpdate[](0));
 
         _addD(new ChildUpdate[](0), _pD0(), _rD0());
-        assertEq(receiver.graph(receiver.selection().authorityHash).nodes[1].position, _pD0());
+        (, bytes32 position) = receiver.selectedNode(1);
+        assertEq(position, _pD0());
     }
 
     function test_rejectsAddedSafeAtZeroPositionOrWithInvalidRecord() public {

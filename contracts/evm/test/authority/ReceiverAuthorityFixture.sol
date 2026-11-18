@@ -7,18 +7,15 @@ import {SafeTx, SignedSafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol"
 import {AuthorityUpdate} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
 import {ISourceAuthorityGuard} from "@crossecute/safe-guard/authority/ISourceAuthorityGuard.sol";
 import {Call} from "src/messaging/Call.sol";
-import {AuthorityGraph} from "src/messaging/authority/AuthorityGraph.sol";
-import {AuthorityRecognition} from "src/messaging/authority/AuthorityRecognition.sol";
+import {AuthorityGraph, AuthorityNode} from "src/messaging/authority/AuthorityGraph.sol";
 import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
-import {ReceiverAuthority} from "src/messaging/authority/ReceiverAuthority.sol";
 import {ReceiverAuthorityTemplate} from "src/messaging/authority/ReceiverAuthorityTemplate.sol";
 import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {NestedSafeApproval, SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {SafeSigs, Sig} from "../signed/SignedFixtures.sol";
 
-/// @dev Test-only hooks. Recognition uses placeholder guard and MultiSend addresses; step 5
-///      replaces it. Votes are the template's own check over Safe 1.5.0 signature blobs.
+/// @dev Fixture addresses stand in for deployment pins; recognition and verification use the production libraries.
 contract ReceiverAuthorityFixture is ReceiverAuthorityTemplate {
     address internal constant GUARD = address(0x1234);
     address internal constant MULTISEND = address(0x5678);
@@ -34,18 +31,19 @@ contract ReceiverAuthorityFixture is ReceiverAuthorityTemplate {
         busy = value;
     }
 
+    /// @dev Scalar readback avoids the legacy compiler's nested graph return decoder in the graph-pass tests.
+    function selectedNode(uint256 index) external view returns (address firstOwner, bytes32 position) {
+        AuthorityNode memory node = graph(selection().authorityHash).nodes[index];
+        return (node.record.owners[0].owner, node.position);
+    }
+
     /// @dev Stands in for the bootstrap that seeds a receiver.
     function seed(bytes32 updateHead, AuthorityGraph calldata initial) external {
         _seedAuthority(updateHead, initial);
     }
 
-    function _recognizeUpdate(uint256, address sourceSafe, SafeTxEvidence calldata e)
-        internal
-        pure
-        override
-        returns (ReceiverAuthority.RecognizedUpdate memory)
-    {
-        return AuthorityRecognition.recognize(GUARD, MULTISEND, sourceSafe, e.signedSafeTx.safeTx);
+    function _recognitionPins() internal pure override returns (address, address) {
+        return (GUARD, MULTISEND);
     }
 
     function _authoritySource() internal view override returns (uint256, address) {

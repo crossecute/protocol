@@ -11,10 +11,9 @@ import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 import {SignedTransmitter} from "src/messaging/outbound/SignedTransmitter.sol";
-import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
+import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
 import {Conduits} from "src/conduit/Conduits.sol";
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
-import {SignedBootstrap} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 
 import {unseeded} from "test/RegistrySeed.sol";
 import {toBytes32, ext} from "test/Harness.sol";
@@ -42,6 +41,7 @@ contract SignedTransceiverTest is HyperlaneFixture {
     function setUp() public {
         vm.warp(1_000_000);
         TransceiverConfig memory c = _config();
+        c.receiverImplementation = address(new HyperlaneReceiver(address(mailbox), address(0x1234), address(0x5678)));
         c.transmitterImplementation = _transmitterImplementation();
         t = TransceiverBase(payable(_deployTransceiver(c, 0)));
         ChainRegistry registry = new ChainRegistry(address(this), unseeded());
@@ -69,7 +69,7 @@ contract SignedTransceiverTest is HyperlaneFixture {
 
     /// @notice Hash the fixture records, as a receiver stores them.
     function _graph() internal view returns (bytes32) {
-        return SafeAuthorityGraph.hash(_records());
+        return Records.graphHash(REMOTE_CHAIN_ID, _records());
     }
 
     /* ============================ mode at creation ============================= */
@@ -160,7 +160,7 @@ contract SignedTransceiverTest is HyperlaneFixture {
 
     /// @notice Build a signed bootstrap body from setup calls and authority records.
     function _body(bytes memory setup, SafeAuthorityRecord[] memory records) internal pure returns (bytes memory) {
-        return abi.encode(SignedBootstrap(records, setup));
+        return Records.bootstrap(address(0x1234), records, setup);
     }
 
     /// @notice Encode one tagged sink call for receiver initialization.

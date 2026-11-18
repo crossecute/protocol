@@ -28,13 +28,6 @@ optimizer_runs = 200
 # rest of the trailer, leaving initcode that depends on the code and nothing else.
 bytecode_hash = "none"
 cbor_metadata = false
-# via-IR for #109 authority code only: its nested graph and witness types exceed the
-# legacy code generator's stack limit. The default profile stays legacy, because via-IR
-# changes Proxy's initcode and with it every conduit address. A file that imports a
-# restricted path is compiled via-IR as well. A file a restricted path imports keeps its
-# default artifact and gains a second one suffixed ".via-ir".
-additional_compiler_profiles = [{ name = "via-ir", via_ir = true }]
-compilation_restrictions = [{ paths = "src/messaging/authority/**", via_ir = true }]
 remappings = [
     "src/=src/",
     # Shared source-guard interfaces reuse protocol Call without duplicating the type.

@@ -16,7 +16,7 @@ contract AuthorityRecognitionTest is Test {
     address internal constant SAFE = address(0xA);
 
     function recognize(SafeTx memory safeTx) external pure returns (ReceiverAuthority.RecognizedUpdate memory) {
-        return AuthorityRecognition.recognize(GUARD, MULTISEND, SAFE, safeTx);
+        return AuthorityRecognition.recognize(AuthorityRecognition.Context(GUARD, MULTISEND, SAFE), safeTx);
     }
 
     function _update() internal pure returns (AuthorityUpdate memory) {

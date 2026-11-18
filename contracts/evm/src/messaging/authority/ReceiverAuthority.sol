@@ -7,18 +7,19 @@ import {Call} from "src/messaging/Call.sol";
 import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
 import {OwnerSource, SafeQuorum} from "src/messaging/signed/SafeQuorum.sol";
 import {OWNER_SAFE, SafeAuthorityRecord, SafeOwner} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
-import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {SafeTxEvidence, SignedBootstrap} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {AuthorityEntry, AuthorityGraph, AuthorityNode, MAX_SAFE_OWNERS} from "./AuthorityGraph.sol";
 import {AuthorityMutations} from "./AuthorityMutations.sol";
 import {ChildUpdate} from "./ChildUpdate.sol";
 import {AuthorityUpdateEncoding} from "./AuthorityUpdateEncoding.sol";
+import {AuthorityRecognition} from "./AuthorityRecognition.sol";
 
 /// @notice A signed receiver's #109 authority: its selection, graph and records, and the checks
 ///         that move them. External, so linked and called by DELEGATECALL against the receiver's
 ///         storage, which keeps the verifier out of each receiver's EIP-170 budget.
 /// @dev Owns graph authentication: canonical structure, each update kind's root record, the
-///      flat child-update pass and every update's votes. The caller recognizes each signed source
-///      call first and passes the results in. The first selection is seeded from the receiver's
+///      flat child-update pass and every update's votes. Receiver submission recognizes pinned
+///      source calls; the source guard can supply its own recognized calls. The first selection is seeded from the receiver's
 ///      bootstrap; activations are never accepted.
 library ReceiverAuthority {
     enum UpdateKind {
@@ -40,11 +41,30 @@ library ReceiverAuthority {
         RecognizedUpdate[] children;
     }
 
+    struct UpdateRequest {
+        uint256 sourceChainId;
+        address sourceSafe;
+        SafeTxEvidence evidence;
+        AuthorityGraph newGraph;
+        ChildUpdate[] childUpdates;
+        Recognized recognized;
+    }
+
+    struct SubmissionRequest {
+        uint256 sourceChainId;
+        AuthorityRecognition.Context context;
+        SafeTxEvidence evidence;
+        AuthorityGraph newGraph;
+        ChildUpdate[] childUpdates;
+    }
+
     struct State {
         AuthoritySelection selection;
         // Content-addressed: a record shared by several graphs or kept across updates is written once.
         mapping(bytes32 => bytes) records;
         mapping(bytes32 => AuthorityEntry[]) graphs;
+        // Only the current accepted submission authenticates a provider retry. Bootstrap sets none.
+        bytes32 lastSubmissionHash;
     }
 
     /// @dev A (Safe, position) whose record the pass has proven, from the stored graph or a
@@ -101,6 +121,27 @@ library ReceiverAuthority {
     error UnprovenPosition(address safe);
     error DescendantRecordMismatch(address safe);
     error UnprovenVoter(address safe);
+    error BootstrapGuardMismatch();
+    error RootIsNotOwner(address owner, address root);
+
+    function encodedGraphHash(uint256 sourceChainId, bytes memory encoded) external pure returns (bytes32) {
+        return AuthorityUpdateEncoding.graphHash(sourceChainId, abi.decode(encoded, (AuthorityGraph)));
+    }
+
+    /// @notice Seed a provider-authenticated bootstrap under the implementation's guard pin.
+    function bootstrap(State storage $, uint256 sourceChainId, address sourceSafe, address guard, bytes memory body)
+        external
+        returns (AuthoritySelection memory selected, bytes memory setupCalls)
+    {
+        SignedBootstrap memory initial = abi.decode(body, (SignedBootstrap));
+        if (initial.guard != guard) revert BootstrapGuardMismatch();
+        AuthorityGraph memory authority = abi.decode(initial.authority, (AuthorityGraph));
+        if (authority.nodes.length != 0 && authority.nodes[0].record.safe != sourceSafe) {
+            revert RootIsNotOwner(sourceSafe, authority.nodes[0].record.safe);
+        }
+        seed($, sourceChainId, sourceSafe, initial.updateHead, authority);
+        return ($.selection, initial.setupCalls);
+    }
 
     function graph(State storage $, bytes32 authorityHash) public view returns (AuthorityGraph memory authority) {
         AuthorityEntry[] storage stored = $.graphs[authorityHash];
@@ -117,6 +158,41 @@ library ReceiverAuthority {
         return abi.decode(encoded, (SafeAuthorityRecord));
     }
 
+    function selectedRecords(State storage $) external view returns (SafeAuthorityRecord[] memory records) {
+        AuthorityEntry[] storage entries = $.graphs[$.selection.authorityHash];
+        records = new SafeAuthorityRecord[](entries.length);
+        for (uint256 i; i < entries.length; ++i) {
+            records[i] = record($, entries[i].recordHash);
+        }
+    }
+
+    /// @notice Verify application evidence under the selected graph without changing its head.
+    function verify(State storage $, uint256 sourceChainId, address sourceSafe, SafeTxEvidence memory evidence)
+        external
+        view
+        returns (bytes32 safeTxHash)
+    {
+        (SafeAuthorityRecord memory voters, VoterPositions memory positions) = _storedVoters($, 0);
+        safeTxHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, sourceSafe, sourceChainId);
+        _verifyVotes(sourceChainId, safeTxHash, evidence, VoteContext(sourceSafe, voters, positions));
+    }
+
+    function _storedVoters(State storage $, uint256 extra)
+        private
+        view
+        returns (SafeAuthorityRecord memory voters, VoterPositions memory positions)
+    {
+        if ($.selection.authorityHash == bytes32(0)) revert UnseededAuthority();
+        AuthorityEntry[] memory stored = $.graphs[$.selection.authorityHash];
+        ProvenTable memory table = ProvenTable(new ProvenPosition[](stored.length + extra), stored.length - 1);
+        voters = record($, stored[0].recordHash);
+        for (uint256 i = 1; i < stored.length; ++i) {
+            SafeAuthorityRecord memory kept = record($, stored[i].recordHash);
+            table.rows[i - 1] = ProvenPosition(kept.safe, stored[i].position, stored[i].recordHash, kept, true);
+        }
+        positions = VoterPositions(table, stored);
+    }
+
     /// @notice Store the head and selected graph a bootstrap carried, once.
     /// @dev Taken on the provider's authentication of the bootstrap (#148): signatures cannot
     ///      prove a carried graph. Shape checks still apply.
@@ -126,7 +202,7 @@ library ReceiverAuthority {
         address sourceSafe,
         bytes32 updateHead,
         AuthorityGraph memory initial
-    ) external returns (bytes32 authorityHash) {
+    ) public returns (bytes32 authorityHash) {
         if ($.selection.authorityHash != bytes32(0)) revert AlreadySeeded();
         if (updateHead == bytes32(0)) revert ZeroCommitment();
         _requireRoot(sourceSafe, initial);
@@ -174,14 +250,40 @@ library ReceiverAuthority {
             table.rows[table.count++] =
                 ProvenPosition(records[i].safe, entries[i].position, entries[i].recordHash, records[i], false);
         }
-        _verifyVotes(sourceChainId, sourceSafe, updateHash, evidence, live, VoterPositions(table, entries));
+        _verifyVotes(sourceChainId, updateHash, evidence, VoteContext(sourceSafe, live, VoterPositions(table, entries)));
         _store($, initial, entries, recognized.update.newAuthorityHash);
         $.selection = AuthoritySelection(updateHash, recognized.update.newAuthorityHash);
     }
 
     /// @notice Verify and apply the next signed update: a successor of the stored head.
     /// @return updateHash The new head, the update's SafeTx hash.
-    function applyUpdate(
+    function applyUpdate(State storage $, UpdateRequest memory request) external returns (bytes32 updateHash) {
+        return _applyUpdate(
+            $,
+            request.sourceChainId,
+            request.sourceSafe,
+            request.evidence,
+            request.newGraph,
+            request.childUpdates,
+            request.recognized
+        );
+    }
+
+    function submit(State storage $, SubmissionRequest memory request) external returns (bytes32 updateHash) {
+        Recognized memory recognized =
+            AuthorityRecognition.recognizeUpdates(request.context, request.evidence, request.childUpdates);
+        updateHash = _applyUpdate(
+            $,
+            request.sourceChainId,
+            request.context.safe,
+            request.evidence,
+            request.newGraph,
+            request.childUpdates,
+            recognized
+        );
+    }
+
+    function _applyUpdate(
         State storage $,
         uint256 sourceChainId,
         address sourceSafe,
@@ -189,7 +291,7 @@ library ReceiverAuthority {
         AuthorityGraph memory newGraph,
         ChildUpdate[] memory childUpdates,
         Recognized memory recognized
-    ) external returns (bytes32 updateHash) {
+    ) private returns (bytes32 updateHash) {
         _requireRoot(sourceSafe, newGraph);
         updateHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, sourceSafe, sourceChainId);
         if (updateHash == bytes32(0)) revert ZeroCommitment();
@@ -255,21 +357,14 @@ library ReceiverAuthority {
     ) private view {
         SafeAuthorityRecord[] memory records = _requireCanonical(newGraph);
         AuthorityEntry[] storage stored = $.graphs[$.selection.authorityHash];
-        ProvenTable memory table = ProvenTable(new ProvenPosition[](stored.length + childUpdates.length), 0);
-
         // The root votes under its stored record, never the new one (T6).
-        SafeAuthorityRecord memory voters = record($, stored[0].recordHash);
+        (SafeAuthorityRecord memory voters, VoterPositions memory positions) = _storedVoters($, childUpdates.length);
+        ProvenTable memory table = positions.table;
         if (recognized.root.kind == UpdateKind.OwnershipChange) {
             AuthorityMutations.applyMutations(voters, recognized.root.mutations, records[0]);
         } else if (stored[0].recordHash != newEntries[0].recordHash) {
             revert RootRecordMismatch();
         }
-        for (uint256 i = 1; i < stored.length; ++i) {
-            SafeAuthorityRecord memory kept = record($, stored[i].recordHash);
-            table.rows[i - 1] = ProvenPosition(kept.safe, stored[i].position, stored[i].recordHash, kept, true);
-        }
-        table.count = stored.length - 1;
-
         uint256 seeds = table.count;
         for (uint256 i; i < childUpdates.length; ++i) {
             _proveChildUpdate(sourceChainId, table, childUpdates[i], recognized.children[i], i);
@@ -291,7 +386,9 @@ library ReceiverAuthority {
         for (uint256 i = seeds; i < table.count; ++i) {
             if (!table.rows[i].used) revert UnusedChildUpdate(i - seeds);
         }
-        _verifyVotes(sourceChainId, records[0].safe, updateHash, evidence, voters, VoterPositions(table, newEntries));
+        _verifyVotes(
+            sourceChainId, updateHash, evidence, VoteContext(records[0].safe, voters, VoterPositions(table, newEntries))
+        );
     }
 
     /// @dev childUpdates[index] must extend a proven position of its Safe and add a position not
@@ -304,34 +401,42 @@ library ReceiverAuthority {
         RecognizedUpdate memory recognized,
         uint256 index
     ) private view {
-        address safe = child.sourceSafe;
         if (recognized.kind == UpdateKind.Activation) revert ActivationNotAccepted();
-        AuthorityEntry[] memory entries = child.newGraphEntries;
-        SafeAuthorityRecord memory newRecord = child.newRecord;
-        bytes32 newRecordHash = AuthorityUpdateEncoding.recordHash(newRecord);
-        if (newRecord.safe != safe || entries.length == 0 || entries[0].recordHash != newRecordHash) {
+        VoteContext memory votes;
+        votes.safe = child.sourceSafe;
+        votes.positions = VoterPositions(table, child.newGraphEntries);
+        bytes32 newRecordHash = AuthorityUpdateEncoding.recordHash(child.newRecord);
+        if (
+            child.newRecord.safe != votes.safe || child.newGraphEntries.length == 0
+                || child.newGraphEntries[0].recordHash != newRecordHash
+        ) {
             revert ChildRecordMismatch(index);
         }
-        if (AuthorityUpdateEncoding.graphHash(sourceChainId, entries) != recognized.update.newAuthorityHash) {
+        if (
+            AuthorityUpdateEncoding.graphHash(sourceChainId, child.newGraphEntries)
+                != recognized.update.newAuthorityHash
+        ) {
             revert ChildGraphHashMismatch(index);
         }
 
-        uint256 at = _find(table, safe, recognized.update.previousUpdateHash);
-        if (at == table.count) revert UnprovenPredecessor(index);
-        ProvenPosition memory predecessor = table.rows[at];
-        predecessor.used = true;
-        SafeAuthorityRecord memory voters = predecessor.record;
-        if (recognized.kind == UpdateKind.OwnershipChange) {
-            _requireOwnerKinds(newRecord, index);
-            AuthorityMutations.applyMutations(voters, recognized.mutations, newRecord);
-        } else if (predecessor.recordHash != newRecordHash) {
-            revert ChildRecordMismatch(index);
+        {
+            uint256 at = _find(table, votes.safe, recognized.update.previousUpdateHash);
+            if (at == table.count) revert UnprovenPredecessor(index);
+            ProvenPosition memory predecessor = table.rows[at];
+            predecessor.used = true;
+            votes.voters = predecessor.record;
+            if (recognized.kind == UpdateKind.OwnershipChange) {
+                _requireOwnerKinds(child.newRecord, index);
+                AuthorityMutations.applyMutations(votes.voters, recognized.mutations, child.newRecord);
+            } else if (predecessor.recordHash != newRecordHash) {
+                revert ChildRecordMismatch(index);
+            }
         }
 
-        bytes32 position = SafeHashes.transactionHash(child.evidence.signedSafeTx.safeTx, safe, sourceChainId);
-        if (_find(table, safe, position) != table.count) revert RepeatedChildUpdate(index);
-        _verifyVotes(sourceChainId, safe, position, child.evidence, voters, VoterPositions(table, entries));
-        table.rows[table.count++] = ProvenPosition(safe, position, newRecordHash, newRecord, false);
+        bytes32 position = SafeHashes.transactionHash(child.evidence.signedSafeTx.safeTx, votes.safe, sourceChainId);
+        if (_find(table, votes.safe, position) != table.count) revert RepeatedChildUpdate(index);
+        _verifyVotes(sourceChainId, position, child.evidence, votes);
+        table.rows[table.count++] = ProvenPosition(votes.safe, position, newRecordHash, child.newRecord, false);
     }
 
     /// @notice The record a nested Safe voter counts under: its proven row at the position the
@@ -360,20 +465,17 @@ library ReceiverAuthority {
     ///      _voterRecord(positions, ...).
     function _verifyVotes(
         uint256 sourceChainId,
-        address safe,
         bytes32 safeTxHash,
         SafeTxEvidence memory evidence,
-        SafeAuthorityRecord memory voters,
-        VoterPositions memory positions
+        VoteContext memory votes
     ) private view {
-        VoteContext memory votes = VoteContext(safe, voters, positions);
         bytes32 context;
         assembly ("memory-safe") {
             context := votes
         }
         SafeQuorum.verify(
             OwnerSource(context, sourceChainId, _openVoter, _isVoterOwner),
-            safe,
+            votes.safe,
             safeTxHash,
             evidence.signedSafeTx.signatures,
             evidence.nestedApprovals

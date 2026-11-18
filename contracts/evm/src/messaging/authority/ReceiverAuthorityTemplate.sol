@@ -7,12 +7,11 @@ import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol
 import {AuthorityGraph} from "./AuthorityGraph.sol";
 import {ChildUpdate} from "./ChildUpdate.sol";
 import {IReceiverAuthority} from "./IReceiverAuthority.sol";
+import {AuthorityTransport} from "./AuthorityTransport.sol";
 import {ReceiverAuthority} from "./ReceiverAuthority.sol";
 
-/// @notice Non-deployable #109 authority of one signed receiver over the linked
-///         `ReceiverAuthority` library.
-/// @dev Source-call recognition, the source identity and context locking are abstract hooks.
-///      Current receivers do not inherit this, and it is absent from deployment scripts.
+/// @notice Shared authority entry points over the linked `ReceiverAuthority` library.
+/// @dev Source identity, recognition pins and context locking are abstract hooks.
 /// @dev State is ERC-7201 namespaced so a receiver can add it without extending its base's
 ///      sequential layout (R8.2).
 abstract contract ReceiverAuthorityTemplate is IReceiverAuthority {
@@ -22,14 +21,21 @@ abstract contract ReceiverAuthorityTemplate is IReceiverAuthority {
     bytes32 private constant RECEIVER_AUTHORITY_STORAGE =
         0x6d0209d4e0e1a183e61dfc4b31b842ce90252036bca12cdc82cfe5ab3e835800;
 
-    bool private _submitting;
+    struct AuthorityStorage {
+        ReceiverAuthority.State authority;
+        bool submitting;
+    }
 
     error AuthoritySubmissionReentered();
 
-    function _authority() private pure returns (ReceiverAuthority.State storage $) {
+    function _authorityStorage() private pure returns (AuthorityStorage storage $) {
         assembly ("memory-safe") {
             $.slot := RECEIVER_AUTHORITY_STORAGE
         }
+    }
+
+    function _authority() internal view returns (ReceiverAuthority.State storage $) {
+        return _authorityStorage().authority;
     }
 
     /// @inheritdoc IReceiverAuthority
@@ -59,33 +65,42 @@ abstract contract ReceiverAuthorityTemplate is IReceiverAuthority {
         SafeTxEvidence calldata evidence,
         AuthorityGraph calldata newGraph,
         ChildUpdate[] calldata childUpdates
-    ) external {
-        if (_submitting) revert AuthoritySubmissionReentered();
-        _submitting = true;
-        _requireAuthorityContextIdle();
-        (uint256 sourceChainId, address sourceSafe) = _authoritySource();
-        ReceiverAuthority.Recognized memory recognized;
-        recognized.root = _recognizeUpdate(sourceChainId, sourceSafe, evidence);
-        recognized.children = new ReceiverAuthority.RecognizedUpdate[](childUpdates.length);
-        for (uint256 i; i < childUpdates.length; ++i) {
-            recognized.children[i] =
-                _recognizeUpdate(sourceChainId, childUpdates[i].sourceSafe, childUpdates[i].evidence);
-        }
-        // forge-lint: disable-start(reentrancy-no-eth) a DELEGATECALL into the linked library, under the lock
-        bytes32 updateHash =
-            _authority().applyUpdate(sourceChainId, sourceSafe, evidence, newGraph, childUpdates, recognized);
-        // forge-lint: disable-end(reentrancy-no-eth)
-        emit AuthoritySelected(updateHash, _authority().selection.authorityHash);
-        _submitting = false;
+    ) external virtual {
+        _submitAuthority(evidence, newGraph, childUpdates);
     }
 
-    /// @dev Recognize the signed source call of `sourceSafe`, the root or a child, so an activation
-    ///      can be rejected by kind. No signature check.
-    function _recognizeUpdate(uint256 sourceChainId, address sourceSafe, SafeTxEvidence calldata evidence)
-        internal
-        view
-        virtual
-        returns (ReceiverAuthority.RecognizedUpdate memory);
+    function _submitAuthority(
+        SafeTxEvidence calldata evidence,
+        AuthorityGraph calldata newGraph,
+        ChildUpdate[] calldata childUpdates
+    ) internal {
+        AuthorityStorage storage $ = _authorityStorage();
+        if ($.submitting) revert AuthoritySubmissionReentered();
+        $.submitting = true;
+        _applyAuthority(evidence, newGraph, childUpdates);
+        $.submitting = false;
+    }
+
+    function _applyAuthority(
+        SafeTxEvidence calldata evidence,
+        AuthorityGraph calldata newGraph,
+        ChildUpdate[] calldata childUpdates
+    ) internal {
+        _requireAuthorityContextIdle();
+        ReceiverAuthority.SubmissionRequest memory request;
+        (request.sourceChainId, request.context.safe) = _authoritySource();
+        (request.context.guard, request.context.multiSend) = _recognitionPins();
+        request.evidence = evidence;
+        request.newGraph = newGraph;
+        request.childUpdates = childUpdates;
+        // forge-lint: disable-start(reentrancy-no-eth) a DELEGATECALL into the linked library, under the lock
+        bytes32 updateHash = AuthorityTransport.submit(_authority(), request);
+        // forge-lint: disable-end(reentrancy-no-eth)
+        emit AuthoritySelected(updateHash, _authority().selection.authorityHash);
+    }
+
+    /// @dev Immutable source guard and MultiSendCallOnly addresses for source-call recognition.
+    function _recognitionPins() internal view virtual returns (address guard, address multiSend);
 
     /// @dev The receiver's source chain and owner Safe.
     function _authoritySource() internal view virtual returns (uint256 sourceChainId, address sourceSafe);

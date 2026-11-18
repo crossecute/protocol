@@ -276,7 +276,7 @@ abstract contract TransceiverBase is TransceiverCore {
     }
 
     /// @notice `bootstrap` for a signed conduit, carrying `abi.encode(SignedBootstrap)`: the
-    ///         Safe's live authority records and the receiver's setup calls.
+    ///         source guard, selected head and graph, and the receiver's setup calls.
     function bootstrapSigned(
         bytes32 destinationChainKey,
         address owner,

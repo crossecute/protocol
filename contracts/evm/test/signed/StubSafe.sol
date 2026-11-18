@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {ICrossecuteGuard, SafeTx, SignedSafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {GuardDiscovery} from "@crossecute/safe-guard/GuardDiscovery.sol";
+import {AuthoritySelection} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
 
 /// @notice The Safe 1.5.0 surface the signed contracts read: owners, threshold, the guard slot,
 ///         and a signature check the test sets to pass or fail. It also forwards calls, standing
@@ -77,6 +78,16 @@ contract StubSafe {
 
 /// @notice The `ICrossecuteGuard` surface a transmitter uses, with records the test stages.
 contract StubGuard {
+    mapping(address safe => AuthoritySelection) public selection;
+    mapping(address safe => mapping(bytes32 head => bytes32)) public publishedAuthority;
+
+    function publishAuthority(address safe, bytes32 head, bytes memory submission) external {
+        publishedAuthority[safe][head] = keccak256(submission);
+    }
+
+    function setSelection(address safe, bytes32 head, bytes32 authorityHash) external {
+        selection[safe] = AuthoritySelection(head, authorityHash);
+    }
     mapping(address safe => SignedSafeTx) internal _staged;
     mapping(address safe => bool) public live;
     mapping(address child => mapping(bytes32 messageHash => SignedSafeTx)) internal _approvals;

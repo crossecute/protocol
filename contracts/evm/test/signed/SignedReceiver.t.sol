@@ -3,21 +3,28 @@ pragma solidity ^0.8.28;
 
 import {Test, Vm} from "forge-std/Test.sol";
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
+import {SafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
+import {ISourceAuthorityGuard} from "@crossecute/safe-guard/authority/ISourceAuthorityGuard.sol";
+import {AuthorityUpdate} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
+import {AuthorityGraph} from "src/messaging/authority/AuthorityGraph.sol";
+import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
+import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
+import {ReceiverAuthority} from "src/messaging/authority/ReceiverAuthority.sol";
 import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
 import {IReceiverInit, ReceiverBase, ICommitFinalize, ICancel} from "src/messaging/inbound/ReceiverBase.sol";
 import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 import {SignedDispatchCalls} from "src/messaging/signed/SignedDispatchCalls.sol";
 import {SafeQuorum} from "src/messaging/signed/SafeQuorum.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
-import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
 import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
-import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
+import {SafeAuthorityRecord, SafeOwner, OWNER_SAFE} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {
     ExecutionLeaf,
     SafeTxEvidence,
     SignedBootstrap,
     WIRE_STANDALONE,
-    WIRE_MERKLE
+    WIRE_MERKLE,
+    WIRE_AUTHORITY
 } from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {ISignedReceiver} from "src/messaging/inbound/ISignedReceiver.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
@@ -49,6 +56,11 @@ contract Sink {
     }
 }
 
+struct LegacySignedBootstrap {
+    SafeAuthorityRecord[] records;
+    bytes setupCalls;
+}
+
 /// @dev The receiver in signed mode (#108): created by the transceiver's two-step arming, then
 ///      fed hand-built deliveries through its provider and by direct submission.
 contract SignedReceiverTest is Test {
@@ -72,7 +84,7 @@ contract SignedReceiverTest is Test {
     /// @dev Initialization tests bind the carried authority to the expected signed-address
     ///      commitment.
     function _graph() internal pure returns (bytes32) {
-        return SafeAuthorityGraph.hash(_records());
+        return Records.graphHash(SOURCE_CHAIN, _records());
     }
 
     /// @notice Deploy a provider receiver with plain initialization but no setup calls.
@@ -80,7 +92,7 @@ contract SignedReceiverTest is Test {
     ///      restricted.
     function _plainReceiver() internal returns (address r) {
         r = deployConduit(
-            address(new HyperlaneReceiver(address(mailbox))),
+            address(new HyperlaneReceiver(address(mailbox), address(0x1234), address(0x5678))),
             abi.encodeCall(IReceiverInit.initialize, (TRANSMITTER, bytes32(uint256(HOME_DOMAIN)), new Call[](0)))
         );
     }
@@ -122,7 +134,7 @@ contract SignedReceiverTest is Test {
 
     /// @notice Package the fixture's authority records with encoded setup calls.
     function _bootstrapBody(bytes memory setup) internal view returns (bytes memory) {
-        return abi.encode(SignedBootstrap(_records(), setup));
+        return Records.bootstrap(address(0x1234), _records(), setup);
     }
 
     /// @notice Call signed initialization as the configured parent transceiver.
@@ -150,12 +162,217 @@ contract SignedReceiverTest is Test {
     function test_initializationStoresTheAuthorityAndRunsSetup() public view {
         SignedReceiver r = SignedReceiver(payable(receiver));
         assertEq(r.authorityGraph(), _graph());
+        assertEq(r.selection().updateHead, bytes32(uint256(1)));
         assertEq(r.nextNonce(), 0);
         assertEq(sink.hits(), 1);
         assertEq(sink.last(), "setup");
         assertEq(keccak256(abi.encode(r.authorityRecords())), keccak256(abi.encode(_records())));
         assertFalse(r.isAuthorizedCaller(TRANSMITTER));
         assertTrue(r.isAuthorizedCaller(receiver));
+    }
+
+    function test_bootstrapEncodingStatesItsSizeIncrease() public view {
+        bytes memory setup = abi.encode(new Call[](0));
+        for (uint256 count = 1; count <= 3; ++count) {
+            SafeAuthorityRecord[] memory records = new SafeAuthorityRecord[](count);
+            for (uint256 i; i < count; ++i) {
+                address sourceSafe = i == 0 ? SAFE : address(uint160(0xB000 + i));
+                if (i + 1 == count) {
+                    records[i] = _records()[0];
+                    records[i].safe = sourceSafe;
+                } else {
+                    SafeOwner[] memory owners = new SafeOwner[](1);
+                    owners[0] = SafeOwner(address(uint160(0xB001 + i)), OWNER_SAFE);
+                    records[i] = Records.record(sourceSafe, 1, owners);
+                }
+            }
+            bytes memory legacy = abi.encode(LegacySignedBootstrap(records, setup));
+            assertEq(Records.bootstrap(address(0x1234), records, setup).length - legacy.length, 160 + 64 * count);
+        }
+    }
+
+    function _updateEvidence(SafeTx memory tx_) internal returns (SafeTxEvidence memory evidence) {
+        tx_.nonce = ++nonceSeq;
+        evidence.signedSafeTx.safeTx = tx_;
+        evidence.signedSafeTx.signatures = SafeSigs.blob(_quorum(), SafeHashes.transactionHash(tx_, SAFE, SOURCE_CHAIN));
+    }
+
+    function _selectionUpdate(AuthorityGraph memory next) internal returns (SafeTxEvidence memory) {
+        bytes32 head = SignedReceiver(payable(receiver)).selection().updateHead;
+        if (head == bytes32(0)) head = bytes32(uint256(1));
+        SafeTx memory tx_;
+        tx_.to = address(0x1234);
+        tx_.data = abi.encodeCall(
+            ISourceAuthorityGuard.selectAuthority,
+            (AuthorityUpdate(head, AuthorityUpdateEncoding.graphHash(SOURCE_CHAIN, next)))
+        );
+        return _updateEvidence(tx_);
+    }
+
+    function _ownerUpdate() internal returns (SafeTxEvidence memory evidence, AuthorityGraph memory next) {
+        next = Records.graph(_records());
+        next.nodes[0].record.owners[0].owner = vm.addr(7);
+        Call[] memory mutations = new Call[](1);
+        mutations[0] = Call(
+            SAFE, 0, abi.encodeWithSignature("swapOwner(address,address,address)", address(1), vm.addr(1), vm.addr(7))
+        );
+        SafeTx memory tx_;
+        tx_.to = address(0x5678);
+        tx_.operation = 1;
+        tx_.data = AuthorityUpdateEncoding.ownershipBatchData(
+            address(0x1234),
+            SAFE,
+            AuthorityUpdate(
+                SignedReceiver(payable(receiver)).selection().updateHead,
+                AuthorityUpdateEncoding.graphHash(SOURCE_CHAIN, next)
+            ),
+            mutations
+        );
+        evidence = _updateEvidence(tx_);
+    }
+
+    function test_anAuthorityUpdateChangesDispatchVerificationAndRejectsReplay() public {
+        (SafeTxEvidence memory update, AuthorityGraph memory next) = _ownerUpdate();
+        SafeTxEvidence memory oldMessage = _message(_here(receiver), _calls("old"));
+        SignedReceiver r = SignedReceiver(payable(receiver));
+        r.submitAuthority(update, next, new ChildUpdate[](0));
+        assertEq(r.authorityGraph(), AuthorityUpdateEncoding.graphHash(SOURCE_CHAIN, next));
+        assertEq(r.selection().updateHead, SafeHashes.transactionHash(update.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN));
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, SAFE, vm.addr(1)));
+        r.submitMessage(oldMessage);
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
+        r.submitAuthority(update, next, new ChildUpdate[](0));
+        SafeTxEvidence memory fresh = _signed(
+            abi.encodeCall(IERC7786GatewaySource.sendMessage, (_here(receiver), _calls("new"), new bytes[](0))),
+            SafeSigs.two(SafeSigs.eoa(7), SafeSigs.eoa(3))
+        );
+        _deliver(abi.encode(WIRE_STANDALONE, fresh));
+        r.submitMessage(fresh);
+        assertEq(sink.last(), "new");
+        assertEq(sink.hits(), 2);
+    }
+
+    function testFuzz_authorityProviderAndDirectShareVerificationAndReplay(bool directFirst) public {
+        (SafeTxEvidence memory update, AuthorityGraph memory next) = _ownerUpdate();
+        bytes memory submission = abi.encode(update, next, new ChildUpdate[](0));
+        SignedReceiver r = SignedReceiver(payable(receiver));
+        if (directFirst) r.submitAuthority(update, next, new ChildUpdate[](0));
+        else _deliver(abi.encode(WIRE_AUTHORITY, submission));
+        bytes32 head = r.selection().updateHead;
+        _deliver(abi.encode(WIRE_AUTHORITY, submission));
+        assertEq(r.selection().updateHead, head);
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
+        r.submitAuthority(update, next, new ChildUpdate[](0));
+        update.signedSafeTx.signatures = hex"01";
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
+        _deliver(abi.encode(WIRE_AUTHORITY, abi.encode(update, next, new ChildUpdate[](0))));
+        assertEq(r.selection().updateHead, head);
+    }
+
+    function test_providerRejectsInvalidAuthorityAtomically() public {
+        (SafeTxEvidence memory update, AuthorityGraph memory next) = _ownerUpdate();
+        bytes memory valid = abi.encode(update, next, new ChildUpdate[](0));
+        update.signedSafeTx.signatures = hex"01";
+        vm.expectRevert();
+        _deliver(abi.encode(WIRE_AUTHORITY, abi.encode(update, next, new ChildUpdate[](0))));
+        assertEq(SignedReceiver(payable(receiver)).selection().updateHead, bytes32(uint256(1)));
+        _deliver(abi.encode(WIRE_AUTHORITY, valid));
+    }
+
+    function test_bootstrapHeadAloneDoesNotAuthenticateAuthorityRetry() public {
+        AuthorityGraph memory next = Records.graph(_records());
+        SafeTxEvidence memory update = _selectionUpdate(next);
+        bytes32 head = SafeHashes.transactionHash(update.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN);
+        receiver = _plainReceiver();
+        _initialize(
+            receiver, abi.encode(SignedBootstrap(address(0x1234), head, abi.encode(next), abi.encode(new Call[](0))))
+        );
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
+        _deliver(abi.encode(WIRE_AUTHORITY, abi.encode(update, next, new ChildUpdate[](0))));
+    }
+
+    function test_providerRejectsOlderAcceptedUpdatesAfterAdvancing() public {
+        AuthorityGraph memory next = Records.graph(_records());
+        SafeTxEvidence memory first = _selectionUpdate(next);
+        bytes memory old = abi.encode(WIRE_AUTHORITY, abi.encode(first, next, new ChildUpdate[](0)));
+        _deliver(old);
+        SafeTxEvidence memory second = _selectionUpdate(next);
+        _deliver(abi.encode(WIRE_AUTHORITY, abi.encode(second, next, new ChildUpdate[](0))));
+        vm.expectRevert(ReceiverAuthority.PreviousUpdateMismatch.selector);
+        _deliver(old);
+    }
+
+    function test_aThresholdUpdateUsesTheOldQuorumAndChangesFutureQuorums() public {
+        AuthorityGraph memory next = Records.graph(_records());
+        next.nodes[0].record.threshold = 3;
+        Call[] memory mutations = new Call[](1);
+        mutations[0] = Call(SAFE, 0, abi.encodeWithSignature("changeThreshold(uint256)", 3));
+        SafeTx memory tx_;
+        tx_.to = address(0x5678);
+        tx_.operation = 1;
+        tx_.data = AuthorityUpdateEncoding.ownershipBatchData(
+            address(0x1234),
+            SAFE,
+            AuthorityUpdate(bytes32(uint256(1)), AuthorityUpdateEncoding.graphHash(SOURCE_CHAIN, next)),
+            mutations
+        );
+        SignedReceiver r = SignedReceiver(payable(receiver));
+        r.submitAuthority(_updateEvidence(tx_), next, new ChildUpdate[](0));
+        vm.expectRevert();
+        r.submitMessage(_message(_here(receiver), _calls("two")));
+        Sig[] memory signers = new Sig[](3);
+        (signers[0], signers[1], signers[2]) = (SafeSigs.eoa(1), SafeSigs.eoa(2), SafeSigs.eoa(3));
+        r.submitMessage(
+            _signed(
+                abi.encodeCall(IERC7786GatewaySource.sendMessage, (_here(receiver), _calls("three"), new bytes[](0))),
+                signers
+            )
+        );
+        assertEq(sink.last(), "three");
+    }
+
+    function test_anAcceptedCommitmentSurvivesAnAuthorityChange() public {
+        Call[] memory deferred = abi.decode(_calls("deferred"), (Call[]));
+        Call[] memory commit = new Call[](1);
+        commit[0] = Call(receiver, 0, abi.encodeCall(ICommitFinalize.commit, (Commitment.hashCalls(deferred))));
+        ISignedReceiver(receiver).submitMessage(_message(_here(receiver), abi.encode(commit)));
+        (SafeTxEvidence memory update, AuthorityGraph memory next) = _ownerUpdate();
+        SignedReceiver(payable(receiver)).submitAuthority(update, next, new ChildUpdate[](0));
+        vm.prank(vm.addr(1));
+        ICommitFinalize(receiver).finalize(deferred);
+        assertEq(sink.last(), "deferred");
+    }
+
+    function test_bootstrapRejectsTheWrongGuardOrZeroHead() public {
+        address r = _plainReceiver();
+        SignedBootstrap memory bootstrap = abi.decode(_bootstrapBody(_calls("x")), (SignedBootstrap));
+        bootstrap.guard = address(0xBAD);
+        vm.expectRevert(ReceiverAuthority.BootstrapGuardMismatch.selector);
+        _initialize(r, abi.encode(bootstrap));
+        bootstrap.guard = address(0x1234);
+        bootstrap.updateHead = bytes32(0);
+        vm.expectRevert(ReceiverAuthority.ZeroCommitment.selector);
+        _initialize(r, abi.encode(bootstrap));
+        assertEq(SignedReceiver(payable(r)).authorityGraph(), bytes32(0));
+    }
+
+    function test_unsetPinsAllowPlainModeButRefuseSignedInitialization() public {
+        address r = deployConduit(
+            address(new HyperlaneReceiver(address(mailbox), address(0), address(0))),
+            abi.encodeCall(IReceiverInit.initialize, (TRANSMITTER, bytes32(uint256(HOME_DOMAIN)), new Call[](0)))
+        );
+        assertTrue(SignedReceiver(payable(r)).isAuthorizedCaller(TRANSMITTER));
+        vm.expectRevert(SignedReceiver.AuthorityPinsUnset.selector);
+        _initialize(r, _bootstrapBody(_calls("x")));
+    }
+
+    function test_anActivationCannotResetReceiverAuthority() public {
+        SafeTx memory tx_;
+        tx_.to = address(0x1234);
+        tx_.data = abi.encodeCall(ISourceAuthorityGuard.activate, (_graph()));
+        vm.expectRevert(ReceiverAuthority.ActivationNotAccepted.selector);
+        SignedReceiver(payable(receiver))
+            .submitAuthority(_updateEvidence(tx_), Records.graph(_records()), new ChildUpdate[](0));
     }
 
     /// @notice Attempt signed initialization from an unrelated caller.
@@ -174,7 +391,7 @@ contract SignedReceiverTest is Test {
     function test_recordsRootedAtAnotherSafeRefuse() public {
         address r = _plainReceiver();
         bytes memory body = _bootstrapBody(_calls("x"));
-        vm.expectRevert(abi.encodeWithSelector(SignedReceiver.RootIsNotOwner.selector, address(0x1), SAFE));
+        vm.expectRevert(abi.encodeWithSelector(ReceiverAuthority.RootIsNotOwner.selector, address(0x1), SAFE));
         SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, address(0x1), body);
     }
 
@@ -185,7 +402,7 @@ contract SignedReceiverTest is Test {
         address r = _plainReceiver();
         SafeAuthorityRecord[] memory other =
             Records.list(Records.record(SAFE, 1, Records.eoaOwners(Records.pks(7, 8, 9))));
-        _initialize(r, abi.encode(SignedBootstrap(other, _calls("x"))));
+        _initialize(r, Records.bootstrap(address(0x1234), other, _calls("x")));
         assertEq(keccak256(abi.encode(SignedReceiver(payable(r)).authorityRecords())), keccak256(abi.encode(other)));
     }
 
@@ -196,7 +413,7 @@ contract SignedReceiverTest is Test {
         SafeAuthorityRecord[] memory bad =
             Records.list(Records.record(SAFE, 0, Records.eoaOwners(Records.pks(1, 2, 3))));
         vm.expectRevert();
-        _initialize(r, abi.encode(SignedBootstrap(bad, _calls("x"))));
+        _initialize(r, Records.bootstrap(address(0x1234), bad, _calls("x")));
         assertEq(SignedReceiver(payable(r)).authorityGraph(), bytes32(0));
     }
 
@@ -551,6 +768,7 @@ contract SignedReceiverTest is Test {
     }
     bytes private reentryCall;
     bool private reentryAttempted;
+    bool private reentryAsProvider;
 
     /// @notice Attempt the selected nested receiver call and assert the shared lock rejects it.
     /// @dev An executing payload can call back into the receiver, so reentrancy protection must
@@ -558,6 +776,7 @@ contract SignedReceiverTest is Test {
     function attemptReentry() external {
         require(msg.sender == receiver);
         reentryAttempted = true;
+        if (reentryAsProvider) vm.prank(address(mailbox));
         (bool ok, bytes memory reason) = receiver.call(reentryCall);
         assertFalse(ok, "nested dispatch succeeded");
         assertEq(reason, abi.encodeWithSignature("ReentrancyGuardReentrantCall()"));
@@ -567,8 +786,8 @@ contract SignedReceiverTest is Test {
     ///         finalization entry.
     /// @dev A lock that protects only one route would leave cross-route reentrancy available.
     function test_reentrancyAcrossAllSignedEntryRoutes() public {
-        for (uint256 outer; outer < 4; ++outer) {
-            for (uint256 inner; inner < 3; ++inner) {
+        for (uint256 outer; outer < 6; ++outer) {
+            for (uint256 inner; inner < 5; ++inner) {
                 _reentryScenario(outer, inner);
             }
         }
@@ -579,17 +798,34 @@ contract SignedReceiverTest is Test {
     /// @dev Reentrancy rejection must preserve both the outer operation and the future
     ///      usability of unexecuted evidence.
     function _reentryScenario(uint256 outer, uint256 inner) private {
+        if (outer == 5) receiver = _plainReceiver();
         uint256 nonce = SignedReceiver(payable(receiver)).nextNonce();
         SafeTxEvidence memory nestedMessageEvidence = _message(_here(receiver), _calls("nested"));
         ExecutionLeaf memory nestedLeaf = _leaf(nonce + 1, _calls("nested leaf"));
         (SafeTxEvidence memory nestedRegistrationEvidence, bytes32[][] memory nestedProof) = _register(_one(nestedLeaf));
+        reentryAsProvider = inner == 4;
         if (inner == 0) {
             reentryCall = abi.encodeCall(ISignedReceiver.submitMessage, (nestedMessageEvidence));
         } else if (inner == 1) {
             reentryCall =
                 abi.encodeCall(ISignedReceiver.submitLeaf, (nestedRegistrationEvidence, nestedLeaf, nestedProof[0]));
-        } else {
+        } else if (inner == 2) {
             reentryCall = abi.encodeWithSignature("finalize((address,uint256,bytes)[])", new Call[](0));
+        } else {
+            AuthorityGraph memory next = Records.graph(_records());
+            SafeTxEvidence memory update = _selectionUpdate(next);
+            if (reentryAsProvider) {
+                reentryCall = abi.encodeCall(
+                    HyperlaneReceiver.handle,
+                    (
+                        HOME_DOMAIN,
+                        bytes32(uint256(uint160(TRANSMITTER))),
+                        abi.encode(WIRE_AUTHORITY, abi.encode(update, next, new ChildUpdate[](0)))
+                    )
+                );
+            } else {
+                reentryCall = abi.encodeCall(SignedReceiver.submitAuthority, (update, next, new ChildUpdate[](0)));
+            }
         }
         Call[] memory calls = new Call[](1);
         calls[0] = Call(address(this), 0, abi.encodeCall(this.attemptReentry, ()));
@@ -598,11 +834,18 @@ contract SignedReceiverTest is Test {
             SafeTxEvidence memory evidence = _message(_here(receiver), abi.encode(calls));
             if (outer == 0) ISignedReceiver(receiver).submitMessage(evidence);
             else _deliver(abi.encode(WIRE_STANDALONE, evidence));
-        } else {
+        } else if (outer < 4) {
             ExecutionLeaf memory leaf = _leaf(nonce, abi.encode(calls));
             (SafeTxEvidence memory evidence, bytes32[][] memory proof) = _register(_one(leaf));
             if (outer == 2) ISignedReceiver(receiver).submitLeaf(evidence, leaf, proof[0]);
             else _deliver(abi.encode(WIRE_MERKLE, evidence, leaf, proof[0]));
+        } else if (outer == 4) {
+            Call[] memory commit = new Call[](1);
+            commit[0] = Call(receiver, 0, abi.encodeCall(ICommitFinalize.commit, (Commitment.hashCalls(calls))));
+            ISignedReceiver(receiver).submitMessage(_message(_here(receiver), abi.encode(commit)));
+            ICommitFinalize(receiver).finalize(calls);
+        } else {
+            _initialize(receiver, _bootstrapBody(abi.encode(calls)));
         }
         assertTrue(reentryAttempted);
         uint256 before = sink.hits();

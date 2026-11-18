@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import {SignedSafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
-import {SafeAuthorityRecord} from "./SafeAuthorityTypes.sol";
 
 /// @dev Leading word of a signed provider message, so each wire format has one decoder.
 /// @dev A standalone message is `abi.encode(STANDALONE, SafeTxEvidence)` over a signed
@@ -10,6 +9,8 @@ import {SafeAuthorityRecord} from "./SafeAuthorityTypes.sol";
 ///      bytes32[])` over a signed `registerRoot`.
 uint256 constant WIRE_STANDALONE = 1;
 uint256 constant WIRE_MERKLE = 2;
+/// @dev abi.encode(WIRE_AUTHORITY, abi.encode(SafeTxEvidence, AuthorityGraph, ChildUpdate[])).
+uint256 constant WIRE_AUTHORITY = 3;
 
 /// @notice An ordered batch for one receiver, under a registered root. Hashed by
 ///         `DispatchLeaves.hash`; `DispatchLeaves.executionId` omits `attributes`.
@@ -38,9 +39,10 @@ struct SafeTxEvidence {
     NestedSafeApproval[] nestedApprovals;
 }
 
-/// @notice The body of a signed bootstrap envelope: the Safe's live authority records in
-///         canonical order, read when the bootstrap was sent, and the receiver's setup calls.
+/// @notice The selected source authority and setup calls, authenticated by the bootstrap provider.
 struct SignedBootstrap {
-    SafeAuthorityRecord[] records;
+    address guard;
+    bytes32 updateHead;
+    bytes authority; // abi.encode(AuthorityGraph), decoded separately to retain the legacy compiler pipeline.
     bytes setupCalls; // abi.encode(Call[]).
 }

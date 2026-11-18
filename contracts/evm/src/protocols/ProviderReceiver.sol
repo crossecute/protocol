@@ -7,6 +7,8 @@ import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 /// @notice A receiver whose only provider setup is naming the provider's delivery contract as
 ///         its gateway.
 abstract contract ProviderReceiver is SignedReceiver {
+    constructor(address guard, address multiSendCallOnly) SignedReceiver(guard, multiSendCallOnly) {}
+
     /// @dev `_grantInitialRole` is `onlyInitializing`, so this initializer is the only window the
     ///      gateway grant ever gets. It runs before `__ReceiverBase_init`, which executes the
     ///      payload.

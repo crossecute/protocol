@@ -58,6 +58,9 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
     // solhint-disable-next-line private-vars-leading-underscore
     mapping(address safe => mapping(bytes32 head => bytes32 recordHash)) private $heads;
 
+    // solhint-disable-next-line private-vars-leading-underscore
+    mapping(address safe => mapping(bytes32 head => bytes32 submissionHash)) public publishedAuthority;
+
     error SafeBusy(address safe);
     error NotActivated(address safe);
     error AlreadyActivated(address safe);
@@ -148,8 +151,9 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
             if (activated) _requireInsideProtectedCalls(safe, safeTx);
             return false;
         }
-        ReceiverAuthority.RecognizedUpdate memory recognized =
-            AuthorityRecognition.recognize(address(this), MULTISEND_CALL_ONLY, safe, safeTx);
+        ReceiverAuthority.RecognizedUpdate memory recognized = AuthorityRecognition.recognize(
+            AuthorityRecognition.Context(address(this), MULTISEND_CALL_ONLY, safe), safeTx
+        );
         (
             AuthorityGraph memory newGraph,
             ChildUpdate[] memory childUpdates,
@@ -176,16 +180,28 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
             for (uint256 i = 0; i < childUpdates.length; ++i) {
                 SafeTx memory childTx = childUpdates[i].evidence.signedSafeTx.safeTx;
                 address child = childUpdates[i].sourceSafe;
-                all.children[i] = AuthorityRecognition.recognize(address(this), MULTISEND_CALL_ONLY, child, childTx);
+                // forge-lint: disable-start(calls-loop) pure decoder in the fixed linked library
+                all.children[i] = AuthorityRecognition.recognize(
+                    AuthorityRecognition.Context(address(this), MULTISEND_CALL_ONLY, child), childTx
+                );
+                // forge-lint: disable-end(calls-loop)
                 bytes32 position = SafeHashes.transactionHash(childTx, child, block.chainid);
                 if ($heads[child][position] != AuthorityUpdateEncoding.recordHash(childUpdates[i].newRecord)) {
                     revert PositionNotExecuted(child, position);
                 }
             }
-            updateHash = $.applyUpdate(block.chainid, safe, evidence, newGraph, childUpdates, all);
+            updateHash = $.applyUpdate(
+                ReceiverAuthority.UpdateRequest(block.chainid, safe, evidence, newGraph, childUpdates, all)
+            );
         }
         $heads[safe][updateHash] = AuthorityUpdateEncoding.recordHash(newGraph.nodes[0].record);
         _tstoreLive(safe, updateHash, recognized.kind, newGraph.nodes[0].record);
+        if (recognized.kind != ReceiverAuthority.UpdateKind.Activation) {
+            bytes memory submission = abi.encode(evidence, newGraph, childUpdates);
+            publishedAuthority[safe][updateHash] = keccak256(submission);
+            // forge-lint: disable-next-line(reentrancy-events) preceding calls are linked verification and static Safe reads
+            emit AuthorityPublished(safe, updateHash, submission);
+        }
         // forge-lint: disable-next-line(reentrancy-events) the earlier calls are the linked library and staticcalls to the caller
         emit AuthorityUpdateExecuted(safe, updateHash, $.selection.authorityHash, portableSignatures, approvals);
         return true;

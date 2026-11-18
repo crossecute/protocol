@@ -7,7 +7,7 @@ import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol
 import {AuthorityGraph} from "./AuthorityGraph.sol";
 import {ChildUpdate} from "./ChildUpdate.sol";
 
-/// @notice Proposed #109 authority of one signed receiver, not wired into current receivers.
+/// @notice The selected authority and authenticated updates of one signed receiver.
 /// @dev The source identity is the receiver's own: its source chain and owner Safe. Its first
 ///      selection comes from its bootstrap, never from a submitted activation.
 interface IReceiverAuthority {

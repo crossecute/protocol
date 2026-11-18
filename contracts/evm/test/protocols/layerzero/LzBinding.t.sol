@@ -148,7 +148,7 @@ contract LzInitValidationTest is Test {
     address ENDPOINT = address(new MockLzEndpoint());
 
     function test_receiverRejectsZeroHomeEid() public {
-        address impl = address(new LzReceiver(ENDPOINT));
+        address impl = address(new LzReceiver(ENDPOINT, address(0), address(0)));
         address proxy = address(new Proxy());
         vm.expectRevert(LzHomePeer.ZeroHomeEid.selector);
         IProxy(proxy)

@@ -4,18 +4,23 @@ pragma solidity ^0.8.28;
 import {ICrossecuteGuard, SignedSafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {GuardDiscovery} from "@crossecute/safe-guard/GuardDiscovery.sol";
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
+import {ISourceAuthorityGuard} from "@crossecute/safe-guard/authority/ISourceAuthorityGuard.sol";
+import {AuthoritySelection} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
+import {AuthorityGraph} from "src/messaging/authority/AuthorityGraph.sol";
+import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
+import {ReceiverAuthority} from "src/messaging/authority/ReceiverAuthority.sol";
 import {IConduitTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
 import {NestedApprovalCollector} from "src/messaging/signed/NestedApprovalCollector.sol";
 import {SignedDispatchCalls} from "src/messaging/signed/SignedDispatchCalls.sol";
-import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {
     ExecutionLeaf,
     SafeTxEvidence,
     SignedBootstrap,
     WIRE_STANDALONE,
-    WIRE_MERKLE
+    WIRE_MERKLE,
+    WIRE_AUTHORITY
 } from "src/messaging/signed/types/SignedDispatchTypes.sol";
 
 /// @dev Safe 1.5.0's signature check against its live owners and threshold.
@@ -34,7 +39,7 @@ interface ISignedTransmitterView {
     /// @dev The linked builder needs the fixed source Safe without depending on the
     ///      transmitter's storage layout.
     function deployer() external view returns (address);
-    /// @notice Return the transmitter's parent transceiver, which reads the Safe's live authority.
+    /// @notice Return the parent transceiver used to check destination derivation.
     function transceiver() external view returns (address);
 }
 
@@ -74,6 +79,7 @@ library SignedTransmitterLib {
     ///      only where the home derives them.
     error SignedReceiverNotDerivable(bytes32 destinationChainKey);
     error NoSignedAuthority(address safe);
+    error BootstrapAuthorityMismatch();
 
     /// @notice Consume the owner's staged transaction without reading it.
     /// @dev Consumption admits only a signed owner execution targeting this transmitter.
@@ -83,18 +89,26 @@ library SignedTransmitterLib {
         ICrossecuteGuard(GuardDiscovery.transactionGuard(safe)).consume(safe);
     }
 
-    /// @notice Encode the `SignedBootstrap` body: the Safe's live authority records and the
-    ///         setup calls, after checking the destination derives the receiver.
+    /// @notice Check the supplied bootstrap against the guard's current selection.
     /// @param typed Whether the destination executes `Call[]`, as `_decodeBootstrap` reports.
-    function bootstrapBody(bytes32 chainKey, bool typed, bytes memory setupCalls) external view returns (bytes memory) {
+    function bootstrapBody(bytes32 chainKey, bool typed, bytes memory body) external view returns (bytes memory) {
         ISignedTransmitterView self = ISignedTransmitterView(address(this));
         IConduitTransceiver t = IConduitTransceiver(self.transceiver());
         if (!typed || t.reportsReceiver(chainKey)) revert SignedReceiverNotDerivable(chainKey);
-        Payload.decodeCallsFromMemory(setupCalls);
-        address safe = self.deployer();
-        bytes memory records = t.signedAuthority(safe);
-        if (records.length == 0) revert NoSignedAuthority(safe);
-        return abi.encode(SignedBootstrap(abi.decode(records, (SafeAuthorityRecord[])), setupCalls));
+        return _bootstrapAuthority(self.deployer(), body);
+    }
+
+    function _bootstrapAuthority(address safe, bytes memory body) private view returns (bytes memory) {
+        SignedBootstrap memory bootstrap = abi.decode(body, (SignedBootstrap));
+        Payload.decodeCallsFromMemory(bootstrap.setupCalls);
+        address guard = GuardDiscovery.transactionGuard(safe);
+        AuthoritySelection memory selected = ISourceAuthorityGuard(guard).selection(safe);
+        if (selected.authorityHash == bytes32(0)) revert NoSignedAuthority(safe);
+        if (
+            guard != bootstrap.guard || selected.updateHead != bootstrap.updateHead
+                || selected.authorityHash != ReceiverAuthority.encodedGraphHash(block.chainid, bootstrap.authority)
+        ) revert BootstrapAuthorityMismatch();
+        return body;
     }
 
     /// @notice Validate the signed root registration and leaf proof, then build the Merkle wire
@@ -120,6 +134,24 @@ library SignedTransmitterLib {
         ISafeSignatures(safe).checkSignatures(address(0), safeTxHash, evidence.signedSafeTx.signatures);
         wire = abi.encode(WIRE_MERKLE, evidence, leaf, proof);
         return (root, leafHash, leaf.destination, leaf.attributes, wire);
+    }
+
+    error AuthorityNotPublished(bytes32 updateHead);
+
+    /// @notice Require the exact portable evidence published by source execution.
+    /// @dev Live owners may have rotated since publication; recollecting approvals would change
+    ///      the portable quorum that the guard verified. Destinations still verify independently.
+    function authority(bytes memory submission) external view returns (bytes32 head, bytes memory wire) {
+        (SafeTxEvidence memory evidence,,) = abi.decode(submission, (SafeTxEvidence, AuthorityGraph, ChildUpdate[]));
+        address safe = ISignedTransmitterView(address(this)).deployer();
+        head = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, safe, block.chainid);
+        if (
+            ISourceAuthorityGuard(GuardDiscovery.transactionGuard(safe)).publishedAuthority(safe, head)
+                != keccak256(submission)
+        ) {
+            revert AuthorityNotPublished(head);
+        }
+        wire = abi.encode(WIRE_AUTHORITY, submission);
     }
 
     /* ================================= internals ================================ */

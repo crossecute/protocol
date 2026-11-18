@@ -6,6 +6,7 @@ import {OpStackReceiver} from "src/protocols/op-stack/OpStackReceiver.sol";
 import {OpStackTransmitter} from "src/protocols/op-stack/OpStackTransmitter.sol";
 import {
     TransceiverDeployment,
+    receiverAuthorityPins,
     deployTransceiverProxy,
     checkGovernorHomeId,
     transceiverExtension
@@ -18,7 +19,8 @@ import {ChainConfig, ChainEntry} from "script/deploy/ChainConfig.sol";
 ///         the transceiver's table is the gate.
 library OpStackDeploy {
     function receiverImplementation() internal returns (address) {
-        return address(new OpStackReceiver());
+        (address guard, address multiSend) = receiverAuthorityPins();
+        return address(new OpStackReceiver(guard, multiSend));
     }
 
     function transmitterImplementation() internal returns (address) {
