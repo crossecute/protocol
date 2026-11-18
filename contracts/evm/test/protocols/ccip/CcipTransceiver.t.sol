@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {TransceiverDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {CcipDeploy} from "script/deploy/CcipDeploy.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
+import {IAny2EVMMessageReceiver} from "@chainlink/contracts-ccip/contracts/interfaces/IAny2EVMMessageReceiver.sol";
 
 import {
     ProviderZkSyncSpec,

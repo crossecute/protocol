@@ -13,7 +13,7 @@ set -euo pipefail
 
 # vendor_file <repo> <commit> <upstream_path> <dest_path> <license_note>
 #
-#   repo          "owner/name", e.g. "smartcontractkit/ccip"
+#   repo          "owner/name", e.g. "smartcontractkit/chainlink-ccip"
 #   commit        the pinned commit (short or full SHA) -- never a branch or tag, either
 #                 of which can move out from under the pin
 #   upstream_path the file's path in that repo at that commit

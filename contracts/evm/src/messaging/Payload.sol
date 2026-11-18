@@ -32,8 +32,8 @@ library Payload {
     }
 
     /// @notice `decodeCalls`, for a wire already in memory.
-    /// @dev Separate because Solidity will not overload on data location, and a receiver's
-    ///      payload stays in calldata rather than paying a copy on every delivery.
+    /// @dev Separate because Solidity will not overload on data location, providers with calldata
+    ///      callbacks can avoid copying the encoded payload before decoding.
     function decodeCallsFromMemory(bytes memory wire) internal pure returns (Call[] memory) {
         return abi.decode(wire, (Call[]));
     }

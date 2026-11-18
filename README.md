@@ -343,7 +343,7 @@ bindings differ is in who delivers a message to a conduit and what authenticates
 | Provider | Inbound entry point | Sender authenticated by | Replay refused by |
 | --- | --- | --- | --- |
 | LayerZero | `lzReceive`, from the endpoint | the vendored OApp's peer check, then `GATEWAY_ROLE` and the source transmitter | the endpoint |
-| CCIP | `ccipReceive`, from the router | `GATEWAY_ROLE` and the source transmitter | the off-ramp |
+| CCIP | `ccipReceive`, from the router | `GATEWAY_ROLE` and the source transmitter (receivers also check the immutable router) | the off-ramp |
 | Hyperlane | `handle`, from the Mailbox | `GATEWAY_ROLE`, the Mailbox's ISM, and the source transmitter | the Mailbox |
 | Wormhole | `executeVAAv1`, from anyone | guardian signatures through Core, the emitter, and the VAA's `(targetChain, targetAddress)` prefix | the binding's own consumed-hash set |
 | OP Stack, L1 ↔ L2 | `receiveOpStackMessage`, from the messenger that reaches the conduit's home | `GATEWAY_ROLE` and `xDomainMessageSender()` read during the relay | the messenger |
@@ -552,3 +552,30 @@ what adding a chain takes.
 **Nothing has crossed a real bridge yet.** Every binding is tested against a mock of its
 provider, and only the transceiver step of a chain's deployment is scripted. Both are tracked
 in [`docs/todo.md`](docs/todo.md).
+
+### CCIP dependency
+
+The CCIP binding uses the MIT application interfaces and `Client` library from
+`@chainlink/contracts-ccip` 2.0.0, vendored at the release commit by
+`contracts/evm/script/vendor/ccip.sh`. Imports use the package's canonical
+`@chainlink/contracts-ccip/contracts/` prefix. `GenericExtraArgsV2` preserves the
+previous V2 tag and encoding: a 4-byte tag and two 32-byte words. Messages without options
+retain this encoding; opt-in V3 has a different size and is priced by the router.
+
+`CcipReceiver` inherits the v2 `CCIPReceiver` helper, with configurable CCV and
+finality policies that default to CCIP verification and full finality. Its callback retains gateway-role, home-origin and
+source-transmitter checks. `router()` remains available alongside `getRouter()`.
+The vendor script changes the helper's `supportsInterface` from `pure` to `view`
+to compose with AccessControl, and maps its IERC165 import to this repo's pinned
+OpenZeppelin version. Optional configuration uses a separate ERC-7201 namespace,
+without adding sequential slots to protocol bases. CCIP delivery copies the
+upstream message into memory; other providers retain their calldata decode path.
+
+Transmitters and all CCIP transceiver variants support opt-in V3 message attributes.
+The transceiver owner must enable a verified outbound lane first. Receiver policies
+remain mandatory regardless of sender options. See [CCIP 2.0 options](docs/ccip-v2.md)
+for defaults, authority, pending-message effects, and why a custom verifier policy can
+stop a receiver permanently.
+[Local validation](docs/ccip-v2-validation.md) covers the options and actual OffRamp
+behavior; [deployment issue #118](https://github.com/crossecute/protocol/issues/118) tracks live-lane
+and native-execution checks before production enablement.

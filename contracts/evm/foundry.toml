@@ -8,6 +8,7 @@ allow_paths = ["."]
 fs_permissions = [
     { access = "read", path = "./deploy" },
     { access = "read", path = "./test/deploy/config" },
+    { access = "read", path = "./test/fixtures/ccip-v2" },
     { access = "read-write", path = "./out/governance" },
     { access = "read-write", path = "./out/rotation" },
 ]
@@ -40,11 +41,10 @@ remappings = [
     "@layerzerolabs/oft-evm/=lib/layerzero-oft-evm/",
     "@layerzerolabs/lz-evm-protocol-v2/=lib/layerzero-protocol-v2/",
 
-    # Hand-copied, not a submodule: smartcontractkit/ccip mixes BUSL-1.1 infrastructure
-    # with the MIT-tagged application-facing files this binding actually needs. See
-    # lib/ccip/contracts/src/v0.8/ccip/**/*.sol for per-file provenance
-    # (contracts/evm/script/vendor/ccip.sh).
-    "@ccip/=lib/ccip/contracts/src/v0.8/ccip/",
+    # MIT application files from @chainlink/contracts-ccip 2.0.0, pinned by
+    # script/vendor/ccip.sh. Per-file provenance lives under lib/ccip/contracts/.
+    "@chainlink/contracts-ccip/=lib/ccip/",
+    "lib/ccip/:@openzeppelin/contracts@5.3.0/=lib/openzeppelin-contracts/contracts/",
 
     # Hand-copied, not a submodule: hyperlane-monorepo's MailboxClient/Router pin OZ 4.9.3,
     # which cannot share an inheritance graph with this repo's 5.4.0. Only dependency-free
