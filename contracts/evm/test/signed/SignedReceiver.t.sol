@@ -754,6 +754,60 @@ contract SignedReceiverTest is Test {
         _initialize(r, _bootstrapBody(_calls("x")));
     }
 
+    /// @dev After initialization the provider is untrusted: a bridge that asserts the right origin
+    ///      and sender for any payload still cannot install a chosen graph, rotate to its own keys,
+    ///      alter a signed payload or redirect evidence signed for another receiver or Safe.
+    function test_aMaliciousBridgeCannotForgeAuthorityOrDispatch() public {
+        Sig[] memory bridgeKeys = SafeSigs.two(SafeSigs.eoa(8), SafeSigs.eoa(9));
+        SafeAuthorityRecord[] memory chosen =
+            Records.list(Records.record(SAFE, 2, Records.eoaOwners(Records.pks(8, 9))));
+        AuthorityGraph memory chosenGraph = Records.graph(chosen);
+
+        SafeTx memory tx_;
+        tx_.to = address(0x1234);
+        tx_.data = abi.encodeCall(
+            ISourceAuthorityGuard.selectAuthority,
+            (AuthorityUpdate(bytes32(uint256(1)), Records.graphHash(SOURCE_CHAIN, chosen)))
+        );
+        bytes memory chosenSelection = abi.encode(_updateEvidence(tx_, bridgeKeys), chosenGraph, new ChildUpdate[](0));
+        // A selection keeps the root record, so graph authentication refuses before signatures.
+        vm.expectRevert(ReceiverAuthority.RootRecordMismatch.selector);
+        _deliver(abi.encode(WIRE_AUTHORITY, chosenSelection));
+
+        tx_.data = abi.encodeCall(ISourceAuthorityGuard.activate, (Records.graphHash(SOURCE_CHAIN, chosen)));
+        bytes memory chosenActivation = abi.encode(_updateEvidence(tx_, bridgeKeys), chosenGraph, new ChildUpdate[](0));
+        vm.expectRevert(ReceiverAuthority.ActivationNotAccepted.selector);
+        _deliver(abi.encode(WIRE_AUTHORITY, chosenActivation));
+
+        (SafeTxEvidence memory selfRotation, AuthorityGraph memory toBridge) =
+            _ownerSwap(1, 8, SafeSigs.two(SafeSigs.eoa(8), SafeSigs.eoa(3)));
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, SAFE, vm.addr(8)));
+        _deliver(abi.encode(WIRE_AUTHORITY, abi.encode(selfRotation, toBridge, new ChildUpdate[](0))));
+
+        (SafeTxEvidence memory genuine, AuthorityGraph memory next) = _ownerUpdate();
+        vm.expectRevert(ReceiverAuthority.ReplacementHashMismatch.selector);
+        _deliver(abi.encode(WIRE_AUTHORITY, abi.encode(genuine, chosenGraph, new ChildUpdate[](0))));
+
+        SafeTxEvidence memory message = _message(_here(receiver), _calls("genuine"));
+        SafeTxEvidence memory altered = abi.decode(abi.encode(message), (SafeTxEvidence));
+        altered.signedSafeTx.safeTx.data =
+            abi.encodeCall(IERC7786GatewaySource.sendMessage, (_here(receiver), _calls("forged"), new bytes[](0)));
+        vm.expectPartialRevert(SafeQuorum.NotAnOwner.selector);
+        _deliver(abi.encode(WIRE_STANDALONE, altered));
+        bytes memory elsewhere = Erc7930.encodeEvm(block.chainid, address(0xD00D));
+        vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.WrongDestination.selector, elsewhere));
+        _deliver(abi.encode(WIRE_STANDALONE, _message(elsewhere, _calls("redirected"))));
+
+        SignedReceiver r = SignedReceiver(payable(receiver));
+        assertEq(r.selection().updateHead, bytes32(uint256(1)));
+        assertEq(r.authorityGraph(), _graph());
+        assertEq(sink.hits(), 1);
+        _deliver(abi.encode(WIRE_AUTHORITY, abi.encode(genuine, next, new ChildUpdate[](0))));
+        assertEq(r.authorityGraph(), AuthorityUpdateEncoding.graphHash(SOURCE_CHAIN, next));
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, SAFE, vm.addr(1)));
+        _deliver(abi.encode(WIRE_STANDALONE, message));
+    }
+
     function test_anActivationCannotResetReceiverAuthority() public {
         SafeTx memory tx_;
         tx_.to = address(0x1234);
