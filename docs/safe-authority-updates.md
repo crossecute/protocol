@@ -1,7 +1,7 @@
 # Safe authority updates
 
 Design and draft interfaces for [#109](https://github.com/crossecute/protocol/issues/109).
-Stacks on the fixed-authority [signed dispatch](safe-signed-dispatch.md) and
+Extends [signed dispatch](safe-signed-dispatch.md) and the
 [Safe guard](safe-guard-design.md). This file owns architecture and normative behavior;
 [verification](safe-authority-verification-review.md) owns implementation gates/tests,
 [review findings](planning/safe-authority-review-109.md) own security disposition, and
@@ -10,9 +10,11 @@ Stacks on the fixed-authority [signed dispatch](safe-signed-dispatch.md) and
 **Status:** the source guard implements activation, ownership changes, selectAuthority and
 the protected-call rules, tested against real Safe 1.5.0 proxies. The receiver authority
 library, which the guard also runs, authenticates graphs, child updates and votes, and
-source-call recognition is one library shared by both. Current receivers are not wired to
-the library, and the source integration lists below remain. No production rotation or
-deployment is claimed. The
+source-call recognition is one library shared by both. Signed receivers seed their authority
+from bootstrap, accept direct linked updates and verify application dispatch against the
+selected graph. Quote and bootstrap check the supplied witness against the source guard.
+Provider authority relay/quote adapters and exact authenticated provider retries are implemented.
+SDK execution tooling, checkpoint/recovery tooling and deployment validation remain. No deployment is claimed. The
 [verification plan](safe-authority-verification-review.md#scaffold-coverage-and-remaining-work)
 lists what remains.
 
@@ -35,13 +37,24 @@ trusted provider seed every receiver (#148).
 A receiver starts from its bootstrap. The Safe's transmitter sends the guard's current
 selection: its updateHead and the selected graph. The bootstrap caller supplies the
 graph, and the transmitter requires its hash to equal the guard's
-selection(safe).authorityHash, so the graph matches the head without guard storage of
-graphs. A signed bootstrap reverts until the Safe has [activated](#activation). The
+selection(safe).authorityHash, so the graph matches the head without a guard graph-readback
+entry point. A signed bootstrap reverts until the Safe has [activated](#activation). The
 destination stores the head and graph on the provider's and source transceiver's
 authentication: signatures cannot prove a carried graph. Owners confirm a receiver's
 selection and graph before relying on it. The root's record equals its live owners,
 since the guard keeps them equal; each descendant appears at the position the root
 last adopted, which can lag that Safe's live state.
+
+The signed bootstrap payload body is `abi.encode(SignedBootstrap(guard, updateHead,
+abi.encode(authorityGraph), setupCalls))`, where setupCalls is `abi.encode(Call[])`.
+Both quote and send require guard to be the Safe's installed transaction guard and
+the head and graph hash to equal its selection. Destination initialization checks guard
+against the receiver implementation's immutable pin. An encoded graph byte string keeps
+the legacy compiler's bootstrap decoder within its stack limit; its extra 64 bytes avoid
+changing the compiler pipeline and Proxy initcode. Relative to #108's record-only body,
+the body grows by `160 + 64n` bytes for n graph nodes with the same records and setup calls.
+The graph remains variable-size because every reachable Safe and selected child position
+must be authenticated. Plain bootstrap encoding is unchanged.
 
 updateHead identifies the last accepted signed update, not the owner graph. There is
 no independently advancing global child authority and no authority counter. A
@@ -127,11 +140,11 @@ To accept a destination update:
 
 U2 cannot precede U1 if it names hash(U1). Consecutive handoffs may be submitted in
 one batch, but each is independently verified. The predecessor check also rejects
-replays, so a receiver keeps no record of accepted updates: each head commits to its
+replays, so a receiver keeps no history of accepted updates: each head commits to its
 predecessor, so heads never repeat and an accepted update never matches the stored
-head again, even after the graph returns to an earlier hash. Exact duplicates reject
-in the draft scaffold; provider integrations may later add authenticated no-op
-acknowledgments. Conflicting signed successors of one head are possible. Each
+head again, even after the graph returns to an earlier hash. Direct duplicates reject.
+A provider retry of the exact current accepted submission is an authenticated no-op,
+as specified below. Conflicting signed successors of one head are possible. Each
 destination can accept only one; the losing successor cannot overwrite it. The chain
 does not prove which successor executed on source. Restoration requires valid
 authorization under the currently selected branch, not a special old-owner override.
@@ -139,6 +152,50 @@ authorization under the currently selected branch, not a special old-owner overr
 Updates carry no expiry. A signed update stays valid until its predecessor is
 superseded, even if its SafeTx is rejected or replaced on source (Y4). Tooling must
 tell source rejection apart from destination revocation.
+
+## Authority transport and publication
+
+The source guard emits `AuthorityPublished(sourceSafe, updateHead, submission)` for
+an executed ownership change or selection, alongside `AuthorityUpdateExecuted`.
+`submission` is exactly `abi.encode(SafeTxEvidence, AuthorityGraph, ChildUpdate[])`,
+using the staged portable signatures and nested approvals, never the source execution
+signature set. `publishedAuthority(sourceSafe, updateHead)` retains its keccak256 hash.
+Activation publishes no relayable submission. Publication and all its writes revert if
+source execution fails. Calldata and events provide archival inputs, but a durable
+archive and checkpoint recovery tooling remain separate work.
+
+Anyone may call `relayAuthority(recipient, submission, attributes)` on a signed
+transmitter. `quoteAuthority` takes the same arguments. Both hash the carried SafeTx in
+the creation Safe's source-chain domain and require its exact submission hash to be
+published on the Safe's installed guard. They share route validation and wire building:
+`abi.encode(WIRE_AUTHORITY, submission)`, with tag 3. The recipient must be this conduit's
+reachable receiver. Destination and delivery attributes are unsigned routing choices;
+they do not change the universally reusable authority evidence. No live-owner signature
+check or nested-approval recollection replaces the published portable set. A caller may
+relay the same update to several destinations or retry a failed delivery. Each relay is
+caller-funded, preserves the transmitter's prior balance, refunds synchronous excess to
+the caller and routes provider refunds to that caller under the shared leaf-relay lock.
+
+Provider delivery first passes gateway, origin and source-transmitter authentication.
+The authority adapter then runs the same recognition, graph, quorum and predecessor
+verification as direct `submitAuthority`, under the receiver's shared execution lock.
+Direct submission does not require source publication: portable authorization remains
+distinct from source execution. Both paths store the hash of the exact accepted
+submission in one receiver slot. A provider delivery whose submission equals that hash
+emits `DuplicateMessage` without advancing authority. A matching head alone grants
+nothing: changed signatures, approvals, graph or child updates must pass ordinary
+verification and fail the predecessor check for an already accepted head. Bootstrap
+stores no submission hash, so carrying its head does not authenticate a retry. Accepting
+a successor replaces the hash; earlier accepted submissions reject. Direct replays
+continue to reject. Application-message and leaf duplicates still verify against the
+currently selected graph before their existing replay checks.
+
+The guard adds one 32-byte hash per published source head. Each receiver adds one
+32-byte current-submission hash, with no update history. The authority wire adds 96
+ABI bytes around the standard submission tuple. The publication event carries that
+whole tuple, including the variable-size graph, child updates and portable evidence,
+because independent relayers must recover the exact bytes the guard verified. No new
+size cap is added; provider and VM limits still apply.
 
 ## Child positions
 
@@ -236,9 +293,10 @@ alone do not.
 
 The operations belong to the shared deterministic guard, not a separate authority
 manager. The guard fixes its pins at deployment, with no setter (X13): MultiSendCallOnly,
-SignMessageLib, the Safe and SafeL2 singletons and the fallback handler. Destination code
-compiles in only MultiSendCallOnly's and the guard's addresses, the same for every source
-chain, which recognizing an ownership change needs. There is no destination registry
+SignMessageLib, the Safe and SafeL2 singletons and the fallback handler. Destination
+implementations take the guard and MultiSendCallOnly addresses as constructor immutables,
+with no setter. These pins apply to every receiver using that implementation. Both pins
+unset permit plain mode only; setting just one is rejected. There is no destination registry
 contract. A chain without the canonical MultiSendCallOnly is unsupported until a new
 generation.
 
@@ -396,7 +454,7 @@ captured this way stays on that branch and no recovery bypass exists (Y2, Y3). A
 receiver starts from the head and graph its bootstrap carried, so a retired quorum
 can neither seed it nor capture it before it exists: only successors of that head
 apply. Update calldata and guard events are archived off-chain for lagging receivers;
-a receiver stores only its selection and the graph cache.
+a receiver stores its selection, graph cache and one exact current-submission hash for provider retries.
 
 Accepted receiver commitments survive root and nested ownership changes (D92).
 Finalize uses the recorded exact-call authorization without a fresh signature check
