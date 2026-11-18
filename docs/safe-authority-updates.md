@@ -1,6 +1,6 @@
 # Safe authority updates
 
-Design and draft interfaces for [#109](https://github.com/crossecute/protocol/issues/109).
+Design and draft implementation for [#109](https://github.com/crossecute/protocol/issues/109).
 Extends [signed dispatch](safe-signed-dispatch.md) and the
 [Safe guard](safe-guard-design.md). This file owns architecture and normative behavior;
 [verification](safe-authority-verification-review.md) owns implementation gates/tests,
@@ -568,7 +568,7 @@ during application verification/execution across all provider and direct entry
 points. Application leaves/callbacks cannot act as management bypasses. Ordinary
 execution never refreshes child snapshots or advances updateHead. Emergency/admin
 recovery, guard migration, custom validators, zkSync/Tron and signed OFT are outside
-this scaffold. Other home-contract authority (such as a DAO) has no signed mode
+this implementation. Other home-contract authority (such as a DAO) has no signed mode
 and no adapter is added; a later one needs separate portable proof support, not a
 bridge assertion. Nothing from #108 is deployed, so receivers hold their authority
 directly with no migration.
