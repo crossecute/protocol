@@ -34,8 +34,11 @@ contract CcipReceiver is ProviderReceiver, CCIPReceiver, CcipPolicy {
         );
     }
 
-    function _authorizeCcipPolicyChange() internal view override {
+    /// @dev Delivery accepts only (homeOrigin, sourceTransmitter), so a policy under any other key
+    ///      would be stored but never read.
+    function _authorizeCcipPolicyChange(uint64 source, address sender) internal view override {
         if (!isAuthorizedCaller(msg.sender)) revert NotSourceTransmitter();
+        if (bytes32(uint256(source)) != homeOrigin || !isSourceTransmitter(sender)) revert InvalidCcipPolicy();
     }
 
     function getCCVsAndFinalityConfig(uint64 source, bytes calldata sender)

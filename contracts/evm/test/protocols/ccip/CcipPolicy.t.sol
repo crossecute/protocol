@@ -128,6 +128,20 @@ contract CcipPolicyTest is Test {
         }
     }
 
+    function test_receiverRefusesPolicyKeysItNeverDeliversFrom() public {
+        CcipConfig.Policy memory p = _policy();
+        vm.startPrank(SENDER);
+        vm.expectRevert(CcipPolicy.InvalidCcipPolicy.selector);
+        CcipPolicy(targets[0]).setCcipPolicy(SOURCE + 1, abi.encode(SENDER), p);
+        vm.expectRevert(CcipPolicy.InvalidCcipPolicy.selector);
+        CcipPolicy(targets[0]).setCcipPolicy(SOURCE, abi.encode(address(0xBAD)), p);
+        vm.stopPrank();
+        for (uint256 i = 1; i < targets.length; ++i) {
+            _set(i, SOURCE + 1, address(0xBAD), p);
+            _assertPolicy(i, SOURCE + 1, address(0xBAD), p);
+        }
+    }
+
     function test_receiverSelfCallCanConfigurePolicy() public {
         CcipConfig.Policy memory p = _policy();
         Call[] memory calls = new Call[](1);

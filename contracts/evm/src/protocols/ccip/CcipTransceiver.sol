@@ -59,7 +59,7 @@ abstract contract CcipTransceiverBase is ProviderTransceiver, CcipPolicy, IAny2E
         return CcipConfig.layout().v3Lanes[destination];
     }
 
-    function _authorizeCcipPolicyChange() internal view override {
+    function _authorizeCcipPolicyChange(uint64, address) internal view override {
         _checkOwner();
     }
 

@@ -62,7 +62,9 @@ still apply when the message arrives.
 A receiver accepts policy changes from its authenticated source transmitter or itself,
 the same callers allowed by its execution entry point. A remote owner can therefore send
 a normal authenticated payload containing a receiver self-call to change policy. A
-transceiver accepts changes only from its owner. Changes do not reopen upgrades or role
+receiver delivers only from its home selector and source transmitter, so it accepts a
+policy for that one pair and refuses any other. A transceiver accepts changes only from
+its owner, for any pair. Changes do not reopen upgrades or role
 grants. Both plain and divergent transceivers expose the v2 policy interface.
 
 | Policy field | Rule |

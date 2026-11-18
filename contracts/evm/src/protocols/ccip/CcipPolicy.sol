@@ -12,8 +12,10 @@ abstract contract CcipPolicy {
     /// @dev Changes apply when CCIP reads the policy, including for messages already in flight.
     ///      Include address(0) among requiredCCVs to retain lane-default verification alongside custom CCVs.
     function setCcipPolicy(uint64 source, bytes calldata sender, CcipConfig.Policy memory policy) external {
-        _authorizeCcipPolicyChange();
-        if (source == 0 || sender.length != 32 || CcipMessage.sender(sender) == address(0)) revert InvalidCcipPolicy();
+        if (source == 0 || sender.length != 32) revert InvalidCcipPolicy();
+        address evmSender = CcipMessage.sender(sender);
+        if (evmSender == address(0)) revert InvalidCcipPolicy();
+        _authorizeCcipPolicyChange(source, evmSender);
         uint256 required = policy.requiredCCVs.length;
         uint256 optional = policy.optionalCCVs.length;
         if (
@@ -45,5 +47,6 @@ abstract contract CcipPolicy {
         return (policy.requiredCCVs, policy.optionalCCVs, policy.optionalThreshold, policy.allowedFinalityConfig);
     }
 
-    function _authorizeCcipPolicyChange() internal view virtual;
+    /// @dev Reverts unless the caller may set a policy for this source and sender.
+    function _authorizeCcipPolicyChange(uint64 source, address sender) internal view virtual;
 }
