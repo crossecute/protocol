@@ -544,9 +544,10 @@ It uses signed predecessor hashes, no numeric destination nonce watermark and no
 destination-specific authority-update fields. Source SafeTx nonces remain signed.
 Ownership Call[] batches are packed as zero-value self-CALLs for MultiSendCallOnly;
 that packed helper encoding is distinct from application abi.encode(Call[]).
-Existing [Safe hash vectors](vectors/safe-authority-updates-109.json) freeze baseline
-SafeTx/SafeMessage semantics, not a deployed #109 child-witness ABI. Baseline wire
-migration and exact witness formats belong to the verification plan.
+The [shared authority vectors](vectors/safe-authority-updates-109.json) pin SafeTx and
+SafeMessage hashes and the #109 record, graph, ownership-batch, child-update, bootstrap and
+submission encodings, and `test/authority/AuthorityVectors.t.sol` replays them against the
+receiver. Freezing the final authority ABI remains a verification-plan gate.
 
 ## Rejected
 

@@ -3,7 +3,7 @@
 This file owns concrete implementation gates and acceptance coverage for the
 [#109 design](safe-authority-updates.md). It is not an independent policy spec.
 [Review findings](planning/safe-authority-review-109.md) track security questions;
-[baseline vectors](vectors/safe-authority-updates-109.json) and
+[shared vectors](vectors/safe-authority-updates-109.json) and
 [benchmarks](benchmarks/authority-109/README.md) have separate purposes.
 
 ## Implementation coverage and remaining work
@@ -19,7 +19,7 @@ This file owns concrete implementation gates and acceptance coverage for the
 | Caches | Each record is stored once under its hash and each graph as its entry list; receiver graph(hash)/record(hash) and source graph(sourceSafe, hash) provide authenticated readback. Source tests retain old graphs without selecting them and preserve the parent's old child snapshot after that child rotates. Fresh dispatch verification reads only the selected graph. Transition proofs start from that graph's positions, with intermediate rows scoped to one verification. A regression rejects cached historical positions and accepts a forward successor whose owners equal an earlier record. | Durable graph/evidence archives and retrieval tooling. |
 | Execution isolation | Authority submission, signed initialization, direct and provider message/leaf execution, and finalize use ReceiverBase's shared nonReentrant lock. Reentry tests cover all these application routes against authority submission. | Live provider/callback validation. |
 | Commitments | Root-rotation tests preserve repeat approvals, permissionless finalization, explicit cancellation and consumption; accepted work has no authority-based invalidation. Real-Safe nested adoption additionally preserves two approvals, permissionless consumption and explicit cancellation. | Live-provider validation. |
-| Resource behavior | No extra caps; encoding loops operate on supplied data. | Acyclic canonical traversal shared with SafeAuthorityGraph, finite exact-message proof tracking, malformed input/out-of-gas atomicity and actual provider sizing. |
+| Resource behavior | No extra caps; encoding loops operate on supplied data. Malformed input and out-of-gas submissions leave no partial state on every receiver route (T7, T18). | Acyclic canonical traversal shared with SafeAuthorityGraph, finite exact-message proof tracking and actual provider sizing. |
 
 The graph hash is keccak256(abi.encode(keccak256("Crossecute.AuthorityGraph.v1"),
 sourceChainId, entries)), where entries holds one AuthorityEntry(recordHash,
@@ -90,9 +90,15 @@ changes a deployment helper to via-IR, which would change Proxy initcode and the
 address. Clean-build comparisons keep Proxy, ProxyDeployer and transceiver artifacts
 unchanged; receiver and authority library changes are expected.
 
-The offline vector generator checks existing Safe hash/signature bytes plus labels
-for semantic cases. It is not a Solidity acceptance runner and does not freeze the
-future child-update ABI. Historical 43-case gas/wire benchmarks remain unchanged
+The [shared vectors](vectors/safe-authority-updates-109.json) are generated with `cast`,
+independently of the Solidity encoders: Safe 1.5.0 SafeTx and SafeMessage hashes with
+their signatures, and 18 receiver vectors covering EOA, nested, mixed, multilevel and
+shared, dynamic-offset, stale-snapshot, wrong-domain and threshold cases. Each receiver
+vector carries an encoded bootstrap, a full encoded submission (including one child
+update), readable fields and the expected verdict. `test/authority/AuthorityVectors.t.sol`
+seeds a real SignedReceiver from each, checks record and graph hashes, SafeTx hashes and
+ownership-batch calldata against the production encoders, and submits it. The 38 semantic
+cases stay prose expectations, covered by the acceptance matrix. Historical 43-case gas/wire benchmarks remain unchanged
 measurements of the existing verifier. Current source update execution and receiver
 measurements are documented in [the current benchmark report](benchmarks/authority-109/updates.md). Run relevant source/receiver integration, both lint profiles, formatting,
 size/selector checks and real Safe 1.5.0 fixtures before enabling any deployment.
