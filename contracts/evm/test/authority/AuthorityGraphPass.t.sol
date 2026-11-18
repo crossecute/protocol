@@ -120,6 +120,52 @@ contract AuthorityGraphPassTest is ReceiverAuthorityTestBase {
         );
     }
 
+    function test_returnedChildOwnersRequireForwardLinksDespiteCachedGraphs() public {
+        ChildUpdate[] memory links = _returningChildChain();
+        AuthorityGraph memory a2 = _graph(_rA0(), _node(_rB1(), _hash(links[0].evidence, _b())), _node(_rC0(), _pC0()));
+        _selectA(a2, _children(links[0]));
+        _selectA(
+            _graph(_rA0(), _node(_rB0(), _hash(links[2].evidence, _b())), _node(_rC0(), _pC0())),
+            _children(links[1], links[2])
+        );
+        bytes32 head = receiver.selection().updateHead;
+        _expectSelectA(
+            a2, new ChildUpdate[](0), abi.encodeWithSelector(ReceiverAuthority.UnprovenPosition.selector, _b())
+        );
+        _expectSelectA(
+            _graph(_rA0(), _node(links[1].newRecord, _hash(links[1].evidence, _b())), _node(_rC0(), _pC0())),
+            _children(links[1]),
+            abi.encodeWithSelector(ReceiverAuthority.UnprovenPredecessor.selector, 0)
+        );
+        assertEq(receiver.selection().updateHead, head);
+
+        _selectA(
+            _graph(_rA0(), _node(_rB1(), _hash(links[3].evidence, _b())), _node(_rC0(), _pC0())), _children(links[3])
+        );
+        (address firstOwner, bytes32 position) = receiver.selectedNode(1);
+        assertEq(firstOwner, vm.addr(ERIN));
+        assertEq(position, _hash(links[3].evidence, _b()));
+        assertTrue(position != _hash(links[0].evidence, _b()));
+        assertEq(
+            AuthorityUpdateEncoding.recordHash(links[0].newRecord),
+            AuthorityUpdateEncoding.recordHash(links[3].newRecord)
+        );
+    }
+
+    function _returningChildChain() private returns (ChildUpdate[] memory links) {
+        links = new ChildUpdate[](4);
+        (SafeTxEvidence memory evidence, AuthorityGraph memory graph) = _b1(BOB);
+        links[0] = _childUpdate(evidence, graph);
+        (evidence, graph) = _b2(evidence);
+        links[1] = _childUpdate(evidence, graph);
+        graph = _graphB0();
+        evidence = _change(_b(), _hash(evidence, _b()), graph, _swap(_b(), SENTINEL, vm.addr(DAVE), vm.addr(BOB)), DAVE);
+        links[2] = _childUpdate(evidence, graph);
+        graph = _graph(_rB1(), _node(_rC0(), _pC0()));
+        evidence = _change(_b(), _hash(evidence, _b()), graph, _swap(_b(), SENTINEL, vm.addr(BOB), vm.addr(ERIN)), BOB);
+        links[3] = _childUpdate(evidence, graph);
+    }
+
     /* =================================== T29 =================================== */
 
     function test_childOwnReceiverOnAbandonedBranchIsNotRead() public {
