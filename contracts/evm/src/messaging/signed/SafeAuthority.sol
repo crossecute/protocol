@@ -21,10 +21,8 @@ struct SafeAuthorityState {
 library SafeAuthority {
     using NestedOwnerManagerLib for SafeOwnerState;
 
-    /// @notice Validate and store the root Safe, source chain and each reachable Safe's owner
-    ///         configuration.
-    /// @dev The destination needs an authenticated local authority snapshot because the source
-    ///      Safes cannot be queried during destination verification.
+    /// @dev The source Safes cannot be queried during destination verification, so the destination
+    ///      keeps an authenticated local snapshot.
     function store(SafeAuthorityState storage self, SafeAuthorityRecord[] memory records, uint256 sourceChainId)
         public
     {
@@ -37,9 +35,7 @@ library SafeAuthority {
         }
     }
 
-    /// @notice Reconstruct the stored authority graph in canonical order.
-    /// @dev Readback lets callers inspect the ownership snapshot and reproduce its commitment
-    ///      without relying on source-chain state.
+    /// @notice The stored authority graph in canonical order.
     function readRecords(SafeAuthorityState storage self) public view returns (SafeAuthorityRecord[] memory) {
         bytes32 context;
         assembly ("memory-safe") {
@@ -48,10 +44,6 @@ library SafeAuthority {
         return SafeAuthorityGraph.walk(self.root, context, _loadStored);
     }
 
-    /// @notice Read one Safe's stored owners and threshold through the supplied storage
-    ///         context.
-    /// @dev This adapts receiver storage to the same graph traversal used for source
-    ///      derivation; `context` identifies the authority storage slot.
     function _loadStored(bytes32 context, address safe) private view returns (SafeOwner[] memory, uint256) {
         SafeAuthorityState storage self;
         assembly ("memory-safe") {

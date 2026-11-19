@@ -6,10 +6,7 @@ library Bytes {
     error OutOfBounds();
     error WrongSelector(bytes4 expected);
 
-    /// @notice Copy `length` bytes starting at `start` into a new byte array, reverting if the
-    ///         range is invalid.
-    /// @dev Signature payloads and call arguments need independent slices. Copy without `MCOPY`
-    ///      so the helper works on the protocol's Paris EVM target.
+    /// @notice Copy `length` bytes from `start` into a new array, reverting if the range is invalid.
     function slice(bytes memory data, uint256 start, uint256 length) internal pure returns (bytes memory out) {
         if (start > data.length || length > data.length - start) revert OutOfBounds();
         out = new bytes(length);
@@ -22,9 +19,7 @@ library Bytes {
         }
     }
 
-    /// @notice Check the function selector and return the remaining bytes of `data`.
-    /// @dev Signed-call decoders must confirm which function was authorized before interpreting
-    ///      its arguments; stripping any four bytes would allow the wrong call type.
+    /// @notice The calldata after `selector`, reverting if `data` does not start with it.
     function arguments(bytes memory data, bytes4 selector) internal pure returns (bytes memory) {
         // forge-lint: disable-next-line(unsafe-typecast) the first four bytes, after the length check
         if (data.length < 4 || bytes4(data) != selector) revert WrongSelector(selector);

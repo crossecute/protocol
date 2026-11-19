@@ -56,9 +56,6 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     error BalanceChanged(uint256 before, uint256 afterwards);
     error RelayReentered();
 
-    /// @notice Return this transmitter's namespaced signed-mode storage.
-    /// @dev A fixed namespace avoids changing the base contracts' sequential layout when signed
-    ///      authority and relay tracking are added.
     function _signedStorage() private pure returns (SignedTransmitterStorage storage $) {
         assembly ("memory-safe") {
             $.slot := SIGNED_TRANSMITTER_STORAGE
@@ -81,9 +78,8 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     /* ================================ owner calls =============================== */
 
     /// @notice In signed mode, consume the Safe's staged call and transmit its signed evidence
-    ///         with nested approvals.
-    /// @dev The receiver needs the original authorization to verify independently of the
-    ///      provider. Fees come from the conduit balance; plain mode uses the base send path.
+    ///         with nested approvals; plain mode uses the base path.
+    /// @dev Fees are paid from the conduit's balance.
     function sendMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
         public
         payable
@@ -96,10 +92,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return _sendStandalone(to, wire, options);
     }
 
-    /// @notice Quote, fund and transmit a standalone wire message while emitting the standard
-    ///         send event.
-    /// @dev Using the already built wire bytes ensures the amount paid matches the signed
-    ///      payload the provider actually sends.
+    /// @dev The fee is quoted on the exact wire bytes sent.
     function _sendStandalone(bytes memory recipient, bytes memory wire, bytes[] memory attributes)
         private
         returns (bytes32)
@@ -108,9 +101,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return _sendFundedMessage(recipient, wire, attributes, providerFee, _crossecuteFee(providerFee));
     }
 
-    /// @notice Validate the conduit recipient and quote the complete signed wire payload.
-    /// @dev Only this conduit's reachable receiver is a valid route, and signatures must be
-    ///      included in the provider's payload price.
+    /// @dev Only this conduit's reachable receiver is a valid route, and the fee covers the signatures.
     function _quoteStandalone(bytes memory recipient, bytes memory wire, bytes[] memory attributes)
         private
         view
@@ -140,7 +131,6 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         _sendSignedBootstrap(chainKey, route, body, attributes, fee);
     }
 
-    /// @notice The destination key, route and `SignedBootstrap` body for a bootstrap payload.
     /// @dev Shared by `bootstrap` and `quoteBootstrap`, so the quote prices the bytes sent.
     function _signedBootstrap(bytes calldata payload)
         private
@@ -153,10 +143,8 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         body = SignedTransmitterLib.bootstrapBody(chainKey, typed, supplied);
     }
 
-    /// @notice Require the owner's root to be published by its current guard, then register it
-    ///         once.
-    /// @dev Later leaf relays need an explicit source registration, while keeping signatures
-    ///      out of storage lets each relayer supply its own evidence.
+    /// @dev Later leaf relays need an explicit source registration; keeping signatures out of
+    ///      storage lets each relayer supply its own evidence.
     /// @inheritdoc ISignedTransmitter
     function registerRoot(bytes32 root) external onlyConduitOwner {
         _requireSigned();
@@ -169,16 +157,14 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         emit RootRegistered(root);
     }
 
-    /// @notice Transfer ownership only in plain mode; reject changes in signed mode.
     /// @dev Signed receivers hold the creation-time Safe's authority, so the owner cannot move.
     function transferOwnership(address newOwner) public virtual override {
         if (_signedStorage().signed) revert OwnershipFixed();
         super.transferOwnership(newOwner);
     }
 
-    /// @notice Allow plain-mode renunciation but reject it in signed mode.
-    /// @dev Renouncing signed ownership would permanently disable the fixed Safe's owner-only
-    ///      operations without changing destination authority.
+    /// @dev Renouncing would permanently disable the fixed Safe's owner-only operations without
+    ///      changing destination authority.
     function renounceOwnership() public virtual override {
         if (_signedStorage().signed) revert OwnershipFixed();
         super.renounceOwnership();
@@ -208,8 +194,6 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
 
     /* ============================== permissionless ============================== */
 
-    /// @notice Verify and transmit an unused authorized leaf, charging the caller and refunding
-    ///         any synchronous excess.
     /// @dev The relay lock, used-leaf mark and final balance check prevent reentrant reuse or
     ///      spending preexisting conduit funds on another caller's relay.
     /// @inheritdoc ISignedTransmitter
@@ -301,8 +285,8 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     }
 
     /// @notice Build the signed standalone payload and return the fee its send would pay.
-    /// @dev Sharing the send builder, including live nested approval collection, prevents
-    ///      quotes from omitting evidence bytes or pricing a different message.
+    /// @dev Shares the send builder, including live nested approval collection, so a quote cannot
+    ///      omit evidence bytes or price a different message.
     function quoteSignedMessage(SafeTxEvidence calldata evidence) external view returns (uint256) {
         _requireSigned();
         evidence;
@@ -312,9 +296,9 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return providerFee + _crossecuteFee(providerFee);
     }
 
-    /// @notice Return the fee for relaying the supplied signed registration, leaf and proof.
-    /// @dev Sharing relay validation and wire construction avoids quoting an unregistered,
-    ///      already relayed or differently encoded leaf as executable.
+    /// @notice The fee for relaying the supplied signed registration, leaf and proof.
+    /// @dev Shares relay validation and wire construction, so an unregistered, already relayed or
+    ///      differently encoded leaf is not quoted as executable.
     function quoteRelay(
         SafeTxEvidence calldata registrationEvidence,
         ExecutionLeaf calldata leaf,
@@ -345,10 +329,8 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
 
     /* ================================= builders ================================= */
 
-    /// @notice Build the relay wire payload, check local root and leaf state, validate the
-    ///         recipient and quote the fee.
-    /// @dev The linked builder checks signatures and proofs; this wrapper adds the
-    ///      transmitter's registration, replay and routing state for both quotes and sends.
+    /// @dev The linked builder checks signatures and proofs; this wrapper adds the transmitter's
+    ///      registration, replay and routing state, for quotes and sends alike.
     function _relay()
         private
         view
