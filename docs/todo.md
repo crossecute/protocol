@@ -107,11 +107,12 @@ the seventh; what they mean for an operator is in the README.
   archive-service operation and live-provider validation. The offline
   [archive utility](../tools/authority-archive/README.md) provides graph and evidence retrieval. Current authority update
   measurements are in [updates.md](benchmarks/authority-109/updates.md).
-- **Published leaves have no package or indexer yet.** `publishLeaves` follows #108's leaf and
-  tree rules, but the versioned Merkle package #108 Q8.1 calls for does not exist, so the guard's
-  tests check its root against a vector computed with `cast` and its proofs against
-  OpenZeppelin's `MerkleProof`. Once the package exists, add a test against its output. Nothing
-  indexes `LeafPublished` events yet.
+- **Nothing indexes `LeafPublished` events yet.** `publishLeaves` follows #108's leaf and
+  tree rules. The guard's tests check its root and leaf hashes against a vector computed with
+  `cast` and its proofs against OpenZeppelin's `MerkleProof`. The versioned Merkle package in the
+  SDK ([sdk#15](https://github.com/crossecute/sdk/pull/15), merged to `main` in
+  [sdk#13](https://github.com/crossecute/sdk/pull/13)) asserts the same vector, and its shared
+  Solidity/TypeScript vectors cover odd-sized trees.
 - **Nothing checks for Cancun before the Safe guard is installed.** The guard reads transient
   storage in every owner pre-hook, so on a chain without EIP-1153 it would make every owner
   transaction revert, including its own removal. Installation tooling should confirm the chain
