@@ -158,7 +158,7 @@ the conduit).
 
 | Rule | Tests |
 | --- | --- |
-| L1.1 | `LzOftForkTest`, which deploys through `LzOftDeploy.factory` on each fork and compares the addresses |
+| L1.1 | `LzOftScriptsTest` checks deployment prediction and rejects a different release address; `LzOftForkTest` compares factory addresses across forks |
 | L1.2 | `test_theConduitLandsWhereItsFieldsDerive`, `testFuzz_everyDestinationProvesIntoTheRoot`, `test_theHomeEidIsBoundIntoTheAddress` |
 | L1.3 | `test_noDestinationsIsRefused`, `test_unsortedOrRepeatedLeavesAreRefused`, `test_aLeafForThisChainIsRefused`, `test_aLeafWithTheHomesEidIsRefused`, `test_aLeafTheHomeOftDoesNotPeerIsRefused`, `test_aHomeOftWithoutAnEndpointIsRefused` |
 | L2.1, L2.4 | `test_theBootstrapGoesThroughTheHomeOftFromTheConduit`, `test_aMessageGoesToTheReceiverWithThePayloadAsTheCompose`, `test_theBootstrapIsBuiltFromTheConduitsFields`, `test_aBootstrapForAnotherCallerOrIdentityIsRefused`, `LzOftForkTest` |

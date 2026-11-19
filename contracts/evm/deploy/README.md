@@ -113,9 +113,10 @@ Both unset deploy a receiver implementation for plain mode only. For OFT the pin
 decide the factory's address, since the factory is built with the receiver's address and is not
 a proxy: a pin set on one chain and unset or different on another puts the factory, and every
 conduit it derives, at another address there, and bootstraps to that chain revert. Run
-`forge script script/DeployLzOft.s.sol --sig 'predict()'` once with the release's pins, record
-the address, and set `CROSSECUTE_OFT_FACTORY` to it on every chain; the script refuses to deploy
-anything else. A signed bootstrap names
+`forge script script/DeployLzOft.s.sol --sig 'predict()'` with the release's bytecode, library
+links, canonical treasury configuration and pins. Record the address and set
+`CROSSECUTE_OFT_FACTORY` to it on every chain.
+The script refuses to deploy at a different address. A signed bootstrap names
 its source guard and must match the destination implementation's guard pin; the helper
 address must be the one that source guard recognizes. Verify both pins before enabling a
 signed route. Source Safes must activate before signed bootstrap can be quoted or sent.
