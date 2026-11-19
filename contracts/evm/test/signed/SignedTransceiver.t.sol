@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
@@ -86,6 +87,18 @@ contract SignedTransceiverTest is HyperlaneFixture {
         assertEq(st.conduitSalt(), SALT, "the caller's salt is kept");
         assertTrue(st.isSigned());
         assertEq(conduit, ext(address(t)).predictConduit(address(safe), SALT, t.localChainKey()));
+    }
+
+    /// @notice A guarded Safe whose owner does not answer as a Safe is refused at creation, as by
+    ///         the OFT factory.
+    function test_aGuardedSafeWithAnOwnerThatIsNotASafeIsRefusedAtCreation() public {
+        address[] memory owners = new address[](2);
+        (owners[0], owners[1]) = (vm.addr(1), address(sink));
+        safe.setOwners(owners, 2);
+        safe.setGuard(address(guard));
+        vm.prank(address(safe));
+        vm.expectRevert(abi.encodeWithSelector(SafeAuthorityGraph.NotASafe.selector, address(sink)));
+        t.createTransmitter(SALT);
     }
 
     /// @notice Independently derive the signed conduit salt and address.

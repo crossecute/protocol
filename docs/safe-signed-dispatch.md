@@ -303,7 +303,8 @@ Cases:
   No migration from an earlier deployed receiver is provided. The base's sequential
   layout is unchanged ([R8.2](provider-spec.md#r8-storage-and-address-parity)).
 - **Q3.10** Transmitter creation derives live owners to fail early for a graph that cannot
-  derive. Bootstrap instead takes a supplied selected graph and checks its hash and head
+  derive, in every binding: the registry transceivers and `LzOftConduitFactory` both call
+  `SafeViewer.signedAuthority`, so one owner is accepted or refused alike. Bootstrap instead takes a supplied selected graph and checks its hash and head
   against the guard. It never refreshes nested snapshots from live owners.
 
 ### Q4. Authenticated receiver bootstrap
@@ -619,7 +620,7 @@ Where the design lives in code, and what #108's implementation leaves out.
 | Selected authority storage, hashing and recursive verification (Q5, Q6) | [`authority/ReceiverAuthority.sol`](../contracts/evm/src/messaging/authority/ReceiverAuthority.sol), [`AuthorityUpdateEncoding.sol`](../contracts/evm/src/messaging/authority/AuthorityUpdateEncoding.sol), [`SafeQuorum.sol`](../contracts/evm/src/messaging/signed/SafeQuorum.sol), [`SafeSignaturesUtils.sol`](../contracts/evm/src/messaging/signed/SafeSignaturesUtils.sol) |
 | Source evidence collection under live thresholds (Q6.1, Q6.4) | [`signed/NestedApprovalCollector.sol`](../contracts/evm/src/messaging/signed/NestedApprovalCollector.sol) |
 | Signed calldata decoding shared by both ends (Q1.4) | [`signed/SignedDispatchCalls.sol`](../contracts/evm/src/messaging/signed/SignedDispatchCalls.sol) |
-| Mode at creation (D20) | [`signed/SafeViewer.sol`](../contracts/evm/src/messaging/signed/SafeViewer.sol), `TransceiverExtension.signedAuthority`, `TransceiverBase.createTransmitter` |
+| Mode at creation (D20) | [`signed/SafeViewer.sol`](../contracts/evm/src/messaging/signed/SafeViewer.sol) (`signedAuthority`), `TransceiverExtension.signedAuthority`, `TransceiverBase.createTransmitter`, `LzOftConduitFactory.createTransmitter` |
 | Signed bootstrap send and arrival (Q4) | `TransceiverBase.bootstrapSigned` and `_signedBootstrapInbound` |
 | Transmitter (T1 to T9) | [`outbound/SignedTransmitter.sol`](../contracts/evm/src/messaging/outbound/SignedTransmitter.sol), with its builders in [`SignedTransmitterLib.sol`](../contracts/evm/src/messaging/outbound/SignedTransmitterLib.sol) |
 | Receiver (R1 to R16) | [`inbound/SignedReceiver.sol`](../contracts/evm/src/messaging/inbound/SignedReceiver.sol) |
@@ -631,7 +632,8 @@ How the pieces fit:
   and its receiver `SignedReceiver`, including LayerZero OFT. A conduit is plain until
   the transceiver or OFT factory calls `initializeSigned`, right after arming it with the plain
   initializer and no calls, in the same transaction. Provider setup has one path for both modes.
-  `LzOftConduitFactory` selects signed mode with the same guard capability probe.
+  `LzOftConduitFactory` selects signed mode with the same creation check
+  (`SafeViewer.signedAuthority`: the guard capability probe, then live owner derivation).
 - **Conduit salt.** `TransceiverCore._conduitSalt` is the same for both modes (Q4.7). Every
   chain-specific address formula overrides `_conduitAt(bytes32)`. The source transceiver's
   bootstrap caller check also holds the envelope kind to the conduit's `isSigned()`.
@@ -657,10 +659,10 @@ How the pieces fit:
 
 ### LayerZero OFT signed transport
 
-`LzOftConduitFactory` selects signed mode at creation without capturing authority. It stores no
-per-conduit mode or identity: `isSigned(conduit)` and `signedConduitBootstrap` read the conduit's
-own `isSigned()`, `deployer()` and `conduitSalt()` and require them to derive the caller, as
-`conduitBootstrap` does. Both modes use
+`LzOftConduitFactory` selects signed mode at creation with the registry's check and without
+capturing authority. It stores no per-conduit mode or identity: `isSigned(conduit)` and
+`signedConduitBootstrap` read the conduit's own `isSigned()`, `deployer()` and `conduitSalt()` and
+require them to derive the caller, as `conduitBootstrap` does. Both modes use
 `keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot))` as their CREATE2 salt.
 The six-argument `predictConduit` exposes derivation; `isSigned(conduit)` and
 `SignedConduitCreated` expose the selected source mode. The route root authenticates OFT routing.

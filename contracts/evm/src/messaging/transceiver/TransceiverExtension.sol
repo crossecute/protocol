@@ -6,7 +6,7 @@ import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
-import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
+import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {SafeViewer} from "src/messaging/signed/SafeViewer.sol";
 
 /// @title TransceiverExtension
@@ -214,11 +214,12 @@ contract TransceiverExtension is TransceiverCore {
 
     /// @notice `owner`'s live authority records, `abi.encode(SafeAuthorityRecord[])`, or empty
     ///         when its guard does not advertise `ICrossecuteGuard`. Read at transmitter creation
-    ///         to choose the mode. Signed bootstraps instead carry the guard's selected graph.
+    ///         to choose the mode and refuse an owner graph that does not derive. Signed
+    ///         bootstraps instead carry the guard's selected graph.
     /// @dev Here rather than in the transceiver for its size.
     function signedAuthority(address owner) external view returns (bytes memory) {
-        if (!SafeViewer.isSigned(owner)) return "";
-        return abi.encode(SafeAuthorityGraph.derive(owner));
+        SafeAuthorityRecord[] memory records = SafeViewer.signedAuthority(owner);
+        return records.length == 0 ? bytes("") : abi.encode(records);
     }
 
     /// @notice Where `(owner, salt)`'s transmitter lives, before it exists.

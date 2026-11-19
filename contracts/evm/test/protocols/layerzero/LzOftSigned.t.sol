@@ -175,6 +175,21 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         );
     }
 
+    /// @notice A guarded Safe whose owner does not answer as a Safe is refused at creation, as by
+    ///         a registry transceiver, so no conduit is funded that its authority cannot describe.
+    function test_aGuardedSafeWithAnOwnerThatIsNotASafeIsRefusedAtCreation() public {
+        StubSafe other = new StubSafe();
+        address[] memory owners = new address[](2);
+        address notASafe = address(new Sink());
+        (owners[0], owners[1]) = (vm.addr(1), notASafe);
+        other.setOwners(owners, 2);
+        other.setGuard(address(guard));
+        LzOftConduitFactory.Leaf[] memory leaves = _leaves(dstOft);
+        vm.prank(address(other));
+        vm.expectRevert(abi.encodeWithSelector(SafeAuthorityGraph.NotASafe.selector, notASafe));
+        factory.createTransmitter(SALT, address(oft), leaves);
+    }
+
     /// @notice The factory keeps no mode record: it reads the flag the conduit holds.
     function test_theFactoryReportsTheModeTheConduitHolds() public {
         vm.prank(address(0xE0A));
