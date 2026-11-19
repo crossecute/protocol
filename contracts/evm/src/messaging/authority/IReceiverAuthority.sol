@@ -17,7 +17,8 @@ interface IReceiverAuthority {
 
     /// @notice Verify and apply the next signed update: a successor of the stored head.
     /// @dev newGraph must hash to the signed graph hash; childUpdates prove every retained
-    ///      descendant position it moves, and each must be used exactly once.
+    ///      descendant position it moves. Every supplied update must be used and must not repeat
+    ///      a position already proven during this verification.
     function submitAuthority(
         SafeTxEvidence calldata evidence,
         AuthorityGraph calldata newGraph,

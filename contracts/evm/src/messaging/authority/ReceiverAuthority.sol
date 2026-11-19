@@ -19,8 +19,8 @@ import {AuthorityRecognition} from "./AuthorityRecognition.sol";
 ///         storage, which keeps the verifier out of each receiver's EIP-170 budget.
 /// @dev Owns graph authentication: canonical structure, each update kind's root record, the
 ///      flat child-update pass and every update's votes. Receiver submission recognizes pinned
-///      source calls; the source guard can supply its own recognized calls. The first selection is seeded from the receiver's
-///      bootstrap; activations are never accepted.
+///      source calls; the source guard supplies recognized calls. A receiver starts from its
+///      bootstrap and rejects submitted activations; the source guard uses verifyActivation.
 library ReceiverAuthority {
     enum UpdateKind {
         Activation,

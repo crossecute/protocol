@@ -534,12 +534,12 @@ Also unverified: **keccak256 availability on Cardano.** Solana, Aptos, and Sui a
 it natively; Plutus gained a `keccak_256` builtin later than the others and the target
 version needs checking. Starknet's `starknet_keccak` is *not* keccak256: see above.
 
-## Planned authority-update encoding (#109)
+## Authority-update encoding (#109)
 
 This file owns application Call[] wire encoding and opaque commitments. #109's
 separate management encoding is defined by the
 [authority design](safe-authority-updates.md#linked-universally-reusable-updates)
-and draft [AuthorityUpdateEncoding](../contracts/evm/src/messaging/authority/AuthorityUpdateEncoding.sol).
+and [AuthorityUpdateEncoding](../contracts/evm/src/messaging/authority/AuthorityUpdateEncoding.sol).
 It uses signed predecessor hashes, no numeric destination nonce watermark and no
 destination-specific authority-update fields. Source SafeTx nonces remain signed.
 Ownership Call[] batches are packed as zero-value self-CALLs for MultiSendCallOnly;

@@ -2,7 +2,8 @@
 
 `CrossecuteGuard`, the Safe 1.5.0 guard described in
 [`docs/safe-guard-design.md`](../../docs/safe-guard-design.md), with its tests. This is a separate
-Foundry project from [`contracts/evm/`](../evm/), which nothing here changes.
+Foundry project from [`contracts/evm/`](../evm/); the two projects share compatible
+interfaces, types and verification libraries.
 
 ## Layout
 
@@ -37,7 +38,7 @@ The policy-engine fork is upstream
 [safe-research/policy-engine](https://github.com/safe-research/policy-engine) at `8ee68a8` plus two
 commits on `SafePolicyGuard`: internal callbacks after the owner policy check, after the module
 policy check and after owner execution, and a helper that strips the policy context extension
-from a signature blob. Its `main` branch mirrors upstream.
+from a signature blob.
 
 The staged selectors are `sendMessage(bytes,bytes,bytes[])` and `bootstrap(bytes,bytes[])`.
 The first is `IERC7786GatewaySource.sendMessage.selector`, imported from
@@ -70,8 +71,8 @@ only the compatible interfaces, types and hash helpers from this directory.
 ```bash
 forge fmt --check
 forge build --sizes src
-forge lint -D notes
-FOUNDRY_PROFILE=lint-src forge lint -D notes src
+python3 script/lint.py -D notes
+FOUNDRY_PROFILE=lint-src python3 script/lint.py -D notes src
 forge test
 ```
 

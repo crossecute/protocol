@@ -8,7 +8,7 @@ import {Bytes} from "src/messaging/signed/Bytes.sol";
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {AuthorityEntry, AuthorityGraph} from "./AuthorityGraph.sol";
 
-/// @notice Draft #109 encoding helpers. Callers must validate canonical graphs before hashing.
+/// @notice Authority-update encodings. Callers must validate canonical graphs before hashing.
 library AuthorityUpdateEncoding {
     bytes32 internal constant GRAPH_DOMAIN = keccak256("Crossecute.AuthorityGraph.v1");
     // Solidity selectors intentionally use the first four bytes of the signature hash.

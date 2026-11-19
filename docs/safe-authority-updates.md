@@ -1,6 +1,6 @@
 # Safe authority updates
 
-Design and draft implementation for [#109](https://github.com/crossecute/protocol/issues/109).
+Design and implementation for [#109](https://github.com/crossecute/protocol/issues/109).
 Extends [signed dispatch](safe-signed-dispatch.md) and the
 [Safe guard](safe-guard-design.md). This file owns architecture and normative behavior;
 [verification](safe-authority-verification-review.md) owns implementation gates/tests,
@@ -73,9 +73,8 @@ node is the root: it identifies the graph owner, not the current node while
 recursively checking signatures.
 
 For A -> B -> C with A -> C, A's graph has root A and records A/B/C. B and A point to
-the same C record. B's own selected graph and C's own selected graph are independent
-entries; their B snapshots can differ from A's authenticated B snapshot. No dynamic
-lookup of B's root selection may change B inside A. Next to each descendant record,
+the same C record. B's and C's own selected graphs are independent. Their records and
+descendant positions can differ from the snapshots A selected. No dynamic lookup of B's root selection may change B inside A. Next to each descendant record,
 A's graph stores that Safe's [position](#child-positions). Each of A's receivers holds A's
 selected hash on its own.
 
@@ -387,12 +386,13 @@ selected graph, with each descendant counted under the position the update names
 One signature set normally passes both. They differ when a child rotates between
 its vote and A's quorum. Then the child's live owners sign for execution, and the
 earlier set is staged as portableSignatures outside the signed SafeTx. The guard
-verifies that set and emits it as the evidence destinations receive. This keeps
-source able to execute whatever destinations would accept.
+verifies that set and emits it as the evidence destinations receive. This separates the
+live execution quorum from the selected portable quorum; source execution still requires both quorums, policy approval and all source checks.
 
 For every descendant position an update names, the guard requires a head that Safe
-executed on source, at or after the position A stores. The guard records a head
-only when that Safe's update executes, so the executed list on source has no
+executed on source. A retained descendant stays at its selected position or advances
+through supplied forward links. Added and re-added Safes are taken at the named executed
+position. The guard records a head only when that Safe's update executes, so the executed list on source has no
 forks. The check covers any executed head, not only the descendant's current one:
 a later rotation by B does not revert A's adoption of an earlier executed position.
 
@@ -404,10 +404,10 @@ An ownership change is one signed Safe transaction:
 | First packed call | CALL guard.registerOwnershipChange(update). |
 | Remaining packed calls | At least one ordered owner mutation: each a zero-value CALL to the signing Safe of addOwnerWithThreshold/removeOwner/swapOwner/changeThreshold. No inner delegatecall, external target or configuration change. |
 | Pre-hook | Recognize this exact shape; verify the staged graph, child updates and portable signatures; derive every intermediate owner list and check its predecessor/sentinel, insertion order, threshold and 16-owner cap; require the result to equal the root record of the new graph. |
-| Post-hook | Require actual ordered owners/threshold to equal that record; set the source selection/head and record the head as executed. |
+| Post-hook | Require the transaction hash to match the live execution and actual ordered owners/threshold to equal the recognized root record. Clear the transient live record; a failure rolls back the selection, executed-head and publication writes made in the pre-hook. |
 
 MultiSendCallOnly's inner CALLs originate from the Safe context, satisfying Safe's
-self-call requirement. The source quorum is checked once, before the batch;
+self-call requirement. Safe's native quorum is checked once, before the batch;
 intermediate threshold changes do not request new signatures. One batch advances the
 linked head once. Because registration and mutation are one SafeTx, a failure reverts
 both together with the nonce, and nothing spans two transactions. Updates of several
@@ -424,15 +424,15 @@ takes the staged data, verifies it, writes the new selection and executed head, 
 live record for the Safe. activate, registerOwnershipChange and selectAuthority are markers
 the Safe calls during execution; each reverts unless the pre-hook recognized the calling
 Safe's transaction as that kind. The post-hook requires the executed hash to be the
-recognized one and the Safe's final owners and threshold to equal the stored root record. A
+recognized one and the Safe's final owners and threshold to match the recognized root record. A
 failure anywhere reverts the whole SafeTx, so the selection, the head and the nonce move
 together or not at all.
 
 ### Protected calls
 
 Once a Safe has activated, the guard refuses these owner transactions whatever the Safe's
-policies allow, so its owners, threshold, guards, handler, modules and singleton change only
-through a recognized update:
+policies allow. Owners and threshold change only through a recognized update; guards,
+handler, modules and singleton remain fixed:
 
 - any call to the Safe itself;
 - any delegatecall except to the pinned SignMessageLib or the recognized ownership batch;
@@ -528,7 +528,8 @@ state, so a prior owner change does not leave it using a stale initial graph. Th
   position the initial graph names.
 
 The activation's SafeTx hash is the Safe's first head, recorded as executed. The initial
-graph names each Safe owner at its current position. No creation proof is checked:
+graph names each Safe owner at an executed position with its record there, which may
+precede that child's current position. No creation proof is checked:
 destinations never receive an activation, since each receiver starts from the head and
 graph its bootstrap carries.
 

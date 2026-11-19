@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-/// @notice How a signature-enabled transmitter finds its owner Safe's transaction guard: read the
-///         guard slot on every `sendMessage` and `bootstrap` instead of pinning an address.
+/// @notice Find a Safe's installed transaction guard through its storage view. Transmitters
+///         use the current guard for staged consumption, bootstrap checks and authority publication.
 library GuardDiscovery {
     /// @dev Safe's `GuardManager.GUARD_STORAGE_SLOT`, `keccak256("guard_manager.guard.address")`.
     uint256 internal constant GUARD_STORAGE_SLOT = 0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8;

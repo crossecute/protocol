@@ -99,8 +99,8 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
     ///         setup calls.
     /// @dev No signature is checked here: signatures cannot prove a carried graph, so the
     ///      graph and head are taken on the provider's authentication of the source transmitter.
-    ///      Owners confirm `authorityRecords` before relying on the receiver. Any failed check or
-    ///      setup call reverts initialization atomically.
+    ///      Owners confirm `selection()` and its full `graph()` before relying on the receiver.
+    ///      A failed check or setup call reverts initialization atomically.
     function initializeSigned(uint256 sourceChainId, address owner, bytes calldata body) external nonReentrant {
         if (msg.sender != parentTransceiver) revert NotParentTransceiver(msg.sender);
         SignedReceiverStorage storage $ = _signedStorage();

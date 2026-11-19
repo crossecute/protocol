@@ -345,7 +345,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         fee = _quoteMessage(destination, wire, attributes);
     }
 
-    /// @notice Route provider refunds to the caller funding a leaf relay.
+    /// @notice Route provider refunds to the caller funding a leaf or authority relay.
     /// @dev Quote and send must select the same recipient because provider metadata may affect
     ///      the price. Other entry points spend conduit funds and retain their refunds.
     function _refundTo() internal view override returns (address) {

@@ -59,7 +59,7 @@ and N-K direct EOAs. Each child has N EOA owners. Actual EOA signature count is
 - Setup, graph installation, signature generation, source Safe execution, transport,
   dispatch decoding, Merkle proofs, application calls, commitment/replay writes and
   linked authority updates/descendant authentication are excluded. This harness
-  does not implement the proposed #109 receiver authority or source mutation batches.
+  does not exercise the linked receiver authority or source mutation batches.
 - Cold measurements explicitly cool harness storage and harness/library accounts
   after graph installation. Warm measurements immediately repeat the same proof.
   Foundry `isolate=false` is explicit: isolated calls otherwise reset warming.
@@ -69,7 +69,7 @@ and N-K direct EOAs. Each child has N EOA owners. Actual EOA signature count is
   transaction estimate; call-wrapper overhead and modern fork/chain data pricing
   differ. No ETH/USD or L2 fee claim is made.
 - This is the optimized existing verifier, not native Safe execTransaction and not
-  a benchmark of future #109 linked updates, lineage, graph caching or finite-proof tracking.
+  a benchmark of linked updates, child transition proofs or selected-graph caching.
   Trees only: shared-child repeated proofs, cyclic stored state, cache/reference
   proofs, low-threshold wide graphs and adversarial maximum payloads are unmeasured.
 - D87 selects 16 immediate owners per Safe, with no aggregate entry cap. The
@@ -78,13 +78,23 @@ and N-K direct EOAs. Each child has N EOA owners. Actual EOA signature count is
 ## Reproduce
 
 Solidity 0.8.28, Paris target, optimizer 200 runs, no via-IR; Foundry 1.8.1.
-Uses repository source in place, without changing production contracts or fetching
-network dependencies. Set `FORGE_STD_SRC` if forge-std is not populated locally;
-the runner also recognizes the existing sibling `protocol` checkout's dependency.
+The retained CSVs were measured against commit `9181da8`, with the source hashes below.
+Run the benchmark against that snapshot in an isolated directory to reproduce them.
+The current harness is copied into the snapshot; forge-std is read from this checkout.
+This leaves the retained results in the working tree intact:
 
 ```bash
-FORGE=/home/carter/.foundry/bin/forge python3 docs/benchmarks/authority-109/run.py
+benchmark_root="$(mktemp -d)"
+git archive 9181da8 | tar -x -C "$benchmark_root"
+mkdir -p "$benchmark_root/docs/benchmarks"
+cp -R docs/benchmarks/authority-109 "$benchmark_root/docs/benchmarks/"
+FORGE_STD_SRC="$PWD/contracts/evm/lib/forge-std/src" FORGE="$HOME/.foundry/bin/forge" \
+  python3 "$benchmark_root/docs/benchmarks/authority-109/run.py"
 ```
+
+Running `run.py` directly in the current tree measures the current `SafeAuthority`
+harness and replaces its local outputs; those are not the retained historical numbers.
+Use [measure-updates.py](measure-updates.py) for the current linked authority paths.
 
 The runner writes `results.csv`, `wire-sizes.csv` and `run.log` beside this report. Test setup and
 fixture signing are outside timed regions. Each case also checks that changing the
@@ -92,7 +102,7 @@ root digest rejects its signature proof, and the runner checks cold > warm gas.
 
 ## Source identity
 
-Checkout HEAD: `9181da8b3cb3b8e8433b987ed19322203fa1ce0f`. Existing uncommitted work was preserved.
+Measurement source revision: `9181da8b3cb3b8e8433b987ed19322203fa1ce0f`.
 
 - `contracts/evm/src/messaging/signed/SafeAuthority.sol` SHA-256: `869188ec78fc06a9cd6e3469a2fb6eb6406a16153688907fea45d26c6dfc64e1`
 - `contracts/evm/src/messaging/signed/SafeSignaturesUtils.sol` SHA-256: `6cb33e11975eb035b1254aabc84b4a121c39b8f797c0902abe4b40110519d658`

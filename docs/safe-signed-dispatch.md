@@ -12,13 +12,14 @@ from a registered Merkle root, and how a receiver verifies and executes it. Trac
 [Implementation](#implementation) for where each part lives and what it leaves out. Gas/payload measurements and real Safe 1.5.0/guard/conduit integration tests are recorded in
 [safe-signed-dispatch-measurements.md](safe-signed-dispatch-measurements.md), completing #134.
 The inherited delivery-gas defaults are unsuitable for general signed delivery: use explicit
-provider gas attributes derived from an exact destination simulation. Where this
-file and #108 disagree, #108 is current: its "Fixed authority and shared salt" section and its
-root registration text, which stores no signatures, are what the code follows.
+provider gas attributes derived from an exact destination simulation. This file describes
+application dispatch; the [authority design](safe-authority-updates.md) owns bootstrap
+selection and linked authority updates. Root registration stores no signatures.
 
-**Labels.** *Decided* items come from #108 or were agreed while refining it. *Proposed*
-answers are recommendations awaiting agreement. *Open* items have no recommendation yet. IDs
-(D3, C2, Q4.6, R10) are stable so discussion can refer to them; a resolved item keeps its ID.
+**Labels.** D items record decisions, C items record resolved design conflicts, Q items
+describe protocol details, and O items record operational notes and remaining work. IDs
+(D3, C2, Q4.6, R10) remain stable for discussion. Outstanding tooling and deployment
+work is identified explicitly.
 
 ## Authority-update integration (#109)
 
@@ -156,7 +157,7 @@ Authority:
   provider acceptance. Only the receiver records execution. #108 adds no separate
   signed minimum-gas field or receiver gas-floor check (O7).
 
-## Conflicts to resolve first
+## Resolved design conflicts
 
 - **C1. Duplicate acknowledgment after an authority change.** A duplicate still requires
   the receiver's applied authority. #109 owns duplicate and retry behavior across applied
@@ -184,7 +185,7 @@ Authority:
   gaps, no stored execution hash, leaves committing to the parent nonce, and evidence that must
   delegatecall a supported signing library. This file replaces it.
 
-## Open questions
+## Protocol details
 
 ### Q1. Signed calldata and delivery envelope
 
@@ -264,7 +265,7 @@ Cases:
   authorization. A self-call to #109's update entry point would combine update and
   execute and must be blocked. The dispatch entry points use the reentrancy lock.
 - **Q2.11** Two leaves for the same receiver and nonce in one tree are both signed; the first
-  delivered wins. Builders refuse to produce them.
+  delivered wins. The outstanding Q8.1 builder must refuse to produce that conflict.
 - **Q2.12** A nonce gap inside one tree is allowed; another tree fills it.
 
 ### Q3. Owner graph
@@ -281,9 +282,9 @@ Cases:
   nested owner if its record is missing.
 - **Q3.2** Preserve each Safe's `getOwners()` order. Signature verification separately
   requires ascending signer addresses.
-- **Q3.3** For the #108 baseline, traverse depth first from the root in owner order,
-  emit each Safe record on first visit and reject cycles. #109 keeps the same rule and
-  traversal; see the authority-update design.
+- **Q3.3** Canonical traversal starts at the root, follows owner order depth first,
+  emits each Safe record on first visit and rejects cycles. Live derivation and selected
+  authority validation share that traversal.
 - **Q3.4** Bootstrap carries the guard's selected head and graph. Each receiver applies later
   linked updates independently through submitAuthority; there is no authority counter.
 - **Q3.5** Reject invalid thresholds, zero and sentinel owners, duplicate owners, duplicate
@@ -349,7 +350,10 @@ encoded selected graph and setup calls, which the destination takes on the provi
   envelope before initialization. Signed mode requires a derivable source. Derive the
   receiver with the same salt and the destination's deployment inputs. Both modes use the
   shared implementation.
-- **Q4.8** Measure the encoded bootstrap envelope and initialization gas against graph size.
+- **Q4.8** `SignedReceiver.test_bootstrapEncodingStatesItsSizeIncrease` checks the current
+  body-size formula. `SignedDispatchGas.t.sol` measures bootstrap fixtures. The retained
+  #134 report identifies its measured source snapshot; deployment requires simulation
+  of the exact release payload and graph.
 
 ### Q5. Recursive signature verification
 
@@ -357,7 +361,7 @@ Which Safe 1.5.0 fallback handler behavior is reproduced? Specify ordering, dyna
 lengths, and the parent's trailing policy extension. Check whether current-authority checks
 affect acknowledgment of an executed leaf after an authority change (C1).
 
-*Proposed.* The parent level reproduces Safe 1.5.0 `checkNSignatures` with no executor, so
+The parent level reproduces Safe 1.5.0 `checkNSignatures` with no executor, so
 `v = 1` never passes. Children reproduce `CompatibilityFallbackHandler.isValidSignature(bytes32,
 bytes)`: the child message hash is `keccak256(0x1901 ‖ childDomain ‖ keccak256(abi.encode(
 SAFE_MSG_TYPEHASH, keccak256(abi.encode(dataHash)))))`, checked against the child's threshold
@@ -445,7 +449,7 @@ Cases:
 - **Q6.10** Size the full encoded provider payload, including the signed authorization,
   any leaf and proof, and the nested evidence with its lookup keys and array framing.
   Quote and send with the same encoded bytes, destination and provider attributes. Pay
-  the provider the fee returned by the quote for that send. The [guard measurements](https://github.com/crossecute/protocol/blob/6be68a278b6594390c0be67a9671d54c8e2f443d/docs/safe-approval-evidence-sizing.md)
+  the provider the fee returned by the quote for that send. The [guard measurements](safe-approval-evidence-sizing.md)
   cover guard return data.
 
 ### Q7. Resource limits
@@ -454,18 +458,21 @@ Which limits come from the provider or chain, and what should be measured?
 
 Cases:
 
-- **Q7.1** The receiver adds no resource caps on gas, owner counts, graph depth, proof
-  length, call batch size, signature blobs or nested evidence. Normal chain execution
-  limits apply.
-- **Q7.2** The source derivation and receiver bootstrap apply the same authority graph
-  validity rules, so a signed transmitter cannot send an invalid graph.
+- **Q7.1** #109 caps each Safe at 16 immediate owners in a selected graph or child record
+  and at every ownership-mutation step. There is no aggregate-owner, graph-depth, proof,
+  call-batch, signature-blob or nested-evidence cap. Chain and provider limits still apply.
+- **Q7.2** Creation-time source derivation validates live owner groups and canonical
+  traversal. Signed bootstrap checks the supplied graph hash and head against an activated
+  source guard. The receiver validates the carried selected graph, including canonicality
+  and the 16-owner cap. Bootstrap never derives fresh child snapshots from live owners.
 - **Q7.3** The provider enforces its payload size limit. Quote and send the full encoded
   payload under Q6.10.
 - **Q7.4** The transmitter adds no payload size cap, including for standalone sends (O3).
-- **Q7.5** Measurements needed before choosing numbers: gas per signature entry, per nested
-  level and per evidence item; memory expansion for large blobs; bootstrap storage gas against
-  owners and nodes; receiver code size against EIP-170; each provider's maximum message size
-  and destination gas cap per route (not yet verified).
+- **Q7.5** Local signature, evidence, bootstrap and payload measurements are recorded in
+  [the dispatch report](safe-signed-dispatch-measurements.md) and
+  [authority update measurements](benchmarks/authority-109/updates.md). CI checks runtime
+  size against EIP-170. Live provider message-size and destination-gas limits require
+  per-route validation in [#118](https://github.com/crossecute/protocol/issues/118).
 
 ### Q8. Permissionless bundle availability
 
@@ -512,7 +519,7 @@ Cases:
   signatures, `v = 1`, missing evidence or a wrong destination needs a corrected submission
   or new authorization.
 
-## Other open items
+## Operational notes and follow-ups
 
 - **O1.** Resolved in D9. Signed receivers derive execution authority from verified
   Safe authorization, including previously approved commitments. Equality with the
@@ -526,8 +533,10 @@ Cases:
 - **O4.** Quote and send parity is resolved in Q6.10.
 - **O5.** `MessageSent` reports the signed recipient for a standalone send and the leaf
   destination for `relayLeaf`. Root registration creates no provider message.
-- **O6.** One reentrancy lock covers `receiveMessage`, direct submission, `finalize`, `execute`
-  and #109's update entry point. A leaf calling `finalize` reverts; document it.
+- **O6.** One receiver reentrancy lock covers provider delivery, direct application and
+  authority submission, bootstrap, `finalize` and `execute`. Application calls cannot
+  enter `finalize` or apply authority updates while that lock is held; reentry regressions
+  cover these shared routes.
 - **O7.** Resolved in D23. `Executor` reverts the batch if a top-level call fails. A
   target that handles an internal failure and returns successfully is treated as a
   successful call. Signers account for that behavior when reviewing calls and sizing
@@ -542,8 +551,9 @@ Cases:
   messages, including selected-graph, nonce and validity rules for that retry.
 - **O11.** No atomicity across destinations: a two-chain upgrade can stay half applied.
 - **O12.** EVM destinations only in the first release. No leaf can target the home chain.
-- **O13.** Receiver code size: the verifier, codec and Merkle code likely exceed EIP-170 and
-  need an extension or libraries, fixed with the receiver.
+- **O13.** Receiver verification and authority codecs use fixed linked libraries. CI
+  enforces EIP-170 for production source artifacts; deployment must use the reviewed
+  linked-library addresses.
 - **O14.** The receiver deduplicates, so the exactly-once transport requirement
   ([P7](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist),
   [R3.5](provider-spec.md#r3-receive)) can be relaxed for signed mode. Check each provider's retry path for
@@ -627,9 +637,11 @@ How the pieces fit:
   bootstrap caller check also holds the envelope kind to the conduit's `isSigned()`.
 - **Wire formats.** A signed provider message leads with one word: `WIRE_STANDALONE` before
   `SafeTxEvidence`, or `WIRE_MERKLE` before `(SafeTxEvidence, ExecutionLeaf, bytes32[])` (D4).
-  Each decoder then requires its signed selector.
+  Authority delivery uses `abi.encode(WIRE_AUTHORITY, submission)` with tag 3;
+  `submission` is `abi.encode(SafeTxEvidence, AuthorityGraph, ChildUpdate[])`.
+  Each route recognizes its signed source call before applying authorization.
 - **Quotes.** In signed mode `quoteMessage` reverts, since the fee depends on signatures.
-  `quoteSignedMessage`, `quoteBootstrap` and `quoteRelay` share each send's builder, so quote
+  `quoteSignedMessage`, `quoteBootstrap`, `quoteRelay` and `quoteAuthority` share their send's builder, so quote
   and send price the same bytes (Q6.10).
 - **Size.** `ReceiverAuthority`, `AuthorityRecognition` and `SignedTransmitterLib` are linked
   libraries, deployed as `WormholeMessage` and `LzMessage` are, to keep transmitters and

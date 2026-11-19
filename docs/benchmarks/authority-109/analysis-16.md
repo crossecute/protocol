@@ -32,11 +32,12 @@ in results.csv are different. Proofs used for size serialization authenticate th
 benchmark digest, not the separately encoded transfer; real signatures over the
 transfer digest have the same encoded length. Native/token transfers execute from
 the destination receiver's balance; this is not signed OFT bridging work.
-Separate signMessage evidence, larger call batches, signed provider attributes,
-bootstrap/authority registration and future #109 fields can increase payload size.
-The unimplemented #109 counter-bearing wire ABI is not sized here. A 10,000-byte
-pathway budget is an example, not a claim about every LayerZero route.
+Separate signMessage evidence, larger call batches and signed provider attributes
+can increase payload size. Bootstrap and linked authority submissions have distinct
+encodings; [updates.md](updates.md) measures the implemented authority paths.
+The 10,000-byte pathway budget is illustrative, not a claim about every LayerZero route.
 
 All 43 benchmark configurations pass verification and wrong-digest controls.
 Reproduce using [run.py](run.py); see [methodology](README.md), [wire sizes](wire-sizes.csv)
-and [gas results](results.csv). No production contract changes, commits or pushes.
+and [gas results](results.csv). These retained measurements use the source snapshot
+identified in the methodology, not the current receiver implementation.
