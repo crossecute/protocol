@@ -61,10 +61,8 @@ library NestedApprovalCollector {
     ) private view returns (NestedSafeApproval[] memory) {
         (bytes32 r, bytes32 s, uint8 v) = SafeSignaturesUtils.entry(safe, signatures, index);
         if (v != 0) return approvals;
-        // forge-lint: disable-next-line(unsafe-typecast) Safe reads the owner the same way
-        address child = address(uint160(uint256(r)));
         return _nested(
-            child,
+            SafeSignaturesUtils.contractOwner(r),
             dataHash,
             SafeSignaturesUtils.extractContractSignature(safe, signatures, uint256(s), threshold),
             approvals
@@ -98,11 +96,8 @@ library NestedApprovalCollector {
         view
         returns (SignedSafeTx memory, NestedSafeApproval[] memory)
     {
-        for (uint256 i; i < approvals.length; ++i) {
-            if (approvals[i].childSafe == child && approvals[i].messageHash == messageHash) {
-                return (approvals[i].approval, approvals);
-            }
-        }
+        uint256 found = SafeSignaturesUtils.indexOfApproval(approvals, child, messageHash);
+        if (found != approvals.length) return (approvals[found].approval, approvals);
         // forge-lint: disable-next-line(calls-loop) a memory allocation, not a call
         NestedSafeApproval[] memory expandedApprovals = new NestedSafeApproval[](approvals.length + 1);
         for (uint256 i; i < approvals.length; ++i) {
