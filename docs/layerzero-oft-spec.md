@@ -93,7 +93,8 @@ them for a candidate.
   the transmitter MUST validate its head and graph against the source guard's activated selection.
   `signedConduitBootstrap` MUST build
   `abi.encode(SIGNED_BOOTSTRAP, LzOftMessage.Bootstrap, sourceChainId, signedBody)` from the
-  stored routing fields, with empty header calls. `signedBody` carries the selected guard,
+  stored routing fields and the calling conduit's `deployer()` and `conduitSalt()`, which MUST
+  derive the caller, with empty header calls. `signedBody` carries the selected guard,
   head, encoded authority graph and setup calls. The graph and setup arrays are variable-size
   because they represent the selected owners and requested setup; complete wire sizes require
   lane-specific validation.

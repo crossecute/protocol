@@ -657,7 +657,10 @@ How the pieces fit:
 
 ### LayerZero OFT signed transport
 
-`LzOftConduitFactory` selects signed mode at creation without capturing authority. Both modes use
+`LzOftConduitFactory` selects signed mode at creation without capturing authority. It stores no
+per-conduit mode or identity: `isSigned(conduit)` and `signedConduitBootstrap` read the conduit's
+own `isSigned()`, `deployer()` and `conduitSalt()` and require them to derive the caller, as
+`conduitBootstrap` does. Both modes use
 `keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot))` as their CREATE2 salt.
 The six-argument `predictConduit` exposes derivation; `isSigned(conduit)` and
 `SignedConduitCreated` expose the selected source mode. The route root authenticates OFT routing.
