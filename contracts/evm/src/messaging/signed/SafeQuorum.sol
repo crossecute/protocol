@@ -59,9 +59,7 @@ library SafeQuorum {
         _check(source, safe, dataHash, signatures, approvals);
     }
 
-    /// @notice Verify the required number of distinct, ascending owners for one Safe.
-    /// @dev Threshold enforcement and strict signer ordering prevent an incomplete quorum or
-    ///      repeated signer from authorizing a message.
+    /// @dev Strictly ascending signers stop a repeated signer counting twice.
     function _check(
         OwnerSource memory source,
         address safe,
@@ -82,11 +80,8 @@ library SafeQuorum {
         }
     }
 
-    /// @notice Recover an EOA or validate a claimed child Safe, then return that owner's
-    ///         address.
-    /// @dev The owner must be in the Safe's set with the matching kind, so an EOA-kind owner
-    ///      never counts through a contract signature. A child address read from `r` counts
-    ///      only after its own quorum is recursively verified.
+    /// @dev The owner must be in the Safe's set with the matching kind, so an EOA-kind owner never
+    ///      counts through a contract signature, and a child counts only after its own quorum verifies.
     function _signer(
         OwnerSource memory source,
         address safe,
@@ -114,10 +109,8 @@ library SafeQuorum {
         );
     }
 
-    /// @notice Verify a child Safe's inline signatures or the signed approval backing an empty
-    ///         payload.
-    /// @dev Binding verification to the child and source-chain domain proves that the child
-    ///      authorized this parent hash without calling a destination copy of the Safe.
+    /// @dev Binding to the child and source-chain domain proves the child authorized this parent
+    ///      hash without calling a destination copy of the Safe.
     function _checkNested(
         OwnerSource memory source,
         address child,

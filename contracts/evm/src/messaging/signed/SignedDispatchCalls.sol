@@ -26,21 +26,14 @@ library SignedDispatchCalls {
     /// @dev `registerRoot` is nonpayable on the source transmitter.
     error NonzeroRegistrationValue(uint256 value);
 
-    /// @notice Require a CALL to the expected transmitter with zero Safe transaction gas and
-    ///         gas price.
-    /// @dev These are the supported source-call rules; destination verification must not accept
-    ///      a different target, operation or unsupported gas configuration as equivalent
-    ///      authorization.
+    /// @notice Require a CALL to the expected transmitter with zero Safe transaction gas and gas price.
     function requireSourceCall(SafeTx memory safeTx, address target) internal pure {
         if (safeTx.to != target || safeTx.operation != CALL || safeTx.safeTxGas != 0 || safeTx.gasPrice != 0) {
             revert NotSourceCall(target);
         }
     }
 
-    /// @notice Check the `sendMessage` selector and decode its recipient, payload and
-    ///         attributes.
-    /// @dev Both ends must interpret the exact signed calldata the same way before routing or
-    ///      executing its payload.
+    /// @notice Check the `sendMessage` selector and decode its recipient, payload and attributes.
     function sendMessageArgs(bytes memory data)
         internal
         pure
@@ -49,18 +42,15 @@ library SignedDispatchCalls {
         return abi.decode(data.arguments(IERC7786GatewaySource.sendMessage.selector), (bytes, bytes, bytes[]));
     }
 
-    /// @notice Check a nonpayable `registerRoot` call and return the root it authorizes.
-    /// @dev Reject nonzero transaction value so the receiver cannot accept evidence for a
-    ///      registration that would be invalid on the source.
+    /// @notice Check a `registerRoot` call and return the root it authorizes.
+    /// @dev A nonzero value is refused: `registerRoot` is nonpayable, so the source could not have
+    ///      executed such a registration.
     function registeredRoot(SafeTx memory safeTx) internal pure returns (bytes32) {
         if (safeTx.value != 0) revert NonzeroRegistrationValue(safeTx.value);
         return abi.decode(safeTx.data.arguments(ISignedTransmitter.registerRoot.selector), (bytes32));
     }
 
-    /// @notice Require the current destination block time to fall inside the inclusive validity
-    ///         window.
-    /// @dev New execution must respect the signed start and deadline, and an inverted window
-    ///      cannot authorize execution.
+    /// @notice Require the block time to fall inside the inclusive window; an inverted one never opens.
     function requireOpen(uint256 validAfter, uint256 deadline) internal view {
         // forge-lint: disable-next-line(block-timestamp) the signed window is on this chain's block time (#108)
         if (validAfter > deadline || block.timestamp < validAfter || block.timestamp > deadline) {
@@ -68,9 +58,7 @@ library SignedDispatchCalls {
         }
     }
 
-    /// @notice Require the destination to name this EVM chain and the expected receiver
-    ///         address.
-    /// @dev A valid signature for another chain or contract must not authorize execution here.
+    /// @notice Require the destination to name this EVM chain and `self`.
     function requireDestination(bytes memory destination, address self) internal view {
         Erc7930.Interop memory io = Erc7930.parseStrict(destination);
         if (

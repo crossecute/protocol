@@ -77,18 +77,13 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
         MULTISEND_CALL_ONLY = multiSendCallOnly;
     }
 
-    /// @notice Return this receiver's namespaced signed-mode storage.
-    /// @dev A fixed namespace keeps the added authority and replay state separate from the base
-    ///      contract's sequential layout.
     function _signedStorage() private pure returns (SignedReceiverStorage storage $) {
         assembly ("memory-safe") {
             $.slot := SIGNED_RECEIVER_STORAGE
         }
     }
 
-    /// @notice Return whether this receiver stores a graph, which signed initialization sets.
-    /// @dev Message handling and access checks use this flag to retain plain behavior until
-    ///      signed initialization has completed.
+    /// @dev Signed mode is exactly a nonzero stored graph hash.
     function _isSigned() internal view returns (bool) {
         return _signedStorage().graph != bytes32(0);
     }
@@ -150,18 +145,12 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
         if (!_isSigned()) revert NotSigned();
     }
 
-    /// @notice Accept a standalone signed message directly from any caller.
-    /// @dev This provides delivery without the provider while using the same verifier, replay
-    ///      state and reentrancy lock as signed provider messages.
     /// @inheritdoc ISignedReceiver
     function submitMessage(SafeTxEvidence calldata evidence) external payable nonReentrant {
         if (!_isSigned()) revert NotSigned();
         _runMessage(evidence);
     }
 
-    /// @notice Accept a signed root registration and execution leaf directly from any caller.
-    /// @dev Bridge-independent submission must enforce the same proof, nonce and replay rules
-    ///      as provider delivery. Attached value tops up the receiver.
     /// @inheritdoc ISignedReceiver
     function submitLeaf(
         SafeTxEvidence calldata registrationEvidence,
@@ -172,10 +161,8 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
         _runLeaf(registrationEvidence, leaf, proof);
     }
 
-    /// @notice Dispatch an authenticated provider payload through plain or signed handling
-    ///         according to this receiver's mode.
-    /// @dev The base has already checked gateway, origin and sender; signed mode additionally
-    ///      requires a recognized signed envelope and independently verified authorization.
+    /// @dev The base has checked gateway, origin and sender; signed mode also requires a
+    ///      recognized signed envelope and independently verified authorization.
     function _onMessage(bytes calldata payload) internal override {
         if (!_isSigned()) return super._onMessage(payload);
         _onSignedMessage(payload);
@@ -186,10 +173,7 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
         _onSignedMessage(payload);
     }
 
-    /// @notice Decode the signed wire-format tag and dispatch its standalone message or Merkle
-    ///         leaf under the receiver lock.
-    /// @dev Explicit tags prevent interpreting one payload format as another, and the lock
-    ///      prevents nested delivery from bypassing execution ordering.
+    /// @dev The tag selects the wire format. The lock preserves execution order across delivery paths.
     function _onSignedMessage(bytes memory payload) private nonReentrant {
         uint256 format = payload.length < 32 ? 0 : abi.decode(payload, (uint256));
         if (format == WIRE_STANDALONE) {
@@ -212,8 +196,6 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
         }
     }
 
-    /// @notice Verify and execute a standalone message once, keyed by its source Safe
-    ///         transaction hash.
     /// @dev Direct and provider delivery share the digest record, so resubmitting valid
     ///      evidence cannot repeat its calls. A failed execution reverts the record too.
     function _runMessage(SafeTxEvidence memory evidence) private {
@@ -235,7 +217,6 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
         _execute(calls);
     }
 
-    /// @notice Verify a root-authorized leaf and execute it at the next local nonce.
     /// @dev Proof and signature checks establish authority; nonce tracking preserves order and
     ///      rejects conflicts. A matching execution ID returns silently even after expiry or a
     ///      change of delivery attributes; failed calls roll back the nonce and record.
@@ -265,8 +246,6 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
         _execute(calls);
     }
 
-    /// @notice Hash the exact source Safe transaction and verify its root and nested signatures
-    ///         against stored authority.
     /// @dev The source Safe address and chain domain bind the evidence to its original signer
     ///      context; the delivery caller does not grant authorization.
     function _verify(SafeTxEvidence memory evidence) private view returns (bytes32 safeTxHash) {
@@ -276,10 +255,8 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
 
     /* =================================== access ================================= */
 
-    /// @notice In signed mode, authorize protected calls only when this receiver calls itself.
     /// @dev Verified execution and later commitment finalization can make those self-calls; the
-    ///      source transmitter address alone grants no authority. Plain mode retains the base
-    ///      rules.
+    ///      source transmitter address alone grants no authority.
     function isAuthorizedCaller(address conduit) public view override returns (bool) {
         if (_isSigned()) return conduit == address(this);
         return super.isAuthorizedCaller(conduit);
@@ -298,23 +275,17 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
         return _authority().selectedRecords();
     }
 
-    /// @notice Return the nonce required by the next new execution leaf.
-    /// @dev Relayers need this receiver-local ordering value to know which authorized batch can
-    ///      execute next.
+    /// @notice The nonce the next new execution leaf must carry.
     function nextNonce() external view returns (uint256) {
         return _signedStorage().nextNonce;
     }
 
-    /// @notice Return the execution ID recorded at a nonce, or zero if unused.
-    /// @dev This lets callers distinguish an unexecuted position from an already executed batch
-    ///      before retrying a delivery.
+    /// @notice The execution ID recorded at a nonce, or zero if unused.
     function executionAt(uint256 nonce) external view returns (bytes32) {
         return _signedStorage().executions[nonce];
     }
 
-    /// @notice Report whether a standalone Safe transaction hash has already executed.
-    /// @dev Relayers can inspect the shared replay record rather than assuming a failed or
-    ///      duplicated transport message needs execution.
+    /// @notice Whether a standalone Safe transaction hash has already executed.
     function isMessageExecuted(bytes32 safeTxHash) external view returns (bool) {
         return _signedStorage().messages[safeTxHash];
     }

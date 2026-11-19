@@ -14,8 +14,7 @@ interface ISignedTransmitter {
     function bootstrap(bytes calldata payload, bytes[] calldata attributes) external payable;
 
     /// @notice Register an owner-authorized root for later permissionless leaf relays.
-    /// @dev Store only the root: each relayer supplies the signed registration and leaf proof,
-    ///      avoiding a stored copy of every signature bundle.
+    /// @dev Only the root is stored: each relayer supplies the signed registration and leaf proof.
     function registerRoot(bytes32 root) external;
 
     /// @notice Relay a published abi.encode(SafeTxEvidence, AuthorityGraph, ChildUpdate[]) to
@@ -31,11 +30,9 @@ interface ISignedTransmitter {
         view
         returns (uint256 fee);
 
-    /// @notice Pay to transmit one unused leaf authorized by a registered root and signed
-    ///         registration.
-    /// @dev Anyone can advance a batch without another owner transaction. Excess payment and
-    ///      synchronous refunds return to the caller, preserving the transmitter's prior
-    ///      balance.
+    /// @notice Pay to transmit one unused leaf authorized by a registered root and signed registration.
+    /// @dev Excess payment and synchronous refunds return to the caller, preserving the
+    ///      transmitter's prior balance.
     function relayLeaf(
         SafeTxEvidence calldata registrationEvidence,
         ExecutionLeaf calldata leaf,

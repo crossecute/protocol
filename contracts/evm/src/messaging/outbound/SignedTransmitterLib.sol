@@ -25,8 +25,6 @@ import {
 
 /// @dev Safe 1.5.0's signature check against its live owners and threshold.
 interface ISafeSignatures {
-    /// @notice Ask the source Safe to validate signatures against its live owners and
-    ///         threshold.
     /// @dev A permissionless registration relay did not execute the signed Safe transaction
     ///      itself, so its source authorization must be checked before transmission.
     function checkSignatures(address executor, bytes32 dataHash, bytes memory signatures) external view;
@@ -35,11 +33,7 @@ interface ISafeSignatures {
 /// @dev The transmitter's own getters, read back by self-call so this library does not depend on
 ///      its storage layout.
 interface ISignedTransmitterView {
-    /// @notice Return the creation-time owner Safe used as the signed transaction's domain.
-    /// @dev The linked builder needs the fixed source Safe without depending on the
-    ///      transmitter's storage layout.
     function deployer() external view returns (address);
-    /// @notice Return the parent transceiver used to check destination derivation.
     function transceiver() external view returns (address);
 }
 
@@ -51,8 +45,8 @@ interface ISignedTransmitterView {
 library SignedTransmitterLib {
     /// @notice Consume the owner's staged transaction and build its standalone wire message and
     ///         route.
-    /// @dev Capturing evidence during the Safe call preserves the exact signed calldata and
-    ///      attaches approvals the destination cannot read from source guards.
+    /// @dev Capturing evidence during the Safe call preserves the exact signed calldata and attaches
+    ///      approvals the destination cannot read from source guards.
     /// @param callData The transmitter's `msg.data`, which the Safe signed.
     function consumeMessage(bytes calldata callData)
         external
@@ -64,8 +58,6 @@ library SignedTransmitterLib {
 
     /// @notice Build a standalone message from supplied evidence without consuming the guard's
     ///         staged transaction.
-    /// @dev Reusing the send builder lets the transmitter quote the same signature and approval
-    ///      bytes it would transmit.
     /// @param args `abi.encode(SafeTxEvidence)`.
     function quoteMessage(bytes calldata args)
         external
@@ -165,10 +157,6 @@ library SignedTransmitterLib {
         evidence.signedSafeTx = staged;
     }
 
-    /// @notice Check the signed source call, decode a nonempty payload, collect approvals and
-    ///         encode the standalone wire format.
-    /// @dev Both quoting and sending need one builder so signatures, recipient and provider
-    ///      attributes describe the same transmitted message.
     function _standalone(address safe, SafeTxEvidence memory evidence)
         private
         view
@@ -182,10 +170,8 @@ library SignedTransmitterLib {
         wire = abi.encode(WIRE_STANDALONE, evidence);
     }
 
-    /// @notice Hash the signed Safe transaction and replace its nested approvals with evidence
-    ///         read from current guards.
-    /// @dev The destination cannot query source guard state, and the payload must carry exactly
-    ///      the approvals required by the source signature blob.
+    /// @dev The destination cannot query source guard state, and the payload must carry exactly the
+    ///      approvals the source signature blob requires.
     function _collect(address safe, SafeTxEvidence memory evidence) private view returns (bytes32 safeTxHash) {
         safeTxHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, safe, block.chainid);
         evidence.nestedApprovals = NestedApprovalCollector.collect(safe, safeTxHash, evidence.signedSafeTx.signatures);

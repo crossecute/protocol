@@ -28,10 +28,8 @@ library SafeAuthorityGraph {
         return keccak256(abi.encode(records));
     }
 
-    /// @notice Read the root Safe and its nested Safes into canonical authority records.
-    /// @dev Used to validate live source ownership when selecting signed mode. Empty code
-    ///      and exact EIP-7702 delegation indicators count as EOAs; other owners must answer as
-    ///      Safes, but their implementation is not attested.
+    /// @dev Empty code and exact EIP-7702 delegation indicators count as EOAs; other owners must answer
+    ///      as Safes, but their implementation is not attested.
     function derive(address root) internal view returns (SafeAuthorityRecord[] memory) {
         return walk(root, bytes32(0), _loadLive);
     }
@@ -103,10 +101,8 @@ library SafeAuthorityGraph {
         }
     }
 
-    /// @notice Visit a Safe, validate its owner group and recursively visit its nested Safe
-    ///         owners.
-    /// @dev Tracking the active path rejects cycles while allowing a child shared by several
-    ///      parents to have only one record.
+    /// @dev Tracking the active path rejects cycles while a child shared by several parents keeps one
+    ///      record.
     function _visit(
         TraversalState memory traversal,
         address safe,
@@ -135,10 +131,6 @@ library SafeAuthorityGraph {
         traversal.open[index] = false;
     }
 
-    /// @notice Validate one Safe's threshold, owner addresses, owner kinds and absence of
-    ///         duplicate owners.
-    /// @dev Each graph node must describe a supported quorum before traversal or storage can
-    ///      rely on it.
     function _checkGroup(address safe, SafeOwner[] memory owners, uint256 threshold) private pure {
         if (threshold == 0 || threshold > owners.length) revert InvalidThreshold(safe, threshold, owners.length);
         for (uint256 i; i < owners.length; ++i) {
@@ -187,10 +179,8 @@ library SafeAuthorityGraph {
         if (slots[pos] == 0) slots[pos] = index + 1;
     }
 
-    /// @notice Double the traversal buffers and copy the visited records and active-path flags,
-    ///         rebuilding the index.
-    /// @dev Growing in memory lets traversal handle graphs larger than its initial allocation
-    ///      while preserving cycle detection state.
+    /// @dev Doubles the traversal buffers, copies the visited records and path flags, and rebuilds the
+    ///      index.
     function _grow(TraversalState memory traversal) private pure {
         uint256 capacity = traversal.records.length * 2;
         // forge-lint: disable-next-line(calls-loop) a memory allocation, not a call
@@ -211,9 +201,7 @@ library SafeAuthorityGraph {
 
     /* ================================== loaders ================================= */
 
-    /// @notice Load one Safe's owners and threshold from the supplied record array.
-    /// @dev This lets the common traversal validate an encoded graph without consulting live
-    ///      source contracts. `context` is a `Supplied` memory pointer.
+    /// @dev `context` is a `Supplied` memory pointer.
     function _loadRecord(bytes32 context, address safe) private pure returns (SafeOwner[] memory, uint256) {
         Supplied memory supplied;
         assembly ("memory-safe") {
@@ -224,10 +212,7 @@ library SafeAuthorityGraph {
         return (supplied.records[held - 1].owners, supplied.records[held - 1].threshold);
     }
 
-    /// @notice Read a live Safe's owners and threshold and classify each owner as EOA or nested
-    ///         Safe.
-    /// @dev Source graph derivation must capture both quorum and owner kinds because the
-    ///      receiver verifies those kinds differently.
+    /// @dev Owner kinds are captured because the receiver verifies EOAs and nested Safes differently.
     function _loadLive(bytes32, address safe) private view returns (SafeOwner[] memory owners, uint256 threshold) {
         // getOwners() and getThreshold()
         bytes memory reply = _ask(safe, 0xa0e67e2b, 64);
@@ -240,19 +225,14 @@ library SafeAuthorityGraph {
         }
     }
 
-    /// @notice Make a read-only Safe query and reject a failed or undersized reply.
-    /// @dev Graph derivation cannot accept an owner that fails to provide the expected
-    ///      ownership data.
     function _ask(address safe, bytes4 selector, uint256 minimum) private view returns (bytes memory reply) {
         bool ok;
         (ok, reply) = safe.staticcall(abi.encodeWithSelector(selector));
         if (!ok || reply.length < minimum) revert NotASafe(safe);
     }
 
-    /// @notice Recognize an account with no code or exactly the 23-byte EIP-7702 delegation
-    ///         indicator.
-    /// @dev Delegated EOAs still sign with their keys; treating them as nested Safes would
-    ///      incorrectly require Safe ownership methods.
+    /// @dev A delegated EOA still signs with its key; treating it as a nested Safe would require Safe
+    ///      ownership methods it lacks.
     function _isEoa(address owner) private view returns (bool) {
         uint256 size = owner.code.length;
         if (size == 0) return true;

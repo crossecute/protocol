@@ -24,17 +24,13 @@ library SafeSignaturesUtils {
     /// @dev The evidence is not a DELEGATECALL of `signMessage(abi.encode(parentHash))`.
     error NotANestedSafeApprovalOf(address childSafe, bytes32 parentHash);
 
-    /// @notice Check that the blob contains enough 65-byte entries for the required signatures.
-    /// @dev Call this before reading entries so truncated input cannot be mistaken for a
-    ///      complete quorum.
     function requireLength(address safe, bytes memory signatures, uint256 threshold) internal pure {
         if (signatures.length < threshold * 65) revert SignaturesTooShort(safe);
     }
 
-    /// @notice Read the `r`, `s` and `v` fields of one 65-byte Safe signature entry.
-    /// @dev `v` tells the caller how to interpret the entry. Reject `v = 1` because source-side
-    ///      hash approvals and executor identity cannot be reproduced on the receiver. The
-    ///      caller must check the blob length first.
+    /// @notice Read the `r`, `s` and `v` of one 65-byte Safe signature entry.
+    /// @dev `v = 1` reverts: source-side hash approvals and the executor's identity cannot be
+    ///      reproduced on the receiver. The caller must check the blob length first.
     function entry(address safe, bytes memory signatures, uint256 index)
         internal
         pure
@@ -49,10 +45,8 @@ library SafeSignaturesUtils {
         if (v == 1) revert ApprovedHashUnsupported(safe);
     }
 
-    /// @notice Recover the EOA address for a direct or Ethereum-prefixed ECDSA signature.
-    /// @dev Safe uses `v = 27/28` for the supplied hash and `31/32` for its `eth_sign` digest.
-    ///      Other values revert. The caller must still check owner membership; an invalid
-    ///      recovery can return zero.
+    /// @dev `v = 27/28` signs the supplied hash and `31/32` its `eth_sign` digest; other values
+    ///      revert. The caller must still check owner membership, since a failed recovery returns zero.
     function recover(bytes32 dataHash, bytes32 r, bytes32 s, uint8 v) internal pure returns (address) {
         // forge-lint: disable-next-line(ecrecover) as Safe: a malleable twin recovers the same owner, which the ascending check refuses twice
         if (v == 27 || v == 28) return ecrecover(dataHash, v, r, s);
@@ -63,14 +57,11 @@ library SafeSignaturesUtils {
         revert InvalidSignatureType(v);
     }
 
-    /// @notice Extract the child contract's signature bytes from a Safe signature blob.
-    /// @dev A contract-owner entry (`v = 0`) puts its address in `r` and a payload offset in
-    ///      `s`, rather than containing an EOA signature. Read the length-prefixed bytes at
-    ///      that offset so the caller can verify the child's own signatures. Check the offset
-    ///      and length against the blob and required static entries; extraction alone does not
-    ///      authenticate the child. Empty payloads are returned for the separate
-    ///      approval-evidence path. As in Safe, payloads may overlap or occupy bytes after the
-    ///      required static entries.
+    /// @notice The child's signature bytes for a contract-owner entry (`v = 0`), which puts the child
+    ///         in `r` and a payload offset in `s`.
+    /// @dev The offset and length are checked against the blob and the static entries; extraction
+    ///      does not authenticate the child. An empty payload is returned for the approval-evidence
+    ///      path. As in Safe, payloads may overlap or sit after the static entries.
     function extractContractSignature(address safe, bytes memory signatures, uint256 offset, uint256 threshold)
         internal
         pure
@@ -105,10 +96,9 @@ library SafeSignaturesUtils {
         }
     }
 
-    /// @notice Compute the child Safe's message hash for the parent's signed hash.
-    /// @dev Binding the parent's hash to the child Safe and source chain matches Safe's
-    ///      fallback handler and prevents reusing a child's signatures for a different Safe
-    ///      domain.
+    /// @notice The child Safe's message hash for the parent's signed hash.
+    /// @dev Binding the child and source chain matches Safe's fallback handler and stops a child's
+    ///      signatures being reused for another Safe domain.
     function nestedHash(bytes32 parentHash, address child, uint256 chainId) internal pure returns (bytes32) {
         return SafeHashes.messageHash(abi.encode(parentHash), child, chainId);
     }

@@ -14,10 +14,7 @@ import {ExecutionLeaf} from "src/messaging/signed/types/SignedDispatchTypes.sol"
 library DispatchLeaves {
     error InvalidProof();
 
-    /// @notice Hash every execution-leaf field, including its destination, nonce, window, calls
-    ///         and provider attributes.
-    /// @dev The double hash commits the Merkle proof to the complete dispatch and separates
-    ///      leaf preimages from 64-byte internal tree nodes.
+    /// @notice Hash every execution-leaf field, attributes included.
     function hash(ExecutionLeaf memory leaf) internal pure returns (bytes32) {
         return keccak256(
             abi.encode(
@@ -31,18 +28,14 @@ library DispatchLeaves {
     }
 
     /// @notice Hash the execution fields without the provider attributes.
-    /// @dev The receiver uses this ID at each nonce to recognize an already executed batch even
-    ///      when it is reapproved with different delivery options.
+    /// @dev Identifies an executed batch at its nonce even when it is reapproved with different
+    ///      delivery options.
     function executionId(ExecutionLeaf memory leaf) internal pure returns (bytes32) {
         return keccak256(
             abi.encode(keccak256(abi.encode(leaf.destination, leaf.nonce, leaf.validAfter, leaf.deadline, leaf.calls)))
         );
     }
 
-    /// @notice Revert unless `proof` places `leafHash` under `root` using sorted sibling
-    ///         hashes.
-    /// @dev Both senders and receivers need this check so a signed root authorizes only its
-    ///      committed leaves.
     function requireProof(bytes32[] memory proof, bytes32 root, bytes32 leafHash) internal pure {
         if (!MerkleProof.verify(proof, root, leafHash)) revert InvalidProof();
     }

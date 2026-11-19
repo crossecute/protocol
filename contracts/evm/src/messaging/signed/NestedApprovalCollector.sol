@@ -17,11 +17,8 @@ library NestedApprovalCollector {
 
     error NotASafe(address safe);
 
-    /// @notice Collect cached child approvals needed by this Safe's signature blob on the
-    ///         source chain.
-    /// @dev The receiver cannot read source guard storage, so empty nested signatures must
-    ///      travel with their signed approval evidence. Missing approvals revert; signer
-    ///      authorization is checked separately.
+    /// @dev The receiver cannot read source guard storage, so empty nested signatures travel with
+    ///      their signed approval evidence. A missing approval reverts; signers are checked elsewhere.
     function collect(address safe, bytes32 dataHash, bytes memory signatures)
         internal
         view
@@ -30,10 +27,8 @@ library NestedApprovalCollector {
         approvals = _walk(safe, dataHash, signatures, new NestedSafeApproval[](0));
     }
 
-    /// @notice Inspect the required number of signature entries for one Safe and collect their
-    ///         nested evidence.
-    /// @dev Reading the live threshold follows the entries Safe actually checks, rather than
-    ///      treating unused trailing bytes as extra authorization requirements.
+    /// @dev The live threshold selects the entries Safe actually checks, so unused trailing bytes
+    ///      add no requirement.
     function _walk(address safe, bytes32 dataHash, bytes memory signatures, NestedSafeApproval[] memory approvals)
         private
         view
@@ -47,10 +42,8 @@ library NestedApprovalCollector {
         return approvals;
     }
 
-    /// @notice Follow one contract-owner entry into its child payload; leave EOA entries
-    ///         unchanged.
-    /// @dev Only nested Safes can need additional approval evidence. The encoded child address
-    ///      is a claim, not proof of membership or authorization.
+    /// @dev Only nested Safes can need approval evidence. The encoded child is a claim, not proof of
+    ///      membership or authorization.
     function _entry(
         address safe,
         bytes32 dataHash,
@@ -69,10 +62,6 @@ library NestedApprovalCollector {
         );
     }
 
-    /// @notice Recurse into a child's inline signatures or the signed approval backing an empty
-    ///         payload.
-    /// @dev An approval can itself contain nested owners, so collection must continue through
-    ///      its signatures until every required empty entry has evidence.
     function _nested(address child, bytes32 parentHash, bytes memory payload, NestedSafeApproval[] memory approvals)
         private
         view
@@ -87,10 +76,8 @@ library NestedApprovalCollector {
         return _walk(child, approvalHash, approval.signatures, approvals);
     }
 
-    /// @notice Reuse an already collected approval or read it from the child's current
-    ///         transaction guard.
-    /// @dev Deduplicating by child and message hash avoids carrying repeated evidence, while
-    ///      the guard read rejects an empty entry with no cached approval.
+    /// @dev Deduplicates by child and message hash; the guard read rejects an empty entry with no
+    ///      cached approval.
     function _approval(NestedSafeApproval[] memory approvals, address child, bytes32 messageHash)
         private
         view
@@ -110,10 +97,6 @@ library NestedApprovalCollector {
         return (approval, expandedApprovals);
     }
 
-    /// @notice Read the Safe's current required signature count, rejecting a failed or short
-    ///         response.
-    /// @dev Collection needs that count to inspect exactly the relevant entries in each nested
-    ///      signature blob.
     function _threshold(address safe) private view returns (uint256) {
         // forge-lint: disable-next-line(calls-loop) one threshold read per Safe the signatures name
         (bool ok, bytes memory reply) = safe.staticcall(abi.encodeWithSelector(GET_THRESHOLD));
