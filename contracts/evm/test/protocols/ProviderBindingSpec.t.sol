@@ -33,6 +33,16 @@ import {TransmitterBase} from "src/messaging/outbound/TransmitterBase.sol";
 import {Envelope} from "src/messaging/Envelope.sol";
 import {Roles} from "src/messaging/Roles.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
+import {SafeSigs, Records} from "test/signed/SignedFixtures.sol";
+import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
+import {ISourceAuthorityGuard} from "@crossecute/safe-guard/authority/ISourceAuthorityGuard.sol";
+import {AuthorityUpdate} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
+import {AuthorityGraph} from "src/messaging/authority/AuthorityGraph.sol";
+import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
+import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
+import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
+import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
+import {SafeTxEvidence, WIRE_STANDALONE, WIRE_AUTHORITY} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 
 /// @notice The wrapper every provider's transceiver harness exposes: a thin subclass of the
 ///         real transceiver that makes `_sendMessage`/`_quoteMessage` callable directly,
@@ -944,5 +954,103 @@ abstract contract ProviderZkSyncSpec is ProviderGasFixture {
         assertEq(zk.balance, 1 ether - _expectedQuoteFor(0.01 ether), "the quoted fee, paid from the float");
         assertEq(_lastGasLimit(), DeliveryGas.REPORT, "the float pays for the report's fixed gas only");
         _assertReportSent();
+    }
+}
+
+/// @title ProviderSignedLockSpec
+/// @notice T8: while an application message delivered by this provider runs, management cannot
+///         enter through direct submission or through this provider's own delivery path.
+abstract contract ProviderSignedLockSpec is ProviderReceiveSpec, ProviderFixture {
+    address private constant SIGNED_SAFE = address(0x5AFE);
+    address private constant GUARD_PIN = address(0x1234);
+    address private constant MULTISEND_PIN = address(0x5678);
+
+    address private signedReceiver;
+    uint256 private safeNonce;
+    bytes private pendingSubmission;
+    bool private managementAttempted;
+
+    function _signed(address to, bytes memory data) private returns (SafeTxEvidence memory e) {
+        e.signedSafeTx.safeTx.to = to;
+        e.signedSafeTx.safeTx.data = data;
+        e.signedSafeTx.safeTx.nonce = ++safeNonce;
+        e.signedSafeTx.signatures = SafeSigs.blob(
+            SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(3)),
+            SafeHashes.transactionHash(e.signedSafeTx.safeTx, SIGNED_SAFE, REMOTE_CHAIN_ID)
+        );
+    }
+
+    /// @dev Reached from inside the signed receiver's application execution.
+    function attemptManagement() external {
+        require(msg.sender == signedReceiver);
+        managementAttempted = true;
+        (SafeTxEvidence memory update, AuthorityGraph memory next, ChildUpdate[] memory children) =
+            abi.decode(pendingSubmission, (SafeTxEvidence, AuthorityGraph, ChildUpdate[]));
+        (bool ok, bytes memory reason) =
+            signedReceiver.call(abi.encodeCall(SignedReceiver.submitAuthority, (update, next, children)));
+        assertFalse(ok, "direct management entered");
+        assertEq(reason, abi.encodeWithSignature("ReentrancyGuardReentrantCall()"));
+        bytes[] memory submissions = new bytes[](1);
+        submissions[0] = pendingSubmission;
+        (ok, reason) = signedReceiver.call(abi.encodeCall(SignedReceiver.submitAuthorityBatch, (submissions)));
+        assertFalse(ok, "batch management entered");
+        assertEq(reason, abi.encodeWithSignature("ReentrancyGuardReentrantCall()"));
+        // A provider may record the failure instead of reverting, so the head check after the
+        // outer delivery is what proves this did not apply.
+        // forge-lint: disable-next-line(unchecked-call) outcome checked through the head below
+        address(this).call(abi.encodeCall(this.deliverAuthority, ()));
+    }
+
+    function deliverAuthority() external {
+        _deliver(
+            signedReceiver,
+            _remoteProviderId(),
+            toBytes32(SOURCE_TRANSMITTER),
+            abi.encode(WIRE_AUTHORITY, pendingSubmission)
+        );
+    }
+
+    function test_aProviderDeliveredMessageBlocksManagement() public {
+        signedReceiver = deployConduit(
+            _signedReceiverImplementation(GUARD_PIN, MULTISEND_PIN),
+            _initializeReceiver(SOURCE_TRANSMITTER, new Call[](0))
+        );
+        SafeAuthorityRecord[] memory records =
+            Records.list(Records.record(SIGNED_SAFE, 2, Records.eoaOwners(Records.pks(1, 2, 3))));
+        SignedReceiver r = SignedReceiver(payable(signedReceiver));
+        r.initializeSigned(
+            REMOTE_CHAIN_ID, SIGNED_SAFE, Records.bootstrap(GUARD_PIN, records, abi.encode(new Call[](0)))
+        );
+
+        AuthorityGraph memory graph = Records.graph(records);
+        SafeTxEvidence memory update = _signed(
+            GUARD_PIN,
+            abi.encodeCall(
+                ISourceAuthorityGuard.selectAuthority,
+                (AuthorityUpdate(bytes32(uint256(1)), Records.graphHash(REMOTE_CHAIN_ID, records)))
+            )
+        );
+        pendingSubmission = abi.encode(update, graph, new ChildUpdate[](0));
+
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call(address(this), 0, abi.encodeCall(this.attemptManagement, ()));
+        SafeTxEvidence memory message = _signed(
+            SOURCE_TRANSMITTER,
+            abi.encodeCall(
+                IERC7786GatewaySource.sendMessage,
+                (Erc7930.encodeEvm(block.chainid, signedReceiver), abi.encode(calls), new bytes[](0))
+            )
+        );
+        _deliver(
+            signedReceiver, _remoteProviderId(), toBytes32(SOURCE_TRANSMITTER), abi.encode(WIRE_STANDALONE, message)
+        );
+        assertTrue(managementAttempted, "the message did not run");
+        assertEq(r.selection().updateHead, bytes32(uint256(1)));
+
+        r.submitAuthority(update, graph, new ChildUpdate[](0));
+        assertEq(
+            r.selection().updateHead,
+            SafeHashes.transactionHash(update.signedSafeTx.safeTx, SIGNED_SAFE, REMOTE_CHAIN_ID)
+        );
     }
 }

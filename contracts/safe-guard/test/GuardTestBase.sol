@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity =0.8.30;
 
-import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
 import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
-import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {ISignedTransmitter} from "crossecute/messaging/outbound/ISignedTransmitter.sol";
 import {Batch} from "./Batch.sol";
@@ -46,17 +44,6 @@ abstract contract GuardTestBase is SafeFixture {
         signers = new Signer[](2);
         signers[0] = _eoa(KEY_A);
         signers[1] = _eoa(KEY_B);
-    }
-
-    /// @dev Owner-side policy only: any CALL, and the two delegatecall targets the tests use.
-    function _defaultConfig() internal view returns (SafePolicyGuard.Configuration[] memory configs) {
-        configs = new SafePolicyGuard.Configuration[](3);
-        configs[0] = _config(address(0), bytes4(0), Operation.CALL, address(allowPolicy));
-        configs[1] =
-            _config(address(multiSend), multiSend.multiSend.selector, Operation.DELEGATECALL, address(allowPolicy));
-        configs[2] = _config(
-            address(signMessageLib), SignMessageLib.signMessage.selector, Operation.DELEGATECALL, address(allowPolicy)
-        );
     }
 
     function _sendMessageData() internal pure returns (bytes memory) {

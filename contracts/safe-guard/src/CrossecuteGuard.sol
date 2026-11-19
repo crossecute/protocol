@@ -13,6 +13,8 @@ import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
 import {ISafe} from "safe-smart-account/interfaces/ISafe.sol";
 import {ICrossecuteGuard, SafeTx, SignedSafeTx} from "./ICrossecuteGuard.sol";
 import {SafeHashes} from "./SafeHashes.sol";
+import {ISourceAuthorityGuard} from "./authority/ISourceAuthorityGuard.sol";
+import {SourceAuthorityGuard} from "./authority/SourceAuthorityGuard.sol";
 
 /// @title CrossecuteGuard
 /// @notice Safe 1.5.0 transaction guard, and optionally module guard, shared by any number of
@@ -22,9 +24,10 @@ import {SafeHashes} from "./SafeHashes.sol";
 ///         for a published root.
 /// @dev Every record is keyed by the hook caller, so a contract that calls the hooks directly
 ///      can only write and clear records under its own address.
-contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
+contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard, SourceAuthorityGuard {
     /// @dev A Safe's transient record starts at its id, `keccak256(abi.encode(safe, NAMESPACE))`.
     bytes32 internal constant NAMESPACE = keccak256("crossecute.guard.safe");
+    bytes32 private constant _EXECUTION_NAMESPACE = keccak256("crossecute.guard.execution");
 
     // Word offsets from a Safe's id. `_TX_HASH` is nonzero exactly while the record is live.
     uint256 internal constant _TX_HASH = 0;
@@ -46,12 +49,16 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     // solhint-disable-next-line private-vars-leading-underscore
     mapping(bytes32 root => bool) private $published;
 
-    constructor(uint256 delay, uint256 expiry) SafePolicyGuard(delay, expiry) {}
+    constructor(uint256 delay, uint256 expiry, Pins memory pins)
+        SafePolicyGuard(delay, expiry)
+        SourceAuthorityGuard(pins)
+    {}
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         // SafePolicyGuard's external override is not callable through super.
-        return interfaceId == type(ICrossecuteGuard).interfaceId || interfaceId == type(IPolicyEngine).interfaceId
+        return interfaceId == type(ICrossecuteGuard).interfaceId
+            || interfaceId == type(ISourceAuthorityGuard).interfaceId || interfaceId == type(IPolicyEngine).interfaceId
             || interfaceId == type(ISafeModuleGuard).interfaceId
             || interfaceId == type(ISafeTransactionGuard).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
@@ -112,23 +119,31 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         return $published[root];
     }
 
-    /// @dev Same-Safe nesting is rejected for the whole life of a record, so the next post-hook from
-    ///      this Safe belongs to the execution that staged it.
+    /// @dev Every owner execution holds a per-Safe lock until its matching post-hook, including
+    ///      executions that stage no record. Otherwise a Safe's batch can forge update callbacks.
     function _afterOwnerPolicyCheck(
         address to,
         uint256 value,
         bytes calldata data,
         Operation operation,
-        uint256 safeTxGas,
+        uint256,
         uint256 baseGas,
-        uint256 gasPrice,
+        uint256,
         address gasToken,
         address payable refundReceiver,
         bytes calldata signatures,
         address
     ) internal override {
         bytes32 safeId = _safeId(msg.sender);
-        require(_tload(safeId, _TX_HASH) == 0, NestedExecution(msg.sender));
+        require(!_executionLive(msg.sender), NestedExecution(msg.sender));
+        SafeTx memory safeTx = _safeTx(to, value, data, operation, baseGas, gasToken, refundReceiver);
+        _tstore(_executionId(msg.sender), 0, uint256(SafeHashes.transactionHash(safeTx, msg.sender, block.chainid)));
+
+        // Before every other branch, so a protected Safe's transaction is checked whatever its
+        // selector says.
+        if (_activated(msg.sender) || to == address(this) || to == MULTISEND_CALL_ONLY) {
+            if (_authorityPreHook(safeTx)) return;
+        }
 
         bytes4 selector = _decodeSelector(data);
         if (selector == ISignedTransmitter.registerRoot.selector) {
@@ -142,28 +157,40 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         bool approval = operation == Operation.DELEGATECALL && selector == SignMessageLib.signMessage.selector;
         if (!staged && !approval) return;
 
-        SafeTx memory safeTx = SafeTx({
+        if (staged) {
+            _tstoreSignedSafeTx(safeId, safeTx, signatures);
+        } else {
+            // Recognized by operation and selector alone: Safe has no SignMessageLib allowlist, so
+            // the record shows what the owners signed, not what the delegatecall wrote. An
+            // activated Safe may delegatecall only the pinned library.
+            _cacheApproval(
+                safeTx, SafeHashes.messageHash(abi.decode(data[4:], (bytes)), msg.sender, block.chainid), signatures
+            );
+        }
+    }
+
+    function _safeTx(
+        address to,
+        uint256 value,
+        bytes calldata data,
+        Operation operation,
+        uint256 baseGas,
+        address gasToken,
+        address payable refundReceiver
+    ) private view returns (SafeTx memory) {
+        return SafeTx({
             to: to,
             value: value,
             data: data,
             operation: uint8(operation),
-            safeTxGas: safeTxGas,
+            safeTxGas: 0,
             baseGas: baseGas,
-            gasPrice: gasPrice,
+            gasPrice: 0,
             gasToken: gasToken,
             refundReceiver: refundReceiver,
             // The Safe increments its nonce before calling the guard.
             nonce: ISafe(payable(msg.sender)).nonce() - 1
         });
-        if (staged) {
-            _tstoreSignedSafeTx(safeId, safeTx, signatures);
-        } else {
-            // Recognized by operation and selector alone: Safe has no SignMessageLib allowlist, so
-            // the record shows what the owners signed, not what the delegatecall wrote.
-            _cacheApproval(
-                safeTx, SafeHashes.messageHash(abi.decode(data[4:], (bytes)), msg.sender, block.chainid), signatures
-            );
-        }
     }
 
     /// @dev `safeTxGas` and `gasPrice` are not recorded here or in `_cacheApproval`: the inherited
@@ -216,20 +243,32 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
     }
 
     function _afterOwnerExecution(bytes32 txHash) internal override {
+        bytes32 executionId = _executionId(msg.sender);
+        bytes32 expected = bytes32(_tload(executionId, 0));
+        require(expected != 0, NoLiveRecord(msg.sender));
+        require(expected == txHash, HashMismatch(expected, txHash));
+        _authorityPostHook(txHash);
         bytes32 safeId = _safeId(msg.sender);
         bytes32 live = bytes32(_tload(safeId, _TX_HASH));
-        if (live == 0) return;
-        require(live == txHash, HashMismatch(live, txHash));
-
-        uint256 words = (_tload(safeId, _SIG_LENGTH) + 31) >> 5;
-        for (uint256 i = 0; i < _SIG_WORDS + words; ++i) {
-            _tstore(safeId, i, 0);
+        if (live != 0) {
+            require(live == txHash, HashMismatch(live, txHash));
+            uint256 words = (_tload(safeId, _SIG_LENGTH) + 31) >> 5;
+            for (uint256 i = 0; i < _SIG_WORDS + words; ++i) {
+                _tstore(safeId, i, 0);
+            }
         }
+        _tstore(executionId, 0, 0);
     }
 
     /// @dev Runs after the inherited policy check, so this only narrows what policy permits. A module
     ///      `registerRoot` would skip the owner hook's publication check.
-    function _afterModulePolicyCheck(address, uint256, bytes calldata data, Operation, address) internal pure override {
+    function _afterModulePolicyCheck(address to, uint256, bytes calldata data, Operation, address)
+        internal
+        view
+        override
+    {
+        require(!_executionLive(msg.sender), NestedExecution(msg.sender));
+        require(to != MULTISEND_CALL_ONLY, OrdinaryBatchDenied());
         bytes4 selector = _decodeSelector(data);
         require(!_isStaged(selector), ModuleStagedCallDenied());
         require(selector != ISignedTransmitter.registerRoot.selector, ModuleRegisterRootDenied());
@@ -284,19 +323,34 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard {
         }
     }
 
+    /// @dev Also permits the Safe's own calls to the three source authority entry points, which
+    ///      only a Safe the pre-hook recognized can complete. A module cannot reach them.
+    function _allowedCalls(address to, uint256 value, bytes calldata data, Operation operation)
+        internal
+        view
+        override
+        returns (bool)
+    {
+        if (to == address(this) && value == 0 && operation == Operation.CALL) {
+            bytes4 selector = _decodeSelector(data);
+            if (
+                selector == ISourceAuthorityGuard.activate.selector
+                    || selector == ISourceAuthorityGuard.selectAuthority.selector
+                    || selector == ISourceAuthorityGuard.registerOwnershipChange.selector
+            ) return true;
+        }
+        return super._allowedCalls(to, value, data, operation);
+    }
+
+    function _executionLive(address safe) internal view override returns (bool) {
+        return _tload(_executionId(safe), 0) != 0;
+    }
+
+    function _executionId(address safe) private pure returns (bytes32) {
+        return keccak256(abi.encode(safe, _EXECUTION_NAMESPACE));
+    }
+
     function _safeId(address safe) internal pure returns (bytes32) {
         return keccak256(abi.encode(safe, NAMESPACE));
-    }
-
-    function _tload(bytes32 safeId, uint256 offset) internal view returns (uint256 value) {
-        assembly ("memory-safe") {
-            value := tload(add(safeId, offset))
-        }
-    }
-
-    function _tstore(bytes32 safeId, uint256 offset, uint256 value) private {
-        assembly ("memory-safe") {
-            tstore(add(safeId, offset), value)
-        }
     }
 }

@@ -5,7 +5,7 @@ import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
-import {SafeAuthority} from "src/messaging/signed/SafeAuthority.sol";
+import {ReceiverAuthority} from "src/messaging/authority/ReceiverAuthority.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
 import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
@@ -13,7 +13,6 @@ import {SafeAuthorityRecord, SafeOwner, OWNER_SAFE} from "src/messaging/signed/t
 import {
     SafeTxEvidence,
     ExecutionLeaf,
-    SignedBootstrap,
     NestedSafeApproval,
     WIRE_STANDALONE,
     WIRE_MERKLE
@@ -151,17 +150,17 @@ contract SignedDispatchGasTest is Test {
     function _cold(address receiver) internal {
         vm.cool(receiver);
         vm.cool(implementation);
-        vm.cool(address(SafeAuthority));
+        vm.cool(address(ReceiverAuthority));
         vm.cool(address(sink));
     }
 
     /// @notice Measure initialization against the graph and return its armed receiver.
     function _initialize(SafeAuthorityRecord[] memory records) internal returns (address receiver) {
-        implementation = address(new HyperlaneReceiver(address(mailbox)));
+        implementation = address(new HyperlaneReceiver(address(mailbox), address(0x1234), address(0x5678)));
         receiver = deployConduit(
             implementation, abi.encodeCall(IReceiverInit.initialize, (TRANSMITTER, bytes32(SOURCE), new Call[](0)))
         );
-        bytes memory body = abi.encode(SignedBootstrap(records, _calls(0)));
+        bytes memory body = Records.bootstrap(address(0x1234), records, _calls(0));
         _cold(receiver);
         uint256 g = gasleft();
         SignedReceiver(payable(receiver)).initializeSigned(SOURCE, SAFE, body);

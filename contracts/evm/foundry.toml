@@ -8,6 +8,8 @@ allow_paths = [".", "../safe-guard/src"]
 fs_permissions = [
     { access = "read", path = "./deploy" },
     { access = "read", path = "./test/deploy/config" },
+    # AuthorityVectors.t.sol replays the shared #109 vectors.
+    { access = "read", path = "../../docs/vectors" },
     { access = "read-write", path = "./out/governance" },
     { access = "read-write", path = "./out/rotation" },
 ]
@@ -30,6 +32,8 @@ bytecode_hash = "none"
 cbor_metadata = false
 remappings = [
     "src/=src/",
+    # Shared source-guard interfaces reuse protocol Call without duplicating the type.
+    "crossecute/=src/",
     "@crossecute/safe-guard/=../safe-guard/src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",

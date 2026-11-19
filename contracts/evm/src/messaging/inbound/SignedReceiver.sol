@@ -1,28 +1,33 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {Call} from "src/messaging/Call.sol";
-import {SafeAuthorityState, SafeAuthority} from "src/messaging/signed/SafeAuthority.sol";
-import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
+import {SafeAuthorityState} from "src/messaging/signed/SafeAuthority.sol";
+import {AuthorityGraph} from "src/messaging/authority/AuthorityGraph.sol";
+import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
+import {AuthorityTransport} from "src/messaging/authority/AuthorityTransport.sol";
+import {AuthorityRecognition} from "src/messaging/authority/AuthorityRecognition.sol";
+import {ReceiverAuthority} from "src/messaging/authority/ReceiverAuthority.sol";
+import {ReceiverAuthorityTemplate} from "src/messaging/authority/ReceiverAuthorityTemplate.sol";
+import {AuthoritySelection} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
 import {SignedDispatchCalls} from "src/messaging/signed/SignedDispatchCalls.sol";
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {
     ExecutionLeaf,
     SafeTxEvidence,
-    SignedBootstrap,
     WIRE_STANDALONE,
-    WIRE_MERKLE
+    WIRE_MERKLE,
+    WIRE_AUTHORITY
 } from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {ISignedReceiver, ISignedReceiverInit} from "src/messaging/inbound/ISignedReceiver.sol";
 
 /// @title SignedReceiver
-/// @notice A receiver that can be created in signed mode (#108): it stores its source Safe's
-///         authority as its bootstrap carried it and executes only what that authority signed, delivered by its
-///         provider or submitted by anyone.
+/// @notice A receiver that can be created in signed mode: bootstrap seeds its source authority,
+///         authenticated updates select later graphs, and dispatch verifies their signatures
+///         whether delivered by a provider or submitted directly.
 ///
 /// @dev Plain until `initializeSigned`, which the transceiver calls right after arming the
 ///      receiver with its plain initializer and no calls, in the same transaction.
@@ -32,13 +37,17 @@ import {ISignedReceiver, ISignedReceiverInit} from "src/messaging/inbound/ISigne
 ///      signed execution or by `finalize` of a commitment such execution recorded.
 ///
 /// @dev State is ERC-7201 namespaced so it does not extend the base's sequential layout (R8.2).
-abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiverInit {
-    using SafeAuthority for SafeAuthorityState;
+abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISignedReceiver, ISignedReceiverInit {
+    using ReceiverAuthority for ReceiverAuthority.State;
+
+    address public immutable SOURCE_AUTHORITY_GUARD;
+    address public immutable MULTISEND_CALL_ONLY;
 
     /// @custom:storage-location erc7201:crossecute.storage.SignedReceiver
     struct SignedReceiverStorage {
+        // Retain the namespace layout; only root and sourceChainId identify the source here.
         SafeAuthorityState authority;
-        // Nonzero exactly in signed mode.
+        // Initial graph hash, nonzero exactly in signed mode. selection() holds the current graph.
         bytes32 graph;
         uint256 nextNonce;
         mapping(uint256 nonce => bytes32 executionId) executions;
@@ -56,10 +65,17 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
     error NotSigned();
     error NotParentTransceiver(address caller);
     error AlreadySigned();
-    error RootIsNotOwner(address owner, address root);
     error UnknownWire(uint256 format);
     error ConflictingLeaf(uint256 nonce);
     error NonceNotNext(uint256 nonce, uint256 nextNonce);
+    error InvalidAuthorityPins();
+    error AuthorityPinsUnset();
+
+    constructor(address guard, address multiSendCallOnly) {
+        if ((guard == address(0)) != (multiSendCallOnly == address(0))) revert InvalidAuthorityPins();
+        SOURCE_AUTHORITY_GUARD = guard;
+        MULTISEND_CALL_ONLY = multiSendCallOnly;
+    }
 
     /// @notice Return this receiver's namespaced signed-mode storage.
     /// @dev A fixed namespace keeps the added authority and replay state separate from the base
@@ -82,28 +98,57 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
     /// @notice Validate and store the source authority the bootstrap carried, then run its
     ///         setup calls.
     /// @dev No signature is checked here: signatures cannot prove a carried graph, so the
-    ///      records are taken on the provider's authentication of the source transmitter.
-    ///      Owners confirm `authorityRecords` before relying on the receiver. Any failed check or
-    ///      setup call reverts initialization atomically.
+    ///      graph and head are taken on the provider's authentication of the source transmitter.
+    ///      Owners confirm `selection()` and its full `graph()` before relying on the receiver.
+    ///      A failed check or setup call reverts initialization atomically.
     function initializeSigned(uint256 sourceChainId, address owner, bytes calldata body) external nonReentrant {
         if (msg.sender != parentTransceiver) revert NotParentTransceiver(msg.sender);
         SignedReceiverStorage storage $ = _signedStorage();
         if ($.graph != bytes32(0)) revert AlreadySigned();
+        if (SOURCE_AUTHORITY_GUARD == address(0)) revert AuthorityPinsUnset();
 
-        SignedBootstrap memory bootstrap = abi.decode(body, (SignedBootstrap));
-        SafeAuthorityRecord[] memory records = bootstrap.records;
-        bytes32 graph = SafeAuthorityGraph.hash(records);
-        $.authority.store(records, sourceChainId);
-        if (records[0].safe != owner) revert RootIsNotOwner(owner, records[0].safe);
-        $.graph = graph;
+        $.authority.root = owner;
+        $.authority.sourceChainId = sourceChainId;
+        (AuthoritySelection memory selected, bytes memory setupCalls) =
+            _authority().bootstrap(sourceChainId, owner, SOURCE_AUTHORITY_GUARD, body);
+        $.graph = selected.authorityHash;
 
-        emit SignedReceiverInitialized(owner, graph);
+        emit AuthoritySelected(selected.updateHead, selected.authorityHash);
+        emit SignedReceiverInitialized(owner, $.graph);
 
-        Call[] memory calls = Payload.decodeCallsFromMemory(bootstrap.setupCalls);
+        Call[] memory calls = Payload.decodeCallsFromMemory(setupCalls);
         if (calls.length != 0) _execute(calls);
     }
 
     /* ================================== dispatch ================================ */
+
+    function submitAuthority(
+        SafeTxEvidence calldata evidence,
+        AuthorityGraph calldata newGraph,
+        ChildUpdate[] calldata childUpdates
+    ) external override nonReentrant {
+        (evidence, newGraph, childUpdates);
+        _applyAuthority(msg.data[4:]);
+    }
+
+    /// @inheritdoc ReceiverAuthorityTemplate
+    function submitAuthorityBatch(bytes[] calldata submissions) external override nonReentrant {
+        submissions;
+        _applyAuthorityBatch(msg.data[4:]);
+    }
+
+    function _recognitionPins() internal view override returns (address, address) {
+        return (SOURCE_AUTHORITY_GUARD, MULTISEND_CALL_ONLY);
+    }
+
+    function _authoritySource() internal view override returns (uint256, address) {
+        return (_signedStorage().authority.sourceChainId, _signedStorage().authority.root);
+    }
+
+    /// @dev submitAuthority holds the same nonReentrant lock as initialization and application execution.
+    function _requireAuthorityContextIdle() internal view override {
+        if (!_isSigned()) revert NotSigned();
+    }
 
     /// @notice Accept a standalone signed message directly from any caller.
     /// @dev This provides delivery without the provider while using the same verifier, replay
@@ -149,6 +194,14 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
             (, SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory proof) =
                 abi.decode(payload, (uint256, SafeTxEvidence, ExecutionLeaf, bytes32[]));
             _runLeaf(evidence, leaf, proof);
+        } else if (format == WIRE_AUTHORITY) {
+            (uint256 chainId, address safe) = _authoritySource();
+            AuthorityTransport.receiveAuthority(
+                _authority(),
+                chainId,
+                AuthorityRecognition.Context(SOURCE_AUTHORITY_GUARD, MULTISEND_CALL_ONLY, safe),
+                payload
+            );
         } else {
             revert UnknownWire(format);
         }
@@ -213,8 +266,7 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
     ///      context; the delivery caller does not grant authorization.
     function _verify(SafeTxEvidence memory evidence) private view returns (bytes32 safeTxHash) {
         SafeAuthorityState storage authority = _signedStorage().authority;
-        safeTxHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, authority.root, authority.sourceChainId);
-        authority.verify(safeTxHash, evidence.signedSafeTx.signatures, evidence.nestedApprovals);
+        safeTxHash = _authority().verify(authority.sourceChainId, authority.root, evidence);
     }
 
     /* =================================== access ================================= */
@@ -232,13 +284,13 @@ abstract contract SignedReceiver is ReceiverBase, ISignedReceiver, ISignedReceiv
 
     /// @notice Return the stored graph hash, or zero for a plain receiver.
     function authorityGraph() external view returns (bytes32) {
-        return _signedStorage().graph;
+        return selection().authorityHash;
     }
 
     /// @notice Return the stored Safe authority records in canonical order.
-    /// @dev Owners confirm this before relying on the receiver; it hashes to `authorityGraph`.
+    /// @dev authorityGraph also commits to the selected positions, available through graph().
     function authorityRecords() external view returns (SafeAuthorityRecord[] memory) {
-        return _signedStorage().authority.readRecords();
+        return _authority().selectedRecords();
     }
 
     /// @notice Return the nonce required by the next new execution leaf.

@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {SafeAuthorityState, SafeAuthority} from "src/messaging/signed/SafeAuthority.sol";
+import {SafeQuorum} from "src/messaging/signed/SafeQuorum.sol";
 import {SafeSignaturesUtils} from "src/messaging/signed/SafeSignaturesUtils.sol";
 import {SafeAuthorityRecord, SafeOwner, OWNER_EOA, OWNER_SAFE} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {NestedSafeApproval} from "src/messaging/signed/types/SignedDispatchTypes.sol";
@@ -109,11 +110,19 @@ contract SafeAuthorityTest is Test {
         h.verify(H, blob, _none());
     }
 
+    /// @notice Verify against an authority that stored no Safe.
+    /// @dev A zero threshold must not pass as a quorum of no signatures.
+    function test_anUnknownSafeRefuses() public {
+        AuthorityHarness empty = new AuthorityHarness();
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.UnknownSafe.selector, address(0)));
+        empty.verify(H, "", _none());
+    }
+
     /// @notice Sign with an EOA absent from the stored owner list.
     /// @dev A valid cryptographic signature is insufficient without owner membership.
     function test_aStrangerRefuses() public {
         bytes memory blob = SafeSigs.blob(SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(9)), H);
-        vm.expectRevert(abi.encodeWithSelector(SafeAuthority.NotAnOwner.selector, ROOT, vm.addr(9)));
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, ROOT, vm.addr(9)));
         h.verify(H, blob, _none());
     }
 
@@ -124,7 +133,7 @@ contract SafeAuthorityTest is Test {
         bytes memory a = SafeSigs.blob(SafeSigs.one(SafeSigs.eoa(1)), H);
         bytes memory b = SafeSigs.blob(SafeSigs.one(SafeSigs.eoa(2)), H);
         (bytes memory lo, bytes memory hi) = vm.addr(1) < vm.addr(2) ? (a, b) : (b, a);
-        vm.expectRevert(abi.encodeWithSelector(SafeAuthority.SignersNotAscending.selector, ROOT));
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.SignersNotAscending.selector, ROOT));
         h.verify(H, abi.encodePacked(hi, lo), _none());
     }
 
@@ -132,7 +141,7 @@ contract SafeAuthorityTest is Test {
     /// @dev One owner must never count toward the threshold twice.
     function test_theSameSignerTwiceRefuses() public {
         bytes memory a = SafeSigs.blob(SafeSigs.one(SafeSigs.eoa(1)), H);
-        vm.expectRevert(abi.encodeWithSelector(SafeAuthority.SignersNotAscending.selector, ROOT));
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.SignersNotAscending.selector, ROOT));
         h.verify(H, abi.encodePacked(a, a), _none());
     }
 
@@ -169,7 +178,7 @@ contract SafeAuthorityTest is Test {
     function test_anInlineNestedSignatureOverTheWrongHashRefuses() public {
         bytes memory childBlob = SafeSigs.blob(SafeSigs.one(SafeSigs.eoa(4)), H);
         bytes memory blob = SafeSigs.blob(SafeSigs.two(SafeSigs.nested(CHILD, childBlob), SafeSigs.eoa(1)), H);
-        vm.expectPartialRevert(SafeAuthority.NotAnOwner.selector);
+        vm.expectPartialRevert(SafeQuorum.NotAnOwner.selector);
         h.verify(H, blob, _none());
     }
 
@@ -177,7 +186,7 @@ contract SafeAuthorityTest is Test {
     /// @dev The claimed signature kind must match the stored owner kind.
     function test_aNestedEntryForAnEoaOwnerRefuses() public {
         bytes memory blob = SafeSigs.blob(SafeSigs.two(SafeSigs.nested(vm.addr(1), hex"00"), SafeSigs.eoa(2)), H);
-        vm.expectRevert(abi.encodeWithSelector(SafeAuthority.NotAnOwner.selector, ROOT, vm.addr(1)));
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, ROOT, vm.addr(1)));
         h.verify(H, blob, _none());
     }
 
@@ -206,14 +215,14 @@ contract SafeAuthorityTest is Test {
     /// @notice Leave an empty nested payload without matching approval evidence.
     /// @dev A claimed child address alone must not count as authorization.
     function test_anEmptyNestedSignatureWithoutAnApprovalRefuses() public {
-        vm.expectRevert(abi.encodeWithSelector(SafeAuthority.MissingNestedSafeApproval.selector, CHILD, _childHash()));
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.MissingNestedSafeApproval.selector, CHILD, _childHash()));
         h.verify(H, _emptyNested(), _none());
     }
 
     /// @notice Back an empty payload with an approval signed by a nonowner.
     /// @dev Cached-looking evidence must still satisfy the child's stored quorum.
     function test_anApprovalSignedByAStrangerRefuses() public {
-        vm.expectRevert(abi.encodeWithSelector(SafeAuthority.NotAnOwner.selector, CHILD, vm.addr(8)));
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, CHILD, vm.addr(8)));
         h.verify(H, _emptyNested(), _approvalFor(8));
     }
 
@@ -257,7 +266,7 @@ contract SafeAuthorityTest is Test {
         h.verify(H, _emptyNested(), nestedApprovals);
 
         nestedApprovals[0] = nestedApprovals[1];
-        vm.expectRevert(abi.encodeWithSelector(SafeAuthority.DuplicateNestedSafeApproval.selector, CHILD, _childHash()));
+        vm.expectRevert(abi.encodeWithSelector(SafeQuorum.DuplicateNestedSafeApproval.selector, CHILD, _childHash()));
         h.verify(H, _emptyNested(), nestedApprovals);
     }
 

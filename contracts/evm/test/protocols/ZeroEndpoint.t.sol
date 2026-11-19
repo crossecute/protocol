@@ -30,17 +30,25 @@ contract ZeroEndpointTest is Test {
     address constant E = address(0xE0);
 
     function test_singleEndpointConstructorsRefuseZero() public {
-        bytes[7] memory code = [
-            type(CcipReceiver).creationCode,
+        bytes[3] memory code = [
             type(CcipTransmitter).creationCode,
-            type(HyperlaneReceiver).creationCode,
             type(HyperlaneTransmitter).creationCode,
-            type(LzReceiver).creationCode,
-            type(LzTransmitter).creationCode,
-            type(WormholeReceiver).creationCode
+            type(LzTransmitter).creationCode
         ];
         for (uint256 i; i < code.length; ++i) {
             _assertRefusesOnlyZero(code[i], abi.encode(address(0)), abi.encode(E));
+        }
+
+        bytes[4] memory receivers = [
+            type(CcipReceiver).creationCode,
+            type(HyperlaneReceiver).creationCode,
+            type(LzReceiver).creationCode,
+            type(WormholeReceiver).creationCode
+        ];
+        for (uint256 i; i < receivers.length; ++i) {
+            _assertRefusesOnlyZero(
+                receivers[i], abi.encode(address(0), address(0), address(0)), abi.encode(E, address(0), address(0))
+            );
         }
 
         address extension = transceiverExtension();
@@ -78,7 +86,7 @@ contract ZeroEndpointTest is Test {
     /// @dev OP Stack's receiver takes its messenger at initialization rather than in its
     ///      constructor, so it refuses zero there.
     function test_opStackReceiverRefusesAZeroMessenger() public {
-        address impl = address(new OpStackReceiver());
+        address impl = address(new OpStackReceiver(address(0), address(0)));
         address proxy = address(new Proxy());
         vm.expectRevert(ProviderAddress.ZeroEndpoint.selector);
         IProxy(proxy)

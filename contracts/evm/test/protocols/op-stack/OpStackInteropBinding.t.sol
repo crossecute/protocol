@@ -13,6 +13,7 @@ import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackM
 import {
     ProviderSendSpec,
     ProviderReceiveSpec,
+    ProviderSignedLockSpec,
     ProviderEvmRecipientSpec,
     ProviderTransmitterSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
@@ -62,7 +63,7 @@ contract OpStackInteropTransceiverSendTest is ProviderSendSpec, ProviderEvmRecip
 
 /// @notice The sender and source chain are `crossDomainMessageContext()`, never anything in the
 ///         delivered calldata.
-contract OpStackInteropReceiveTest is ProviderReceiveSpec, OpStackInteropFixture {
+contract OpStackInteropReceiveTest is ProviderReceiveSpec, ProviderSignedLockSpec, OpStackInteropFixture {
     function test_aSenderClaimedInsideTheMessageIsIgnored() public {
         bytes memory claimed = abi.encodePacked(
             abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (Payload.encodeCalls(new Call[](0)))),

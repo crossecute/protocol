@@ -8,6 +8,8 @@ import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
 /// @notice Per-user conduit on a non-home chain, for `op-stack-l2-l2`.
 /// @dev The origin is the source chain id the messenger reports, which must be the home's.
 contract OpStackInteropReceiver is ProviderReceiver, IOpStackRecipient {
+    constructor(address guard, address multiSendCallOnly) ProviderReceiver(guard, multiSendCallOnly) {}
+
     function _providerGateway() internal pure override returns (address) {
         return OpStackInteropMessage.MESSENGER;
     }

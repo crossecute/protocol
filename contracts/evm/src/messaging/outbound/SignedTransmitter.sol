@@ -12,18 +12,18 @@ import {SignedTransmitterLib} from "src/messaging/outbound/SignedTransmitterLib.
 
 /// @title SignedTransmitter
 /// @notice A transmitter that can be created in signed mode (#108): every owner send carries
-///         the owner Safe's signed transaction, a bootstrap carries its live authority records,
-///         and anyone can relay a leaf of a root the Safe registered.
+///         the owner Safe's signed transaction, a bootstrap carries its selected authority,
+///         and anyone can relay registered leaves or published authority updates.
 ///
 /// @dev Plain until `initializeSigned`, which the transceiver calls in `createTransmitter` when
 ///      the owner's guard advertises `ICrossecuteGuard`. In signed mode the owner Safe is the
 ///      creation-time owner (`deployer`), and ownership cannot move: the receivers hold that
 ///      Safe's authority.
 ///
-/// @dev Source checks use the Safes' live authority; each receiver verifies against the
-///      authority its bootstrap delivered, read live when that bootstrap was sent. A send that
-///      passes here can still fail there after a later owner change, without consuming receiver
-///      state (#109 delivers the change).
+/// @dev Application source checks use the Safes' live authority; authority relays use published
+///      portable evidence. Each receiver verifies against its selected graph, initially delivered
+///      by bootstrap and advanced through authenticated
+///      updates. A source send can fail at a receiver that has not applied the required update.
 ///
 /// @dev State is ERC-7201 namespaced so it does not extend the base's sequential layout (R8.2).
 abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, ISignedTransmitterInit {
@@ -41,6 +41,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
 
     event SignedTransmitterInitialized();
     event RootRegistered(bytes32 indexed root);
+    event AuthorityRelayed(bytes32 indexed updateHead, address indexed relayer);
     event LeafRelayed(bytes32 indexed leafHash, address indexed relayer);
 
     error NotSigned();
@@ -122,9 +123,9 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     }
 
     /// @notice In signed mode, consume the Safe's staged call and send the setup calls with the
-    ///         Safe's live authority records; plain mode uses the base path.
+    ///         guard's selected head and graph; plain mode uses the base path.
     /// @dev Consuming the guard's record admits only a signed owner transaction, so a module
-    ///      cannot bootstrap. Nothing from the record is sent: the destination stores the records
+    ///      cannot bootstrap. Nothing from the record is sent: the destination stores the graph
     ///      on the provider's authentication. A failed send reverts, as in plain mode.
     function bootstrap(bytes calldata payload, bytes[] calldata attributes)
         public
@@ -151,9 +152,9 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         returns (bytes32 chainKey, bytes memory route, bytes memory body)
     {
         bool typed;
-        bytes memory setupCalls;
-        (chainKey, route, typed, setupCalls) = _decodeBootstrap(payload);
-        body = SignedTransmitterLib.bootstrapBody(chainKey, typed, setupCalls);
+        bytes memory supplied;
+        (chainKey, route, typed, supplied) = _decodeBootstrap(payload);
+        body = SignedTransmitterLib.bootstrapBody(chainKey, typed, supplied);
     }
 
     /// @notice Require the owner's root to be published by its current guard, then register it
@@ -200,16 +201,43 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         bytes32[] calldata proof
     ) external payable returns (bytes32 sendId) {
         (registrationEvidence, leaf, proof);
+        uint256 balanceBefore = _beginRelay();
         SignedTransmitterStorage storage $ = _signedStorage();
-        if ($.relaying) revert RelayReentered();
-        $.relaying = true;
-        uint256 balanceBefore = address(this).balance - msg.value;
 
         (bytes32 leafHash, bytes memory destination, bytes[] memory attributes, bytes memory wire, uint256 fee) =
             _relay();
-        if (msg.value < fee) revert InsufficientPayment(fee, msg.value);
         $.relayed[leafHash] = true;
         emit LeafRelayed(leafHash, msg.sender);
+        return _sendRelay(destination, wire, attributes, fee, balanceBefore);
+    }
+
+    /// @inheritdoc ISignedTransmitter
+    function relayAuthority(bytes calldata recipient, bytes calldata submission, bytes[] calldata attributes)
+        external
+        payable
+        returns (bytes32 sendId)
+    {
+        uint256 balanceBefore = _beginRelay();
+        (bytes32 head, bytes memory wire, uint256 fee) = _authorityRelay(recipient, submission, attributes);
+        emit AuthorityRelayed(head, msg.sender);
+        return _sendRelay(recipient, wire, attributes, fee, balanceBefore);
+    }
+
+    function _beginRelay() private returns (uint256 balanceBefore) {
+        SignedTransmitterStorage storage $ = _signedStorage();
+        if ($.relaying) revert RelayReentered();
+        $.relaying = true;
+        return address(this).balance - msg.value;
+    }
+
+    function _sendRelay(
+        bytes memory destination,
+        bytes memory wire,
+        bytes[] memory attributes,
+        uint256 fee,
+        uint256 balanceBefore
+    ) private returns (bytes32 sendId) {
+        if (msg.value < fee) revert InsufficientPayment(fee, msg.value);
         emit MessageSent(
             bytes32(0), Erc7930.encodeEvm(block.chainid, address(this)), destination, wire, fee, attributes
         );
@@ -224,7 +252,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         }
         // forge-lint: disable-next-line(incorrect-strict-equality) the relay must leave this balance exactly as it found it
         if (address(this).balance != balanceBefore) revert BalanceChanged(balanceBefore, address(this).balance);
-        $.relaying = false;
+        _signedStorage().relaying = false;
     }
 
     /* =================================== quotes ================================= */
@@ -242,7 +270,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return super.quoteMessage(recipient, payload, attributes);
     }
 
-    /// @notice Quote a bootstrap in either mode; a signed one prices the live records it would carry.
+    /// @notice Quote a bootstrap in either mode; a signed one validates and prices its selected graph.
     function quoteBootstrap(bytes calldata payload, bytes[] calldata attributes)
         public
         view
@@ -277,6 +305,25 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         (,,,, fee) = _relay();
     }
 
+    /// @inheritdoc ISignedTransmitter
+    function quoteAuthority(bytes calldata recipient, bytes calldata submission, bytes[] calldata attributes)
+        external
+        view
+        returns (uint256 fee)
+    {
+        (,, fee) = _authorityRelay(recipient, submission, attributes);
+    }
+
+    function _authorityRelay(bytes memory recipient, bytes memory submission, bytes[] memory attributes)
+        private
+        view
+        returns (bytes32 head, bytes memory wire, uint256 fee)
+    {
+        _requireSigned();
+        (head, wire) = SignedTransmitterLib.authority(submission);
+        fee = _quoteStandalone(recipient, wire, attributes);
+    }
+
     /* ================================= builders ================================= */
 
     /// @notice Build the relay wire payload, check local root and leaf state, validate the
@@ -298,11 +345,14 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         fee = _quoteMessage(destination, wire, attributes);
     }
 
-    /// @notice Route provider refunds to the caller funding a leaf relay.
+    /// @notice Route provider refunds to the caller funding a leaf or authority relay.
     /// @dev Quote and send must select the same recipient because provider metadata may affect
     ///      the price. Other entry points spend conduit funds and retain their refunds.
     function _refundTo() internal view override returns (address) {
-        if (msg.sig == this.relayLeaf.selector || msg.sig == this.quoteRelay.selector) return msg.sender;
+        if (
+            msg.sig == this.relayLeaf.selector || msg.sig == this.quoteRelay.selector
+                || msg.sig == this.relayAuthority.selector || msg.sig == this.quoteAuthority.selector
+        ) return msg.sender;
         return super._refundTo();
     }
 

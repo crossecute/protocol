@@ -16,7 +16,9 @@ contract WormholeReceiver is ProviderReceiver, IVaaV1Receiver {
     ///         so this never moves a derived conduit address.
     address public immutable coreBridge;
 
-    constructor(address coreBridge_) {
+    constructor(address coreBridge_, address guard, address multiSendCallOnly)
+        ProviderReceiver(guard, multiSendCallOnly)
+    {
         if (coreBridge_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         coreBridge = coreBridge_;
     }

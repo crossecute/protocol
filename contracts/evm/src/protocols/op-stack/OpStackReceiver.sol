@@ -16,6 +16,7 @@ interface IOpStackReceiverInit {
 /// @dev The origin is the messenger that called, the one granted `GATEWAY_ROLE`, which relays
 ///      only from the conduit's home.
 contract OpStackReceiver is SignedReceiver, IOpStackRecipient, IOpStackReceiverInit {
+    constructor(address guard, address multiSendCallOnly) SignedReceiver(guard, multiSendCallOnly) {}
     /// @dev Refused, not just unused: it would arm the conduit with no gateway.
     error UseOpStackInitializer();
 

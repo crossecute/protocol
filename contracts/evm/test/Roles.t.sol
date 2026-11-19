@@ -144,7 +144,7 @@ contract RolesTest is Test {
     ///      it was constructed with: the absence fails loudly on the first message rather
     ///      than quietly on a forged one.
     function testFuzz_theUnboundContractsTrustNobody(address anyone) public {
-        LzReceiver r = new LzReceiver(address(0xE1D0));
+        LzReceiver r = new LzReceiver(address(0xE1D0), address(0), address(0));
         LzTransmitter t = new LzTransmitter(address(0xE1D0));
         assertFalse(r.hasRole(r.GATEWAY_ROLE(), anyone));
         assertFalse(t.hasRole(t.GATEWAY_ROLE(), anyone));

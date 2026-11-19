@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {OpStackInteropReceiver} from "src/protocols/op-stack/OpStackInteropReceiver.sol";
 import {TransceiverDeployment, transceiverExtension} from "script/deploy/TransceiverDeploy.sol";
 import {OpStackInteropDeploy} from "script/deploy/OpStackInteropDeploy.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -59,6 +60,14 @@ abstract contract OpStackInteropFixture is ProviderFixture {
 
     function _receiverImplementation() internal override returns (address) {
         return OpStackInteropDeploy.receiverImplementation();
+    }
+
+    function _signedReceiverImplementation(address guard, address multiSendCallOnly)
+        internal
+        override
+        returns (address)
+    {
+        return address(new OpStackInteropReceiver(guard, multiSendCallOnly));
     }
 
     function _transmitterImplementation() internal override returns (address) {

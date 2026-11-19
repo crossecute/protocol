@@ -20,19 +20,25 @@ import {SafeSignaturesUtils} from "src/messaging/signed/SafeSignaturesUtils.sol"
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
 import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
+import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
+import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
+import {AuthorityUpdate} from "@crossecute/safe-guard/authority/AuthorityUpdateTypes.sol";
+import {ISourceAuthorityGuard} from "@crossecute/safe-guard/authority/ISourceAuthorityGuard.sol";
+import {AuthorityGraph} from "src/messaging/authority/AuthorityGraph.sol";
 import {
     ExecutionLeaf,
     SafeTxEvidence,
     SignedBootstrap,
     NestedSafeApproval,
     WIRE_STANDALONE,
-    WIRE_MERKLE
+    WIRE_MERKLE,
+    WIRE_AUTHORITY
 } from "src/messaging/signed/types/SignedDispatchTypes.sol";
 
 import {unseeded} from "test/RegistrySeed.sol";
 import {ext} from "test/Harness.sol";
 import {HyperlaneFixture} from "test/protocols/hyperlane/HyperlaneFixture.sol";
-import {MerkleBuilder, SafeSigs, Sig} from "test/signed/SignedFixtures.sol";
+import {MerkleBuilder, SafeSigs, Sig, Records} from "test/signed/SignedFixtures.sol";
 import {StubSafe, StubGuard} from "test/signed/StubSafe.sol";
 
 /// @notice Rejects every refund, to show a failed refund reverts the relay.
@@ -117,6 +123,18 @@ contract SignedTransmitterTest is HyperlaneFixture {
         s = new StubSafe();
         s.setOwners(owners, threshold);
         s.setGuard(address(guard));
+        _select(s);
+    }
+
+    function _select(StubSafe s) internal {
+        guard.setSelection(
+            address(s), bytes32(uint256(1)), Records.graphHash(block.chainid, SafeAuthorityGraph.derive(address(s)))
+        );
+    }
+
+    function _bootstrapBody(StubSafe s) internal view returns (bytes memory) {
+        return
+            Records.bootstrap(address(guard), SafeAuthorityGraph.derive(address(s)), st.payloadForCalls(new Call[](0)));
     }
 
     /// @notice Build a three-address owner array in the supplied order.
@@ -177,9 +195,9 @@ contract SignedTransmitterTest is HyperlaneFixture {
         return address(bytes20(t.predictReceiver(remote, address(safe), SALT)));
     }
 
-    /// @notice The plain-form bootstrap payload for the remote chain with empty setup calls.
+    /// @notice Selected authority and empty setup calls for the remote chain.
     function _bootstrapPayload() internal view returns (bytes memory) {
-        return st.bootstrapPayload(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), st.payloadForCalls(new Call[](0)));
+        return st.bootstrapPayload(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), _bootstrapBody(safe));
     }
 
     /// @notice The owner's `bootstrap` calldata for `_bootstrapPayload`.
@@ -201,35 +219,142 @@ contract SignedTransmitterTest is HyperlaneFixture {
         _exec(safe, evidence);
     }
 
+    function _publishedAuthority() internal returns (bytes memory submission) {
+        AuthorityGraph memory graph = Records.graph(SafeAuthorityGraph.derive(address(safe)));
+        SafeTxEvidence memory evidence = _delivery(
+            safe,
+            address(guard),
+            abi.encodeCall(
+                ISourceAuthorityGuard.selectAuthority,
+                (AuthorityUpdate(
+                        bytes32(uint256(1)), Records.graphHash(block.chainid, SafeAuthorityGraph.derive(address(safe)))
+                    ))
+            ),
+            _quorum()
+        );
+        submission = abi.encode(evidence, graph, new ChildUpdate[](0));
+        guard.publishAuthority(
+            address(safe),
+            SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, address(safe), block.chainid),
+            submission
+        );
+    }
+
+    function test_authorityQuotesAndSendsExactPublishedBytesAndAllowsRetries() public {
+        _bootstrap();
+        bytes memory submission = _publishedAuthority();
+        mailbox.setFee(100);
+        mailbox.setFeePerByte(2);
+        bytes[] memory attributes = new bytes[](0);
+        uint256 fee = st.quoteAuthority(_receiverHere(), submission, attributes);
+        uint256 balanceBefore = address(st).balance;
+        st.relayAuthority{value: fee}(_receiverHere(), submission, attributes);
+        assertEq(_lastBody(), abi.encode(WIRE_AUTHORITY, submission));
+        assertEq(address(st).balance, balanceBefore);
+        st.relayAuthority{value: fee}(_receiverHere(), submission, attributes);
+        bytes memory recipient = _receiverHere();
+        submission[submission.length - 1] = bytes1(uint8(1));
+        vm.expectRevert();
+        st.quoteAuthority(recipient, submission, attributes);
+        vm.expectRevert();
+        st.relayAuthority{value: fee}(recipient, submission, attributes);
+    }
+
+    function test_authorityRelayAndQuoteRequireThisConduitsReachableReceiver() public {
+        bytes memory submission = _publishedAuthority();
+        bytes memory recipient = _receiverHere();
+        bytes[] memory attributes = new bytes[](0);
+        vm.expectRevert();
+        st.quoteAuthority(recipient, submission, attributes);
+        _bootstrap();
+        recipient = Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(0xBAD));
+        vm.expectRevert();
+        st.quoteAuthority(recipient, submission, attributes);
+        vm.expectRevert();
+        st.relayAuthority(recipient, submission, attributes);
+    }
+
+    function _relayCall(bool authority) internal returns (bytes memory data, uint256 fee) {
+        if (authority) {
+            bytes memory submission = _publishedAuthority();
+            fee = st.quoteAuthority(_receiverHere(), submission, new bytes[](0));
+            data = abi.encodeCall(st.relayAuthority, (_receiverHere(), submission, new bytes[](0)));
+        } else {
+            ExecutionLeaf memory leaf = _execLeaf(0, new bytes[](0));
+            SafeTxEvidence memory evidence = _register(DispatchLeaves.hash(leaf));
+            fee = st.quoteRelay(evidence, leaf, new bytes32[](0));
+            data = abi.encodeCall(st.relayLeaf, (evidence, leaf, new bytes32[](0)));
+        }
+    }
+
+    function testFuzz_relaysSharePaymentAndRefundIsolation(bool authority) public {
+        _bootstrap();
+        mailbox.setFee(100);
+        mailbox.setRefundSurcharge(address(this), 23);
+        mailbox.setRefundSurcharge(address(st), 999);
+        mailbox.setRefundSurcharge(address(0xF00), 23);
+        (bytes memory data, uint256 fee) = _relayCall(authority);
+        assertEq(fee, 123);
+        uint256 before = address(st).balance;
+        (bool ok, bytes memory reason) = address(st).call{value: fee - 1}(data);
+        assertFalse(ok);
+        assertEq(bytes4(reason), SignedTransmitter.InsufficientPayment.selector);
+        address payer = address(0xF00);
+        vm.deal(payer, 1000);
+        vm.prank(payer);
+        (ok,) = address(st).call{value: fee + 10}(data);
+        assertTrue(ok);
+        assertEq(payer.balance, 1000 - fee);
+        assertEq(address(st).balance, before);
+        assertEq(mailbox.sent(mailbox.sentLength() - 1).refundTo, payer);
+        mailbox.refundLater(mailbox.sentLength() - 1, 20);
+        assertEq(payer.balance, 1000 - fee + 20);
+    }
+
+    function testFuzz_relaysShareProviderRefundLock(bool authority) public {
+        _bootstrap();
+        mailbox.setFee(100);
+        mailbox.setSynchronousRebate(20);
+        (bytes memory data, uint256 fee) = _relayCall(authority);
+        ReenterRefund payer = new ReenterRefund();
+        uint256 before = address(st).balance;
+        payer.relay{value: fee}(address(st), data);
+        assertTrue(payer.blocked());
+        assertEq(address(payer).balance, 20);
+        assertEq(address(st).balance, before);
+    }
+
     /* ================================== bootstrap ================================ */
 
-    /// @notice Decode a sent bootstrap and compare its records and setup calls.
-    /// @dev The destination receives the Safe's live authority and the setup calls, and nothing
-    ///      from the staged record.
-    function test_aSignedBootstrapCarriesTheLiveRecordsAndTheSetupCalls() public {
+    /// @notice The sent bootstrap carries the selected head, graph and setup calls.
+    function test_aSignedBootstrapCarriesTheSelectedAuthorityAndTheSetupCalls() public {
         _bootstrap();
         (address owner, bytes32 salt, bytes32 transmitter, bytes memory body) = this.decodeSigned(_lastBody());
         assertEq(owner, address(safe));
         assertEq(salt, SALT);
         assertEq(transmitter, bytes32(uint256(uint160(address(st)))));
         SignedBootstrap memory bootstrap = abi.decode(body, (SignedBootstrap));
-        assertEq(abi.encode(bootstrap.records), ext(address(t)).signedAuthority(address(safe)));
+        assertEq(bootstrap.updateHead, bytes32(uint256(1)));
+        assertEq(bootstrap.authority, abi.encode(Records.graph(SafeAuthorityGraph.derive(address(safe)))));
         assertEq(bootstrap.setupCalls, st.payloadForCalls(new Call[](0)));
         assertTrue(st.isBootstrapped(remote));
         assertEq(st.destinationReceiverOn(remote), abi.encodePacked(_receiverAddress()));
     }
 
-    /// @notice Change the Safe's owners after creation, then bootstrap.
-    /// @dev The bootstrap carries the owners live when it is sent, not those at creation.
-    function test_aBootstrapAfterAnOwnerChangeCarriesTheLiveRecords() public {
+    /// @notice A bootstrap after a selected owner update carries the replacement graph.
+    function test_aBootstrapAfterAnOwnerChangeCarriesTheSelectedGraph() public {
         bytes memory atCreation = ext(address(t)).signedAuthority(address(safe));
         safe.setOwners(_addrs(vm.addr(1), vm.addr(2), vm.addr(7)), 2);
+        _select(safe);
         bytes memory live = ext(address(t)).signedAuthority(address(safe));
         assertTrue(keccak256(live) != keccak256(atCreation));
 
         _bootstrap();
         (,,, bytes memory body) = this.decodeSigned(_lastBody());
-        assertEq(abi.encode(abi.decode(body, (SignedBootstrap)).records), live);
+        assertEq(
+            abi.decode(body, (SignedBootstrap)).authority,
+            abi.encode(Records.graph(abi.decode(live, (SafeAuthorityRecord[]))))
+        );
         assertEq(st.destinationReceiverOn(remote), abi.encodePacked(_receiverAddress()));
     }
 
@@ -252,15 +377,10 @@ contract SignedTransmitterTest is HyperlaneFixture {
     }
 
     /// @notice Quote a signed bootstrap and compare it with the transceiver's price for its body.
-    /// @dev The quote prices the same live records and setup calls the send carries.
+    /// @dev The quote prices the same selected authority and setup calls the send carries.
     function test_quoteBootstrapPricesTheSignedBody() public {
         mailbox.setFeePerByte(10);
-        bytes memory body = abi.encode(
-            SignedBootstrap(
-                abi.decode(ext(address(t)).signedAuthority(address(safe)), (SafeAuthorityRecord[])),
-                st.payloadForCalls(new Call[](0))
-            )
-        );
+        bytes memory body = _bootstrapBody(safe);
         assertEq(
             st.quoteBootstrap(_bootstrapPayload(), new bytes[](0)),
             t.quoteBootstrapSigned(remote, address(safe), SALT, body, new bytes[](0))
@@ -269,6 +389,39 @@ contract SignedTransmitterTest is HyperlaneFixture {
         uint256 quote = st.quoteBootstrap(_bootstrapPayload(), new bytes[](0));
         _bootstrap();
         assertEq(before - address(st).balance, quote);
+    }
+
+    function test_quoteAndBootstrapRejectUnactivatedOrMismatchedAuthority() public {
+        for (uint256 scenario = 0; scenario < 4; ++scenario) {
+            _select(safe);
+            SignedBootstrap memory candidate = abi.decode(_bootstrapBody(safe), (SignedBootstrap));
+            bytes memory reason = abi.encodeWithSelector(SignedTransmitterLib.BootstrapAuthorityMismatch.selector);
+            if (scenario == 0) {
+                guard.setSelection(address(safe), bytes32(0), bytes32(0));
+                reason = abi.encodeWithSelector(SignedTransmitterLib.NoSignedAuthority.selector, address(safe));
+            } else if (scenario == 1) {
+                candidate.updateHead = bytes32(uint256(2));
+            } else if (scenario == 2) {
+                AuthorityGraph memory changed = abi.decode(candidate.authority, (AuthorityGraph));
+                changed.nodes[0].record.threshold = 3;
+                candidate.authority = abi.encode(changed);
+            } else {
+                candidate.guard = address(0xBAD);
+            }
+            bytes memory payload = st.bootstrapPayload(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), abi.encode(candidate));
+            vm.expectRevert(reason);
+            st.quoteBootstrap(payload, new bytes[](0));
+            SafeTxEvidence memory evidence = _delivery(
+                safe, address(st), abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0))), _quorum()
+            );
+            guard.stage(address(safe), evidence.signedSafeTx.safeTx, evidence.signedSafeTx.signatures);
+            uint256 balance = address(st).balance;
+            vm.expectRevert(reason);
+            safe.exec(address(st), 0, evidence.signedSafeTx.safeTx.data);
+            assertFalse(st.isBootstrapped(remote));
+            assertEq(address(st).balance, balance);
+            assertEq(mailbox.sentLength(), 0);
+        }
     }
 
     /// @notice Call signed bootstrap without a guard-staged record.
@@ -617,23 +770,24 @@ contract SignedTransmitterTest is HyperlaneFixture {
         StubSafe parent = new StubSafe();
         parent.setOwners(owners, 2);
         parent.setGuard(address(guard));
+        _select(parent);
         vm.prank(address(parent));
         SignedTransmitter nested = SignedTransmitter(payable(t.createTransmitter(SALT)));
         vm.deal(address(nested), 1 ether);
 
         bytes memory bootstrapCall = abi.encodeCall(
             ISignedTransmitter.bootstrap,
-            (
-                nested.bootstrapPayload(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), nested.payloadForCalls(new Call[](0))),
-                new bytes[](0)
-            )
+            (nested.bootstrapPayload(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), _bootstrapBody(parent)), new bytes[](0))
         );
         guard.stage(address(parent), _safeTx(parent, address(nested), bootstrapCall), "");
         parent.exec(address(nested), 0, bootstrapCall);
         (,,, bytes memory body) = this.decodeSigned(_lastBody());
-        SafeAuthorityRecord[] memory records = abi.decode(body, (SignedBootstrap)).records;
-        assertEq(records.length, 2);
-        assertEq(records[1].safe, address(child));
+        {
+            SignedBootstrap memory bootstrap = abi.decode(body, (SignedBootstrap));
+            AuthorityGraph memory authority = abi.decode(bootstrap.authority, (AuthorityGraph));
+            assertEq(authority.nodes.length, 2);
+            assertEq(authority.nodes[1].record.safe, address(child));
+        }
 
         bytes memory recipient =
             Erc7930.encodeEvm(REMOTE_CHAIN_ID, address(bytes20(t.predictReceiver(remote, address(parent), SALT))));

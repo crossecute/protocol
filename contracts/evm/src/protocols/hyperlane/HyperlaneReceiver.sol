@@ -18,7 +18,7 @@ contract HyperlaneReceiver is ProviderReceiver, IMessageRecipient {
     ///         so this never moves a derived conduit address.
     address public immutable mailbox;
 
-    constructor(address mailbox_) {
+    constructor(address mailbox_, address guard, address multiSendCallOnly) ProviderReceiver(guard, multiSendCallOnly) {
         if (mailbox_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         mailbox = mailbox_;
     }

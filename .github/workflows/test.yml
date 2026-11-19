@@ -27,6 +27,12 @@ jobs:
 
       - run: forge --version
 
+      - name: Check authority archive and retrieval
+        run: |
+          python3 -m venv "$RUNNER_TEMP/authority-archive-venv"
+          "$RUNNER_TEMP/authority-archive-venv/bin/python" -m pip install -r ../../tools/authority-archive/requirements.txt
+          "$RUNNER_TEMP/authority-archive-venv/bin/python" -B -m unittest discover -s ../../tools/authority-archive -v
+
       - run: forge fmt --check
 
       - run: forge build

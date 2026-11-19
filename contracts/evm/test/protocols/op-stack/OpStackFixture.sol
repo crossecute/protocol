@@ -7,7 +7,7 @@ import {OpStackDeploy} from "script/deploy/OpStackDeploy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {OpStackTransceiver} from "src/protocols/op-stack/OpStackTransceiver.sol";
 import {IOpStackRecipient} from "src/protocols/op-stack/OpStackMessage.sol";
-import {IOpStackReceiverInit} from "src/protocols/op-stack/OpStackReceiver.sol";
+import {OpStackReceiver, IOpStackReceiverInit} from "src/protocols/op-stack/OpStackReceiver.sol";
 
 import {MockCrossDomainMessenger} from "test/protocols/op-stack/MockCrossDomainMessenger.sol";
 import {ProviderGasFixture} from "test/protocols/ProviderFixture.sol";
@@ -58,6 +58,14 @@ abstract contract OpStackFixture is ProviderGasFixture {
 
     function _receiverImplementation() internal override returns (address) {
         return OpStackDeploy.receiverImplementation();
+    }
+
+    function _signedReceiverImplementation(address guard, address multiSendCallOnly)
+        internal
+        override
+        returns (address)
+    {
+        return address(new OpStackReceiver(guard, multiSendCallOnly));
     }
 
     function _transmitterImplementation() internal override returns (address) {
