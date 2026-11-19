@@ -159,7 +159,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
         bytes32[] memory hashes = _checkLeaves(homeOft, homeEid, leaves);
         bytes32 destRoot = LzOftMessage.root(hashes);
 
-        bool signed = SafeViewer.isSigned(msg.sender);
+        bool signed = SafeViewer.signedAuthority(msg.sender).length != 0;
         bytes32 s = conduitSalt(msg.sender, salt, localChainKey, homeEid, homeOft, destRoot);
         conduit = Create2.computeAddress(s, PROXY_INIT_CODE_HASH);
         Conduits.requireVacant(conduit, msg.sender, salt);

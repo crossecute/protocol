@@ -154,7 +154,8 @@ abstract contract TransceiverBase is TransceiverCore {
     /// @dev Signed mode (#108) when the caller is a Safe whose transaction guard advertises
     ///      `ICrossecuteGuard`, at the same address a plain conduit of `(owner, salt)` would have.
     ///      The mode is fixed here; a guard installed or removed later does not change it. The
-    ///      owner graph is derived here only to check it derives; bootstraps read it again.
+    ///      owner graph is derived here only to check it derives; a signed bootstrap carries the
+    ///      guard's selected graph instead.
     /// @param salt Chosen by the caller; `bytes32(0)` suits an owner who wants one conduit.
     /// @return conduit The transmitter, at the address its receivers occupy on parity chains.
     function createTransmitter(bytes32 salt) external returns (address conduit) {

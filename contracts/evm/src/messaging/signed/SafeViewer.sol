@@ -3,6 +3,8 @@ pragma solidity ^0.8.28;
 
 import {ICrossecuteGuard} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {GuardDiscovery} from "@crossecute/safe-guard/GuardDiscovery.sol";
+import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
+import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 
 /// @notice Whether a conduit owner gets signed mode at creation (#108).
 library SafeViewer {
@@ -10,6 +12,15 @@ library SafeViewer {
     bytes4 private constant GET_STORAGE_AT = 0x5624b25b;
     // ERC-165 supportsInterface(bytes4)
     bytes4 private constant SUPPORTS_INTERFACE = 0x01ffc9a7;
+
+    /// @notice `owner`'s live authority records when its guard advertises `ICrossecuteGuard`, none
+    ///         otherwise.
+    /// @dev The creation check of every binding: signed mode needs the guard, and an owner graph
+    ///      that does not derive reverts here, before a conduit exists. A signed bootstrap carries
+    ///      the guard's selected graph, not this one.
+    function signedAuthority(address owner) internal view returns (SafeAuthorityRecord[] memory records) {
+        if (isSigned(owner)) records = SafeAuthorityGraph.derive(owner);
+    }
 
     /// @notice Probe whether the owner's transaction guard advertises the Crossecute guard
     ///         interface.

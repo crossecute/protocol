@@ -89,7 +89,8 @@ them for a candidate.
 - **L2.5** The only attribute MUST be `LzMessage.OPTIONS_ATTRIBUTE`, which replaces the
   default lzCompose option whole.
 - **L2.6** Signed mode MUST use the same route-bound salt as plain mode and be fixed by the
-  source Safe's guard capability at creation. Before sending or quoting a signed bootstrap,
+  source Safe's guard capability at creation, checked as the registry bindings check it
+  (`SafeViewer.signedAuthority`: an owner graph that does not derive is refused). Before sending or quoting a signed bootstrap,
   the transmitter MUST validate its head and graph against the source guard's activated selection.
   `signedConduitBootstrap` MUST build
   `abi.encode(SIGNED_BOOTSTRAP, LzOftMessage.Bootstrap, sourceChainId, signedBody)` from the
