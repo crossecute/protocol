@@ -51,11 +51,19 @@ abstract contract LzOftConduitFactoryBase is Test {
     function _chain(uint256 chainId, uint32 localEid) internal {
         vm.chainId(chainId);
         LzOftTransmitter t = new LzOftTransmitter{salt: bytes32(0)}();
-        LzOftReceiver r = new LzOftReceiver{salt: bytes32(0)}();
+        LzOftReceiver r = new LzOftReceiver{salt: bytes32(0)}(_authorityGuard(), _multiSendCallOnly());
         factory = new LzOftConduitFactory{salt: bytes32(0)}(address(t), address(r));
         endpoint = new MockLzEndpoint{salt: bytes32(chainId)}();
         endpoint.setEid(localEid);
         oft = new MockOft{salt: bytes32(chainId)}(address(endpoint));
+    }
+
+    function _authorityGuard() internal view virtual returns (address) {
+        return address(0);
+    }
+
+    function _multiSendCallOnly() internal view virtual returns (address) {
+        return address(0);
     }
 
     function _leaves(address dstOft) internal view returns (LzOftConduitFactory.Leaf[] memory leaves) {

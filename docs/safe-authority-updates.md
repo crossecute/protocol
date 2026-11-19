@@ -588,8 +588,9 @@ through every authority update/cache cleanup. Freeze the shared authority contex
 during application verification/execution across all provider and direct entry
 points. Application leaves/callbacks cannot act as management bypasses. Ordinary
 execution never refreshes child snapshots or advances updateHead. Emergency/admin
-recovery, guard migration, custom validators, zkSync/Tron and signed OFT are outside
-this implementation. Other home-contract authority (such as a DAO) has no signed mode
+recovery, guard migration, custom validators and zkSync/Tron signed receivers are outside
+this implementation. LayerZero OFT uses the shared receiver authority implementation and
+[conduit-originated compose transport](safe-signed-dispatch.md#layerzero-oft-signed-transport). Other home-contract authority (such as a DAO) has no signed mode
 and no adapter is added; a later one needs separate portable proof support, not a
 bridge assertion. Nothing from #108 is deployed, so receivers hold their authority
 directly with no migration.

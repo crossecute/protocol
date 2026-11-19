@@ -43,7 +43,7 @@ library LzOftMessage {
 
     /// @notice The one `SendParam` a send and its quote both use.
     function sendParam(uint32 dstEid, address to, bytes memory composeMsg, bytes[] memory attributes, uint256 gas)
-        internal
+        public
         pure
         returns (SendParam memory)
     {
@@ -53,14 +53,15 @@ library LzOftMessage {
     }
 
     /// @dev The fee is paid from this contract's balance, so `value` is the quote, not `msg.value`.
-    function send(address oft, SendParam memory param, uint256 value, address refundTo) internal {
+    // forge-lint: disable-next-line(missing-zero-check) the factory validates homeOft and its endpoint at creation
+    function send(address oft, SendParam memory param, uint256 value, address refundTo) public {
         // The guid and the receipt are in the endpoint's and the OFT's events.
         // forge-lint: disable-start(unused-return)
         IOFT(oft).send{value: value}(param, MessagingFee(value, 0), refundTo);
         // forge-lint: disable-end(unused-return)
     }
 
-    function quote(address oft, SendParam memory param) internal view returns (uint256) {
+    function quote(address oft, SendParam memory param) public view returns (uint256) {
         return IOFT(oft).quoteSend(param, false).nativeFee;
     }
 

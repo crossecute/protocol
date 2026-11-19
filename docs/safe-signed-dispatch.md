@@ -628,10 +628,10 @@ Where the design lives in code, and what #108's implementation leaves out.
 How the pieces fit:
 
 - **One implementation per provider.** Every binding's transmitter extends `SignedTransmitter`
-  and its receiver `SignedReceiver`, except LayerZero OFT's. A conduit is plain until
-  the transceiver calls `initializeSigned`, right after arming it with the plain initializer
-  and no calls, in the same transaction. Provider setup has one path for both modes. LayerZero
-  OFT conduits are created by `LzOftConduitFactory`, which never selects signed mode.
+  and its receiver `SignedReceiver`, including LayerZero OFT. A conduit is plain until
+  the transceiver or OFT factory calls `initializeSigned`, right after arming it with the plain
+  initializer and no calls, in the same transaction. Provider setup has one path for both modes.
+  `LzOftConduitFactory` selects signed mode with the same guard capability probe.
 - **Conduit salt.** `TransceiverCore._conduitSalt` is the same for both modes (Q4.7). Every
   chain-specific address formula overrides `_conduitAt(bytes32)`. The source transceiver's
   bootstrap caller check also holds the envelope kind to the conduit's `isSigned()`.
@@ -647,12 +647,49 @@ How the pieces fit:
   libraries, deployed as `WormholeMessage` and `LzMessage` are, to keep transmitters and
   receivers under EIP-170.
 - **Settlement.** `relayLeaf` and `quoteRelay` select the caller as the provider refund
-  recipient (LayerZero, Hyperlane and Wormhole support that plumbing). Delayed provider
+  recipient (LayerZero, LayerZero OFT, Hyperlane and Wormhole support that plumbing). Delayed provider
   refunds can return directly to the payer. Any synchronous refund received by the transmitter
   is forwarded with excess payment before its final balance check. The relay lock covers
   provider callbacks and refund settlement. Safe-funded sends retain refunds in the conduit.
   This creates no refund entitlement where the provider offers none (for example CCIP unused
   execution gas); providers without a recipient field cannot be redirected.
+
+### LayerZero OFT signed transport
+
+`LzOftConduitFactory` selects signed mode at creation without capturing authority. Both modes use
+`keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot))` as their CREATE2 salt.
+The six-argument `predictConduit` exposes derivation; `isSigned(conduit)` and
+`SignedConduitCreated` expose the selected source mode. The route root authenticates OFT routing.
+
+The Safe must activate its authority with the source guard before bootstrap. The transmitter
+checks the supplied `SignedBootstrap` against that selection, then sends it through its home
+OFT so that `composeFrom` remains the conduit. The factory builds the same bytes for quote and
+send: `abi.encode(SIGNED_BOOTSTRAP, LzOftMessage.Bootstrap, sourceChainId, signedBody)`, where
+`SIGNED_BOOTSTRAP = uint256(keccak256("crossecute.layerzero-oft.signed-bootstrap.v1"))` and
+`signedBody = abi.encode(SignedBootstrap)`. The header's legacy `calls` field is empty and
+ignored for signed initialization; the body's `setupCalls` supply setup.
+The destination checks `ChainKey.forEvm(sourceChainId) == homeChainKey`, the local OFT's route
+proof, endpoint, source eid, current peer and route-bound conduit derivation. It arms with no
+calls before initializing authority and setup atomically on the provider's authentication.
+A second bootstrap delivery reverts `ConduitExists`. Failed source transport reverts the Safe's
+bootstrap execution; the Safe can execute another bootstrap after the transport is repaired.
+
+Ordinary compose payloads use the shared standalone/Merkle/authority wire formats and replay
+state. Direct message, leaf and authority submissions remain available without OFT delivery.
+Bootstrap creation itself uses authenticated OFT delivery. Fully signed dispatch evidence can
+authorize destination execution before the corresponding source Safe transaction executes.
+Relayer-funded leaf and authority sends name the relayer as the OFT refund recipient;
+Safe-funded sends retain conduit refunds. No tokens are moved: OFT amounts remain zero.
+The real Safe fixture's one-route, three-owner, empty-setup bootstrap is 1,280 bytes,
+928 bytes larger than the corresponding plain header encoding. Proofs, graph nodes, owners
+and setup calls change the complete wire size; signatures are absent from bootstrap.
+The Paris/solc 0.8.28 OFT transmitter runtime is 23,887 bytes (689 bytes of EIP-170 headroom),
+the receiver is 21,095 bytes, and the factory is 15,590 bytes.
+
+The focused OFT tests are in
+`contracts/evm/test/protocols/layerzero/LzOftSigned.t.sol`; real Safe 1.5.0/guard staging is
+covered by `contracts/safe-guard/test/SignedOftIntegration.t.sol`. Live lane fees, payload limits,
+compose gas and zero-amount OFT compatibility still need deployment validation per #118.
 
 Not in #108's implementation:
 
@@ -664,8 +701,8 @@ Not in #108's implementation:
   Tron), which is outside #108's scope. The source refuses a signed bootstrap to a
   destination that reports its receiver. Non-EVM destinations are [#128](https://github.com/crossecute/protocol/issues/128).
 Completed #134 measurements and real-Safe integration evidence are in
-[safe-signed-dispatch-measurements.md](safe-signed-dispatch-measurements.md). No signed OFT,
-zkSync/Tron or authority-rotation support is added by that work.
+[safe-signed-dispatch-measurements.md](safe-signed-dispatch-measurements.md). Those measurements
+predate the OFT integration above; zkSync/Tron signed support remains separate work.
 
 ## Tests
 

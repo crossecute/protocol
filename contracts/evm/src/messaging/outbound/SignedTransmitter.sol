@@ -137,11 +137,9 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         SignedTransmitterLib.consumeStaged();
         (bytes32 chainKey, bytes memory route, bytes memory body) = _signedBootstrap(payload);
         _markBootstrapped(chainKey, route);
-        IConduitTransceiver t = IConduitTransceiver(transceiver);
-        uint256 fee = t.quoteBootstrapSigned(chainKey, deployer, conduitSalt, body, attributes);
+        uint256 fee = _quoteSignedBootstrap(chainKey, route, body, attributes);
         _requireFunded(fee);
-        // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
-        t.bootstrapSigned{value: fee}(chainKey, deployer, conduitSalt, body, attributes);
+        _sendSignedBootstrap(chainKey, route, body, attributes, fee);
     }
 
     /// @notice The destination key, route and `SignedBootstrap` body for a bootstrap payload.
@@ -186,6 +184,28 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     function renounceOwnership() public virtual override {
         if (_signedStorage().signed) revert OwnershipFixed();
         super.renounceOwnership();
+    }
+
+    /// @dev Override for bindings whose conduit carries its own bootstrap transport.
+    function _quoteSignedBootstrap(bytes32 chainKey, bytes memory, bytes memory body, bytes[] memory attributes)
+        internal
+        view
+        virtual
+        returns (uint256)
+    {
+        return IConduitTransceiver(transceiver).quoteBootstrapSigned(chainKey, deployer, conduitSalt, body, attributes);
+    }
+
+    /// @dev The default transport is the transceiver; OFT sends must originate at the conduit.
+    function _sendSignedBootstrap(
+        bytes32 chainKey,
+        bytes memory,
+        bytes memory body,
+        bytes[] memory attributes,
+        uint256 fee
+    ) internal virtual {
+        // forge-lint: disable-next-line(arbitrary-send-eth) the write-once transceiver
+        IConduitTransceiver(transceiver).bootstrapSigned{value: fee}(chainKey, deployer, conduitSalt, body, attributes);
     }
 
     /* ============================== permissionless ============================== */
@@ -278,8 +298,8 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         returns (uint256)
     {
         if (!_signedStorage().signed) return super.quoteBootstrap(payload, attributes);
-        (bytes32 chainKey,, bytes memory body) = _signedBootstrap(payload);
-        return IConduitTransceiver(transceiver).quoteBootstrapSigned(chainKey, deployer, conduitSalt, body, attributes);
+        (bytes32 chainKey, bytes memory route, bytes memory body) = _signedBootstrap(payload);
+        return _quoteSignedBootstrap(chainKey, route, body, attributes);
     }
 
     /// @notice Build the signed standalone payload and return the fee its send would pay.

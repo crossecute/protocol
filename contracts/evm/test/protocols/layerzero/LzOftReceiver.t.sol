@@ -46,7 +46,7 @@ contract LzOftReceiverTest is Test {
         target = new Target();
         receiver = LzOftReceiver(
             payable(deployConduit(
-                    address(new LzOftReceiver()),
+                    address(new LzOftReceiver(address(0), address(0))),
                     abi.encodeCall(
                         ILzOftReceiverInit.initialize,
                         (TRANSMITTER, HOME_EID, HOME_OFT, address(localOft), new Call[](0))
@@ -112,7 +112,7 @@ contract LzOftReceiverTest is Test {
     }
 
     function test_thePlainInitializerIsRefused() public {
-        LzOftReceiver logic = new LzOftReceiver();
+        LzOftReceiver logic = new LzOftReceiver(address(0), address(0));
         vm.expectRevert(LzOftReceiver.UseLzOftInitializer.selector);
         logic.initialize(TRANSMITTER, bytes32(uint256(HOME_EID)), new Call[](0));
     }
