@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {ChainRegistry, RegistrySeed, ProviderSeed} from "src/registry/ChainRegistry.sol";
 import {ProviderDeployment} from "src/registry/IChainRegistryRefs.sol";
@@ -11,7 +10,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {PROXY_DEPLOYER, proxySalt} from "src/conduit/ProxyDeployer.sol";
-import {VM, ARACHNID, DeployCheck, check, arachnidDeploy} from "script/deploy/ProxyDeploy.sol";
+import {VM, DeployCheck, check, arachnidAddress, arachnidDeploy} from "script/deploy/ProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 
 /// @notice `deploy/governance.toml`.
@@ -161,10 +160,10 @@ library ChainDeploy {
 
     /// @notice Where `deploy` puts them, before it runs.
     function predict(Governance memory g) internal pure returns (ChainContracts memory c) {
-        address timelock = _arachnidAddress(timelockInitCode(g));
+        address timelock = arachnidAddress(timelockInitCode(g));
         c.timelock = TimelockController(payable(timelock));
-        c.registry = ChainRegistry(_arachnidAddress(registryInitCode(g, timelock)));
-        c.treasury = Treasury(payable(_arachnidAddress(treasuryInitCode(timelock))));
+        c.registry = ChainRegistry(arachnidAddress(registryInitCode(g, timelock)));
+        c.treasury = Treasury(payable(arachnidAddress(treasuryInitCode(timelock))));
     }
 
     /// @notice Deploy what is missing and check all three. Rerunning deploys nothing.
@@ -213,9 +212,5 @@ library ChainDeploy {
                 "the registry records each provider live on the home under the deployer"
             );
         }
-    }
-
-    function _arachnidAddress(bytes memory initCode) private pure returns (address) {
-        return Create2.computeAddress(bytes32(0), keccak256(initCode), ARACHNID);
     }
 }

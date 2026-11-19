@@ -7,8 +7,7 @@ import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.s
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {receiverAuthorityPins} from "script/deploy/TransceiverDeploy.sol";
-import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
-import {ARACHNID, arachnidDeploy, check} from "script/deploy/ProxyDeploy.sol";
+import {arachnidAddress, arachnidDeploy, check} from "script/deploy/ProxyDeploy.sol";
 
 /// @notice A destination as an operator names it: its EVM chain id and LayerZero eid.
 struct LzOftDestination {
@@ -55,7 +54,7 @@ library LzOftDeploy {
         returns (address)
     {
         (,, bytes memory factoryCode) = _initcode(treasury, guard, multiSendCallOnly);
-        return _at(factoryCode);
+        return arachnidAddress(factoryCode);
     }
 
     function requireFactory(address treasury, address expected) internal view {
@@ -75,12 +74,8 @@ library LzOftDeploy {
         receiverCode = abi.encodePacked(type(LzOftReceiver).creationCode, abi.encode(guard, multiSendCallOnly));
         factoryCode = abi.encodePacked(
             type(LzOftConduitFactory).creationCode,
-            abi.encode(_at(transmitterCode), _at(receiverCode), treasury)
+            abi.encode(arachnidAddress(transmitterCode), arachnidAddress(receiverCode), treasury)
         );
-    }
-
-    function _at(bytes memory initCode) private pure returns (address) {
-        return Create2.computeAddress(bytes32(0), keccak256(initCode), ARACHNID);
     }
 
     /// @notice The leaves `createTransmitter` takes for `destinations`, read from `homeOft`'s

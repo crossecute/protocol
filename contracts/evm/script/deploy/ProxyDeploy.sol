@@ -19,10 +19,14 @@ function check(bool ok, string memory what) pure {
     if (!ok) revert DeployCheck(what);
 }
 
+function arachnidAddress(bytes memory initCode) pure returns (address) {
+    return Create2.computeAddress(bytes32(0), keccak256(initCode), ARACHNID);
+}
+
 /// @notice `initCode` deployed through Arachnid's factory at salt zero, on first use, so it sits
 ///         at one address on every chain that runs the same initcode.
 function arachnidDeploy(bytes memory initCode) returns (address at) {
-    at = Create2.computeAddress(bytes32(0), keccak256(initCode), ARACHNID);
+    at = arachnidAddress(initCode);
     if (at.code.length == 0) {
         check(ARACHNID.code.length != 0, "Arachnid's factory is deployed");
         (bool ok,) = ARACHNID.call(abi.encodePacked(bytes32(0), initCode));
