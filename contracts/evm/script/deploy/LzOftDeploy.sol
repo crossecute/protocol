@@ -7,7 +7,8 @@ import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.s
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {receiverAuthorityPins} from "script/deploy/TransceiverDeploy.sol";
-import {arachnidDeploy, check} from "script/deploy/ProxyDeploy.sol";
+import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
+import {ARACHNID, arachnidDeploy, check} from "script/deploy/ProxyDeploy.sol";
 
 /// @notice A destination as an operator names it: its EVM chain id and LayerZero eid.
 struct LzOftDestination {
@@ -21,19 +22,65 @@ struct LzOftDestination {
 library LzOftDeploy {
     /// @notice The factory, deployed with its logic through Arachnid's factory at salt zero on
     ///         first use, so all three sit at one address on every chain that runs the same
-    ///         initcode.
+    ///         build, receiver pins and treasury.
     function factory(address treasury) internal returns (LzOftConduitFactory f) {
-        address t = arachnidDeploy(type(LzOftTransmitter).creationCode);
         (address guard, address multiSendCallOnly) = receiverAuthorityPins();
-        address r =
-            arachnidDeploy(abi.encodePacked(type(LzOftReceiver).creationCode, abi.encode(guard, multiSendCallOnly)));
-        f = LzOftConduitFactory(
-            arachnidDeploy(abi.encodePacked(type(LzOftConduitFactory).creationCode, abi.encode(t, r, treasury)))
-        );
+        return factory(treasury, guard, multiSendCallOnly);
+    }
+
+    function factory(address treasury, address guard, address multiSendCallOnly)
+        internal
+        returns (LzOftConduitFactory f)
+    {
+        (bytes memory transmitterCode, bytes memory receiverCode, bytes memory factoryCode) =
+            _initcode(treasury, guard, multiSendCallOnly);
+        address t = arachnidDeploy(transmitterCode);
+        address r = arachnidDeploy(receiverCode);
+        f = LzOftConduitFactory(arachnidDeploy(factoryCode));
         check(f.transmitterImplementation() == t, "the factory arms transmitters with the logic beside it");
         check(f.receiverImplementation() == r, "the factory arms receivers with the logic beside it");
         check(f.treasury() == treasury, "the factory fixes the fee treasury");
         check(f.localChainKey() == ChainKey.local(), "the factory names this chain");
+    }
+
+    function predictFactory(address treasury) internal view returns (address) {
+        (address guard, address multiSendCallOnly) = receiverAuthorityPins();
+        return predictFactory(treasury, guard, multiSendCallOnly);
+    }
+
+    /// @notice The factory address for this treasury and receiver authority pins.
+    function predictFactory(address treasury, address guard, address multiSendCallOnly)
+        internal
+        pure
+        returns (address)
+    {
+        (,, bytes memory factoryCode) = _initcode(treasury, guard, multiSendCallOnly);
+        return _at(factoryCode);
+    }
+
+    function requireFactory(address treasury, address expected) internal view {
+        check(expected != address(0), "the release's factory address is supplied");
+        check(
+            predictFactory(treasury) == expected,
+            "the deployment inputs yield the factory address recorded for the release"
+        );
+    }
+
+    function _initcode(address treasury, address guard, address multiSendCallOnly)
+        private
+        pure
+        returns (bytes memory transmitterCode, bytes memory receiverCode, bytes memory factoryCode)
+    {
+        transmitterCode = type(LzOftTransmitter).creationCode;
+        receiverCode = abi.encodePacked(type(LzOftReceiver).creationCode, abi.encode(guard, multiSendCallOnly));
+        factoryCode = abi.encodePacked(
+            type(LzOftConduitFactory).creationCode,
+            abi.encode(_at(transmitterCode), _at(receiverCode), treasury)
+        );
+    }
+
+    function _at(bytes memory initCode) private pure returns (address) {
+        return Create2.computeAddress(bytes32(0), keccak256(initCode), ARACHNID);
     }
 
     /// @notice The leaves `createTransmitter` takes for `destinations`, read from `homeOft`'s

@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {DeployCheck} from "script/deploy/ProxyDeploy.sol";
 import {DeployLzOft} from "script/DeployLzOft.s.sol";
+import {receiverAuthorityPins} from "script/deploy/TransceiverDeploy.sol";
 import {LzOftLeaves} from "script/LzOftLeaves.s.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
@@ -13,8 +14,28 @@ import {LzOftDeploy} from "script/deploy/LzOftDeploy.sol";
 import {testGovernanceFile, testGovernance, skipUnderCoverage} from "test/deploy/TestGovernance.sol";
 
 contract DeployLzOftWithTestConfig is DeployLzOft {
+    address private expectedFactory;
+
+    function setExpectedFactory(address expected) external {
+        expectedFactory = expected;
+    }
+
+    function _expectedFactory() internal view override returns (address) {
+        return expectedFactory;
+    }
+
     function _governanceFile() internal view override returns (string memory) {
         return testGovernanceFile();
+    }
+}
+
+contract LzOftDeployHarness {
+    function requireFactory(address treasury, address expected) external view {
+        LzOftDeploy.requireFactory(treasury, expected);
+    }
+
+    function factory(address treasury, address guard, address multiSend) external returns (address) {
+        return address(LzOftDeploy.factory(treasury, guard, multiSend));
     }
 }
 
@@ -27,15 +48,28 @@ contract LzOftScriptsTest is Test {
 
     function test_factoryPinsTheCanonicalTreasuryOnEveryChain() public {
         skipUnderCoverage();
-        DeployLzOft script = new DeployLzOftWithTestConfig();
+        DeployLzOftWithTestConfig script = new DeployLzOftWithTestConfig();
         uint256 snapshot = vm.snapshotState();
         vm.chainId(1);
+        address predicted = script.predict();
         address treasury = address(ChainDeploy.deploy(testGovernance()).treasury);
+        script.setExpectedFactory(address(0xBAD));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployCheck.selector, "the deployment inputs yield the factory address recorded for the release"
+            )
+        );
+        script.run();
+        assertEq(predicted.code.length, 0);
+        script.setExpectedFactory(predicted);
         LzOftConduitFactory first = script.run();
+        assertEq(address(first), predicted);
         assertEq(first.treasury(), treasury);
         assertEq(address(script.run()), address(first), "rerun reuses the factory");
         vm.revertToState(snapshot);
         vm.chainId(8453);
+        assertEq(script.predict(), predicted);
+        script.setExpectedFactory(predicted);
         assertEq(address(ChainDeploy.deploy(testGovernance()).treasury), treasury);
         LzOftConduitFactory second = script.run();
         assertEq(address(first), address(second));
@@ -69,5 +103,50 @@ contract LzOftScriptsTest is Test {
         vm.chainId(ZKSYNC);
         vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "the home is a parity chain"));
         script.run();
+    }
+
+    LzOftDeployHarness internal harness = new LzOftDeployHarness();
+    address internal constant GUARD_A = address(0x1234);
+    address internal constant GUARD_B = address(0x4321);
+    address internal constant MULTISEND = address(0x5678);
+    address internal constant TREASURY = address(0x7EA5);
+
+    /// @notice The factory lands at the address predicted for the release inputs.
+    function test_thePredictedFactoryIsWhereTheDeployLands() public {
+        address predicted = LzOftDeploy.predictFactory(TREASURY, GUARD_A, MULTISEND);
+        assertEq(predicted.code.length, 0);
+        assertEq(harness.factory(TREASURY, GUARD_A, MULTISEND), predicted);
+        assertGt(predicted.code.length, 0);
+    }
+
+    /// @notice A pin set on one chain and unset or different on another yields another factory,
+    ///         hence other conduit addresses.
+    function test_differentReleaseInputsYieldAnotherFactory() public pure {
+        address a = LzOftDeploy.predictFactory(TREASURY, GUARD_A, MULTISEND);
+        assertTrue(a != LzOftDeploy.predictFactory(TREASURY, GUARD_B, MULTISEND), "another guard");
+        assertTrue(a != LzOftDeploy.predictFactory(TREASURY, GUARD_A, address(0x9999)), "another MultiSend");
+        assertTrue(a != LzOftDeploy.predictFactory(TREASURY, address(0), address(0)), "pins unset");
+        assertTrue(a != LzOftDeploy.predictFactory(address(0xBAD), GUARD_A, MULTISEND), "another treasury");
+    }
+
+    /// @notice The script path refuses pins that do not yield the recorded address, and an
+    ///         unrecorded address, before it deploys anything.
+    function test_aDeployWhosePinsMissTheRecordedFactoryIsRefused() public {
+        (address guard, address multiSend) = receiverAuthorityPins();
+        address recorded = LzOftDeploy.predictFactory(TREASURY, guard, multiSend);
+        harness.requireFactory(TREASURY, recorded);
+
+        address other = LzOftDeploy.predictFactory(TREASURY, GUARD_B, MULTISEND);
+        assertTrue(other != recorded);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployCheck.selector, "the deployment inputs yield the factory address recorded for the release"
+            )
+        );
+        harness.requireFactory(TREASURY, other);
+
+        vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "the release's factory address is supplied"));
+        harness.requireFactory(TREASURY, address(0));
+        assertEq(other.code.length, 0);
     }
 }
