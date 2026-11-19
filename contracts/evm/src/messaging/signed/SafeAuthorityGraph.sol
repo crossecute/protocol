@@ -41,9 +41,13 @@ library SafeAuthorityGraph {
     /// @dev Receivers reject ambiguous graph encodings before storing them as authority.
     function requireCanonical(SafeAuthorityRecord[] memory records) internal view {
         if (records.length == 0) revert EmptyAuthorityGraph();
+        Supplied memory supplied = Supplied(records, _newIndex(records.length));
+        for (uint256 i; i < records.length; ++i) {
+            _insert(supplied.slots, records, i);
+        }
         bytes32 context;
         assembly ("memory-safe") {
-            context := records
+            context := supplied
         }
         SafeAuthorityRecord[] memory walked = walk(records[0].safe, context, _loadRecord);
 
@@ -58,8 +62,7 @@ library SafeAuthorityGraph {
             SafeOwner[] memory owners = records[i].owners;
             for (uint256 j; j < owners.length; ++j) {
                 if (
-                    owners[j].kind == OWNER_EOA
-                        && _indexOf(records, records.length, owners[j].owner) != type(uint256).max
+                    owners[j].kind == OWNER_EOA && supplied.slots[_probe(supplied.slots, records, owners[j].owner)] != 0
                 ) {
                     revert InvalidOwnerKind(records[i].safe, owners[j].owner);
                 }
@@ -67,10 +70,18 @@ library SafeAuthorityGraph {
         }
     }
 
+    /// @dev `slots` indexes `records` by Safe address, first declaration winning.
+    struct Supplied {
+        SafeAuthorityRecord[] records;
+        uint256[] slots;
+    }
+
     struct TraversalState {
         SafeAuthorityRecord[] records;
         // Whether the Safe at the same index is on the current path from the root.
         bool[] open;
+        // Address index over `records[0..count)`.
+        uint256[] slots;
         uint256 count;
     }
 
@@ -83,7 +94,7 @@ library SafeAuthorityGraph {
         bytes32 context,
         function(bytes32, address) view returns (SafeOwner[] memory, uint256) load
     ) internal view returns (SafeAuthorityRecord[] memory records) {
-        TraversalState memory traversal = TraversalState(new SafeAuthorityRecord[](4), new bool[](4), 0);
+        TraversalState memory traversal = TraversalState(new SafeAuthorityRecord[](4), new bool[](4), _newIndex(4), 0);
         _visit(traversal, root, context, load);
         records = traversal.records;
         uint256 count = traversal.count;
@@ -102,9 +113,9 @@ library SafeAuthorityGraph {
         bytes32 context,
         function(bytes32, address) view returns (SafeOwner[] memory, uint256) load
     ) private view {
-        uint256 index = _indexOf(traversal.records, traversal.count, safe);
-        if (index != type(uint256).max) {
-            if (traversal.open[index]) revert OwnerCycle(safe);
+        uint256 index = traversal.slots[_probe(traversal.slots, traversal.records, safe)];
+        if (index != 0) {
+            if (traversal.open[index - 1]) revert OwnerCycle(safe);
             return;
         }
 
@@ -114,6 +125,7 @@ library SafeAuthorityGraph {
         index = traversal.count;
         if (index == traversal.records.length) _grow(traversal);
         traversal.records[index] = SafeAuthorityRecord(safe, threshold, owners);
+        _insert(traversal.slots, traversal.records, index);
         traversal.open[index] = true;
         traversal.count = index + 1;
 
@@ -141,22 +153,42 @@ library SafeAuthorityGraph {
         }
     }
 
-    /// @notice Find a Safe among the populated records, returning `type(uint256).max` when
-    ///         absent.
-    /// @dev Traversal needs to distinguish first visits, shared children and missing records
-    ///      without confusing unused allocation slots with graph entries.
-    function _indexOf(SafeAuthorityRecord[] memory records, uint256 count, address safe)
-        private
-        pure
-        returns (uint256)
-    {
-        for (uint256 i; i < count; ++i) {
-            if (records[i].safe == safe) return i;
-        }
-        return type(uint256).max;
+    /// @notice An open-addressing table of record positions, empty, sized to at least twice
+    ///         `capacity` so a probe always reaches an empty slot.
+    /// @dev A slot holds the record's index plus one, so zero is empty.
+    function _newIndex(uint256 capacity) private pure returns (uint256[] memory) {
+        uint256 size = 8;
+        while (size < capacity * 2) size *= 2;
+        // forge-lint: disable-next-line(calls-loop) a memory allocation, not a call
+        return new uint256[](size);
     }
 
-    /// @notice Double the traversal buffers and copy the visited records and active-path flags.
+    /// @notice The slot holding `safe`'s record, or the empty slot where it belongs.
+    function _probe(uint256[] memory slots, SafeAuthorityRecord[] memory records, address safe)
+        private
+        pure
+        returns (uint256 pos)
+    {
+        uint256 mask = slots.length - 1;
+        assembly ("memory-safe") {
+            mstore(0, and(safe, 0xffffffffffffffffffffffffffffffffffffffff))
+            pos := and(keccak256(0, 32), mask)
+        }
+        for (;;) {
+            uint256 held = slots[pos];
+            if (held == 0 || records[held - 1].safe == safe) return pos;
+            pos = (pos + 1) & mask;
+        }
+    }
+
+    /// @dev Records `records[index]` unless an earlier record has the same Safe.
+    function _insert(uint256[] memory slots, SafeAuthorityRecord[] memory records, uint256 index) private pure {
+        uint256 pos = _probe(slots, records, records[index].safe);
+        if (slots[pos] == 0) slots[pos] = index + 1;
+    }
+
+    /// @notice Double the traversal buffers and copy the visited records and active-path flags,
+    ///         rebuilding the index.
     /// @dev Growing in memory lets traversal handle graphs larger than its initial allocation
     ///      while preserving cycle detection state.
     function _grow(TraversalState memory traversal) private pure {
@@ -171,21 +203,25 @@ library SafeAuthorityGraph {
         }
         traversal.records = records;
         traversal.open = open;
+        traversal.slots = _newIndex(capacity);
+        for (uint256 i; i < traversal.count; ++i) {
+            _insert(traversal.slots, records, i);
+        }
     }
 
     /* ================================== loaders ================================= */
 
     /// @notice Load one Safe's owners and threshold from the supplied record array.
     /// @dev This lets the common traversal validate an encoded graph without consulting live
-    ///      source contracts. `context` is the array's memory pointer.
+    ///      source contracts. `context` is a `Supplied` memory pointer.
     function _loadRecord(bytes32 context, address safe) private pure returns (SafeOwner[] memory, uint256) {
-        SafeAuthorityRecord[] memory records;
+        Supplied memory supplied;
         assembly ("memory-safe") {
-            records := context
+            supplied := context
         }
-        uint256 index = _indexOf(records, records.length, safe);
-        if (index == type(uint256).max) revert MissingAuthorityRecord(safe);
-        return (records[index].owners, records[index].threshold);
+        uint256 held = supplied.slots[_probe(supplied.slots, supplied.records, safe)];
+        if (held == 0) revert MissingAuthorityRecord(safe);
+        return (supplied.records[held - 1].owners, supplied.records[held - 1].threshold);
     }
 
     /// @notice Read a live Safe's owners and threshold and classify each owner as EOA or nested

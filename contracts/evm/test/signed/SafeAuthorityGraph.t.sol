@@ -211,4 +211,62 @@ contract SafeAuthorityGraphTest is Test {
 
         assertEq(base, keccak256(abi.encode(records)));
     }
+
+    uint256 internal constant WIDE_CHILDREN = 24;
+    uint256 internal constant WIDE_ROOT_EOAS = 16;
+
+    /// @notice A root with 16 EOA owners and 24 nested Safes of 3 EOAs each: 25 records.
+    function _wide() internal pure returns (SafeAuthorityRecord[] memory records) {
+        records = new SafeAuthorityRecord[](WIDE_CHILDREN + 1);
+        SafeOwner[] memory rootOwners = new SafeOwner[](WIDE_ROOT_EOAS + WIDE_CHILDREN);
+        for (uint256 i; i < WIDE_ROOT_EOAS; ++i) {
+            rootOwners[i] = SafeOwner(address(uint160(0x10000 + i)), OWNER_EOA);
+        }
+        for (uint256 c; c < WIDE_CHILDREN; ++c) {
+            address child = address(uint160(0x20000 + c));
+            rootOwners[WIDE_ROOT_EOAS + c] = SafeOwner(child, OWNER_SAFE);
+            SafeOwner[] memory owners = new SafeOwner[](3);
+            for (uint256 k; k < 3; ++k) {
+                owners[k] = SafeOwner(address(uint160(0x30000 + c * 3 + k)), OWNER_EOA);
+            }
+            records[c + 1] = SafeAuthorityRecord(child, 2, owners);
+        }
+        records[0] = SafeAuthorityRecord(address(0xA0), 3, rootOwners);
+    }
+
+    /// @notice A wide nested graph validates, and its cost stays within a linear-scan budget.
+    /// @dev Every owner and every visit looks a Safe up by address; the lookup is by index, so
+    ///      validation cost grows with the number of owners and records, not their product.
+    function test_aWideNestedGraphValidatesWithinALinearBudget() public {
+        SafeAuthorityRecord[] memory records = _wide();
+        uint256 before = gasleft();
+        h.requireCanonical(records);
+        uint256 used = before - gasleft();
+        emit log_named_uint("requireCanonical gas, 25 records", used);
+        assertLt(used, 650_000);
+    }
+
+    /// @notice Missing, EOA-kind and cyclic records in a wide graph are refused as in a small one.
+    function test_aWideGraphKeepsTheSameRefusals() public {
+        SafeAuthorityRecord[] memory records = _wide();
+        records[12].safe = records[11].safe;
+        vm.expectRevert(
+            abi.encodeWithSelector(SafeAuthorityGraph.MissingAuthorityRecord.selector, address(uint160(0x2000B)))
+        );
+        h.requireCanonical(records);
+
+        records = _wide();
+        records[24].owners[0] = SafeOwner(address(uint160(0x20000)), OWNER_EOA);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SafeAuthorityGraph.InvalidOwnerKind.selector, records[24].safe, address(uint160(0x20000))
+            )
+        );
+        h.requireCanonical(records);
+
+        records = _wide();
+        records[24].owners[0] = SafeOwner(address(0xA0), OWNER_SAFE);
+        vm.expectRevert(abi.encodeWithSelector(SafeAuthorityGraph.OwnerCycle.selector, address(0xA0)));
+        h.requireCanonical(records);
+    }
 }
