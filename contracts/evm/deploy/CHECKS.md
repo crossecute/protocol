@@ -309,18 +309,21 @@ its one address, and, per candidate OFT, the prerequisites O1 to O7 of
 [`layerzero-oft-spec.md` §2](../../../docs/layerzero-oft-spec.md#2-oft-prerequisites).
 
 **Placement.** The factory and its two logic contracts deploy through Arachnid's factory at
-salt zero (§1), with the canonical treasury address from `governance.toml` as a factory
-argument. Deploy the chain treasury with `DeployChain.s.sol` first. A dry run prints the
-factory address, and it must be empty until the deploy:
+salt zero (§1). The address depends on the compiled and linked bytecode, the canonical treasury
+from `governance.toml`, and the receiver's two authority pins
+(`CROSSECUTE_AUTHORITY_GUARD`, `CROSSECUTE_MULTISEND_CALL_ONLY`), which are in the receiver's
+initcode. Deploy the chain treasury with `DeployChain.s.sol` before running the factory deploy
+on each parity chain. Record the predicted factory address once per release.
 
 ```sh
-forge script script/DeployLzOft.s.sol --rpc-url $RPC
-cast code <factory-address-from-dry-run> --rpc-url $RPC   # 0x until deployed
+forge script script/DeployLzOft.s.sol --sig 'predict()'
+export CROSSECUTE_OFT_FACTORY='<predicted factory address>'
+cast code "$CROSSECUTE_OFT_FACTORY" --rpc-url "$RPC"
+forge script script/DeployLzOft.s.sol --rpc-url "$RPC"
 ```
 
-Changing compiled initcode or the treasury address moves the factory, so rerun the check
-after either changes and use the same treasury address on every chain. The script
-refuses a chain `chains.toml` does not list as `parity`.
+Use the same release inputs on every chain. The dry run checks that they produce the recorded
+address. Predict the address again whenever the build, treasury or authority pins change.
 
 **Per OFT.** `<oft>` is the OFT on the chain `RPC` reaches, `<eid>` the other end's eid, and
 `<peer32>` the other end's OFT as `bytes32`:
@@ -426,7 +429,8 @@ refund recipients. Simulate the complete factory/receiver compose entry point wi
 authority graph and application calls, and provide explicit compose gas attributes. The
 local OFT tests use mock transport and do not certify live gas, fees, payload caps or OFT
 compatibility. Confirm all copies of the factory, its logic and linked libraries use the same
-release build and deterministic addresses, including the receiver authority pins. Plain and
+release build and deterministic addresses, including the receiver authority pins, by running
+every chain's deploy with the release's `CROSSECUTE_OFT_FACTORY`. Plain and
 signed modes use the same route-bound salt and six-argument factory prediction.
 
 ## CCIP 2.0 options

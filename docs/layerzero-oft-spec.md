@@ -58,12 +58,12 @@ them for a candidate.
 - **L1.1** The factory and its two logic contracts MUST be deployed through Arachnid's factory
   at salt zero, with no constructor argument that varies by chain (`LzOftDeploy.factory`).
   Signed receiver implementations MUST use the same source authority guard and MultiSend
-  pins on every chain; the pins participate in receiver initcode and factory identity.
+  pins on every chain. The pins participate in receiver initcode and factory identity.
 
   The factory's immutable treasury MUST be the same address on every chain, alongside its
   logic addresses. `DeployLzOft` reads governance configuration, predicts the chain treasury,
-  and requires it to be deployed first. Changing that address changes the factory and conduit
-  addresses; it cannot redirect fees from existing deployments.
+  and requires it to be deployed first. The deploy script MUST check that the build, treasury
+  and pins yield the address recorded for the release (`DeployLzOft.predict`, `CROSSECUTE_OFT_FACTORY`).
 - **L1.2** A conduit's CREATE2 salt MUST be
   `keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot))`, deployed by
   the factory with `Proxy`'s initcode (`LzOftConduitFactory.conduitSalt`, `predictConduit`), where
