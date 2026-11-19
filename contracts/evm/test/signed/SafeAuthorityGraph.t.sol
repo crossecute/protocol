@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
+import {VmSafe} from "forge-std/Vm.sol";
 import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
 import {SafeAuthorityRecord, SafeOwner, OWNER_EOA, OWNER_SAFE} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {StubSafe} from "test/signed/StubSafe.sol";
@@ -234,16 +235,14 @@ contract SafeAuthorityGraphTest is Test {
         records[0] = SafeAuthorityRecord(address(0xA0), 3, rootOwners);
     }
 
-    /// @notice A wide nested graph validates, and its cost stays within a linear-scan budget.
-    /// @dev Every owner and every visit looks a Safe up by address; the lookup is by index, so
-    ///      validation cost grows with the number of owners and records, not their product.
+    /// @notice Bound validation gas for a 25-record nested graph in the optimized build.
     function test_aWideNestedGraphValidatesWithinALinearBudget() public {
         SafeAuthorityRecord[] memory records = _wide();
         uint256 before = gasleft();
         h.requireCanonical(records);
         uint256 used = before - gasleft();
         emit log_named_uint("requireCanonical gas, 25 records", used);
-        assertLt(used, 650_000);
+        if (!vm.isContext(VmSafe.ForgeContext.Coverage)) assertLt(used, 650_000);
     }
 
     /// @notice Missing, EOA-kind and cyclic records in a wide graph are refused as in a small one.
