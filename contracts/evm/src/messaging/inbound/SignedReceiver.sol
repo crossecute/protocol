@@ -181,12 +181,17 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
         _onSignedMessage(payload);
     }
 
+    function _onMessageMemory(bytes memory payload) internal override {
+        if (!_isSigned()) return super._onMessageMemory(payload);
+        _onSignedMessage(payload);
+    }
+
     /// @notice Decode the signed wire-format tag and dispatch its standalone message or Merkle
     ///         leaf under the receiver lock.
     /// @dev Explicit tags prevent interpreting one payload format as another, and the lock
     ///      prevents nested delivery from bypassing execution ordering.
-    function _onSignedMessage(bytes calldata payload) private nonReentrant {
-        uint256 format = payload.length < 32 ? 0 : abi.decode(payload[:32], (uint256));
+    function _onSignedMessage(bytes memory payload) private nonReentrant {
+        uint256 format = payload.length < 32 ? 0 : abi.decode(payload, (uint256));
         if (format == WIRE_STANDALONE) {
             (, SafeTxEvidence memory evidence) = abi.decode(payload, (uint256, SafeTxEvidence));
             _runMessage(evidence);

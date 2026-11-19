@@ -9,7 +9,7 @@ interfaces, types and verification libraries.
 
 | Path | What it holds |
 | --- | --- |
-| `src/CrossecuteGuard.sol` | The guard: `sendMessage` and `bootstrap` staging, consumption and cleanup, module rejection of both selectors and of `registerRoot`, child approval cache, Merkle leaf publication and the published-root check on `registerRoot` |
+| `src/CrossecuteGuard.sol` | Owner staging, consumption and cleanup, module selector checks, child approval caching, Merkle leaf publication and the publication check for top-level owner `registerRoot` calls |
 | `src/authority/SourceAuthorityGuard.sol` | #109's source half, inherited by the guard: per-Safe selection hashes, executed-head record hashes, publication hashes, witness staging, activation, ownership changes, `selectAuthority`, full portable submission events and protected-call rules. Shared ReceiverAuthority verification authenticates the supplied current graph; receivers retain full authority records. |
 | `src/authority/ISourceAuthorityGuard.sol`, `AuthorityUpdateTypes.sol` | The source authority interface and its selection and update types |
 | `src/ICrossecuteGuard.sol` | What a transmitter, relayer or publisher calls: `consume`, `getApproval`, `publishLeaves`, `isPublished`, their events and errors; above it, the file-level `SafeTx` and `SignedSafeTx` structs the guard, transmitter and receiver share |
@@ -55,6 +55,9 @@ during that execution. Separate executions after cleanup and other Safes remain 
 The pinned MultiSendCallOnly executor is accepted only for recognized authority-change
 batches, including before activation; ordinary owner batches and module batches reject.
 Signed `sendMessage` calls inside MultiSend are unsupported.
+
+See the [publication and registration rules](../../docs/safe-guard-design.md#merkle-leaf-publication)
+for indexer inputs and the scope of the pre-hook check.
 
 ## Build and chain support
 

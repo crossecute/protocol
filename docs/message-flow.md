@@ -57,9 +57,17 @@ Every check on that path, in the order a message meets them:
 - `recipient` is `<erc7930: chain, receiver>`, the receiver this conduit recorded for that
   chain, which `recipientOn` returns, and `payload` is `abi.encode(calls)`, both built by the
   caller. The receiver is the conduit's own address only when both chains use Ethereum's
-  CREATE2. The transmitter quotes them in the same call and `_sendMessage`
-  hands them to the gateway with exactly that fee, paid from the transmitter's balance.
+  CREATE2. The transmitter quotes them in the same call. Its balance pays the provider quote
+  plus the Crossecute fee: 10% rounded down, or 0.0001 ETH for either OP Stack binding.
+  The Crossecute fee goes to the fixed treasury; `_sendMessage` hands only the provider quote
+  to the gateway. `quoteMessageBreakdown` exposes both amounts and `quoteMessage` sums them.
   Attached `msg.value` only tops the balance up.
+- One outbound message pays once, regardless of how many calls its payload contains.
+  Separate sends in one transaction each pay. `CrossecuteFeePaid` records the treasury
+  payment and `MessageSent.value` records the total. A provider revert rolls both payments
+  back; a later delivery failure does not. Provider refunds return to the transmitter.
+  Bootstrap, reports, destination execution, local execution/finalization and delivery retries
+  do not charge this fee. The payload format and `sendMessage` selector are unchanged.
 - `receiveMessage(receiveId, sender, payload)` is `onlyRole(GATEWAY_ROLE)`, granted at
   arming, and the sender's address must equal `sourceTransmitter`.
 - `_onMessage` is `nonReentrant`. It decodes with `Payload.decodeCalls` and `_execute`s
@@ -308,7 +316,7 @@ receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `
 | `messaging/Roles.sol` | `GATEWAY_ROLE` only: which transport may carry a contract's messages, in both directions. Not an authority. Grants are `onlyInitializing`, so membership arrives while a contract is armed and never afterwards: an initializer grants through the internal `_grantInitialRole`, and the public `grantRole` accepts only the contract's own call, which a receiver's bootstrap payload can make (#68). `RolesEnumerable` adds on-chain enumeration for conduits; a transceiver's fixed set is read from its `RoleGranted` logs. | `hasRole`; `getRoleMembers` on conduits |
 | `messaging/Executor.sol` | The shared execution loop. In order, all or nothing, reverting with `CallFailed(index, reason)`. | `isAllowed(address, bytes4)`, open by default |
 | `messaging/outbound/OutboundBase.sol` | The sending half. No storage and no opinion about who may send. | `quoteMessage`, `routeFor`, `chainKeyOfRoute`, `hasRoute`, `counterpartOn`, `hasCounterpart`, `routeTo` |
-| `messaging/outbound/TransmitterBase.sol` | The per-user conduit on its home chain. One transmitter fans out to every chain. | `sendMessage`, `execute`, `bootstrap`, `quoteBootstrap`, `bootstrapPayload`, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
+| `messaging/outbound/TransmitterBase.sol` | The per-user conduit on its home chain. One transmitter fans out to every chain. | `sendMessage`, `quoteMessageBreakdown`, `execute`, `bootstrap`, `quoteBootstrap`, `bootstrapPayload`, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
 | `messaging/inbound/ReceiverBase.sol` | The destination-side conduit. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `receiveMessage`, `commit`, `cancel(bytes32)`, `finalize(Call[])`, `finalize(Call[][])`, `execute`, `revokeGateway`, `outstanding`, `isCommitted`, `commitments`, `pendingCount`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
 | `messaging/signed/`, `outbound/SignedTransmitterLib.sol` | Safe-signed dispatch (#108): owner graph helpers, the shared `SafeQuorum` signature walk, leaf hashing and the linked transmitter builder. Used by `outbound/SignedTransmitter.sol` and `inbound/SignedReceiver.sol`, including OFT. See [`safe-signed-dispatch.md`](safe-signed-dispatch.md#implementation). | `registerRoot`, `relayLeaf`, `quoteSignedMessage`, `quoteRelay`, `isSigned`; `submitMessage`, `submitLeaf`, `authorityRecords`; `initializeSigned` |
 | `messaging/authority/` | Per-receiver selected graph/head, shared source-call recognition, linked update verification and direct/provider transport. The source guard runs the same verifier with caller-supplied graph witnesses. | `selection`, `graph`, `submitAuthority`, `submitAuthorityBatch`; transmitter `relayAuthority`, `quoteAuthority` |

@@ -99,7 +99,7 @@ transceiver's configuration, and the registry's record (R8.4). The deployer choo
 implementation behind the proxy, and nothing on chain checks it, so no registry marks the
 transceiver live because the script passed: see "Marking a chain live".
 
-Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`, and every
+CCIP, Wormhole and LayerZero link `CcipMessage`, `WormholeMessage` (#29) and `LzMessage`. Every
 binding's signed implementation, including LayerZero OFT's, uses `SignedTransmitterLib`,
 `ReceiverAuthority`, `AuthorityRecognition` and `AuthorityTransport`. OFT send/quote/parameter
 encoding also links `LzOftMessage`. `forge script` deploys linked libraries before their callers,

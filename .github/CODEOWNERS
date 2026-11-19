@@ -1,0 +1,5 @@
+# Owner review is enforced only when branch protection on main requires review from code owners.
+# These paths decide what @crossecute/protocol releases to npm.
+/.github/CODEOWNERS @pegahcarter
+/.github/workflows/publish.yml @pegahcarter
+/contracts/evm/npm/ @pegahcarter

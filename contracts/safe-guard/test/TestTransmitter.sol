@@ -20,8 +20,7 @@ contract Sink {
     }
 }
 
-/// @dev A `bootstrap` overload with a selector the guard does not stage. The protocol has none:
-///      both of its modes use the staged `bootstrap(bytes,bytes[])`.
+/// @dev A test bootstrap with a selector outside the guard's staged set.
 interface IUnstagedBootstrap {
     function bootstrap(uint256 destinationChainId, Call[] calldata calls, bytes[] calldata attributes) external payable;
 }

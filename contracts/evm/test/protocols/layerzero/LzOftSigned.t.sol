@@ -148,9 +148,11 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
             )
         );
         uint256 fee = transmitter.quoteSignedMessage(b.message);
+        uint256 treasuryBefore = factory.treasury().balance;
         _exec(b.message);
         MockOft.Sent memory sent = oft.sent(1);
-        assertEq(sent.value, fee);
+        assertEq(sent.value + sent.value / 10, fee);
+        assertEq(factory.treasury().balance - treasuryBefore, sent.value / 10);
         assertEq(sent.from, b.conduit);
         b.messageWire = sent.param.composeMsg;
     }

@@ -59,7 +59,7 @@ contract SignedOftIntegrationTest is SourceAuthorityBase {
         vm.chainId(chain);
         LzOftTransmitter t = new LzOftTransmitter{salt: bytes32(0)}();
         LzOftReceiver r = new LzOftReceiver{salt: bytes32(0)}(address(guard), address(multiSend));
-        oftFactory = new LzOftConduitFactory{salt: bytes32(0)}(address(t), address(r));
+        oftFactory = new LzOftConduitFactory{salt: bytes32(0)}(address(t), address(r), address(0x7EA5));
         MockLzEndpoint endpoint = new MockLzEndpoint{salt: bytes32(chain)}();
         endpoint.setEid(eid);
         oft = new MockOft{salt: bytes32(chain)}(address(endpoint));

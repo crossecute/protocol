@@ -513,11 +513,15 @@ contract SignedTransmitterTest is HyperlaneFixture {
         SafeTxEvidence memory evidence = _send(_receiverHere(), _payload());
         uint256 quote = st.quoteSignedMessage(evidence);
         uint256 before = address(st).balance;
+        address treasury = ext(address(t)).treasury();
+        uint256 treasuryBefore = treasury.balance;
         _exec(safe, evidence);
 
         assertEq(_lastBody(), abi.encode(WIRE_STANDALONE, evidence));
         assertEq(before - address(st).balance, quote);
-        assertEq(quote, 10 * abi.encode(WIRE_STANDALONE, evidence).length);
+        uint256 providerFee = 10 * abi.encode(WIRE_STANDALONE, evidence).length;
+        assertEq(quote, providerFee + providerFee / 10);
+        assertEq(treasury.balance - treasuryBefore, providerFee / 10);
     }
 
     /// @notice Call the plain message quote on a signed transmitter.
@@ -527,6 +531,8 @@ contract SignedTransmitterTest is HyperlaneFixture {
         bytes memory recipient = _receiverHere();
         vm.expectRevert(SignedTransmitter.SignedQuoteRequired.selector);
         st.quoteMessage(recipient, _payload(), new bytes[](0));
+        vm.expectRevert(SignedTransmitter.SignedQuoteRequired.selector);
+        st.quoteMessageBreakdown(recipient, _payload(), new bytes[](0));
     }
 
     /// @notice Send a signed message before its destination is bootstrapped.

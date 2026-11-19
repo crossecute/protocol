@@ -640,9 +640,10 @@ How the pieces fit:
   Authority delivery uses `abi.encode(WIRE_AUTHORITY, submission)` with tag 3;
   `submission` is `abi.encode(SafeTxEvidence, AuthorityGraph, ChildUpdate[])`.
   Each route recognizes its signed source call before applying authorization.
-- **Quotes.** In signed mode `quoteMessage` reverts, since the fee depends on signatures.
-  `quoteSignedMessage`, `quoteBootstrap`, `quoteRelay` and `quoteAuthority` share their send's builder, so quote
-  and send price the same bytes (Q6.10).
+- **Quotes.** In signed mode `quoteMessage` and `quoteMessageBreakdown` require the signed quote API.
+  `quoteSignedMessage`, `quoteBootstrap`, `quoteRelay` and `quoteAuthority` price the same bytes
+  as their send paths (Q6.10). The standalone quote includes the [outbound Crossecute fee](provider-spec.md#r7-fees-and-value)
+  paid to the treasury. Bootstrap, leaf relay and authority relay quote provider fees.
 - **Size.** `ReceiverAuthority`, `AuthorityRecognition` and `SignedTransmitterLib` are linked
   libraries, deployed as `WormholeMessage` and `LzMessage` are, to keep transmitters and
   receivers under EIP-170.
@@ -683,8 +684,8 @@ Safe-funded sends retain conduit refunds. No tokens are moved: OFT amounts remai
 The real Safe fixture's one-route, three-owner, empty-setup bootstrap is 1,280 bytes,
 928 bytes larger than the corresponding plain header encoding. Proofs, graph nodes, owners
 and setup calls change the complete wire size; signatures are absent from bootstrap.
-The Paris/solc 0.8.28 OFT transmitter runtime is 23,887 bytes (689 bytes of EIP-170 headroom),
-the receiver is 21,095 bytes, and the factory is 15,590 bytes.
+The Paris/solc 0.8.28 OFT transmitter runtime is 24,176 bytes (400 bytes of EIP-170 headroom),
+the receiver is 22,021 bytes, and the factory is 15,653 bytes.
 
 The focused OFT tests are in
 `contracts/evm/test/protocols/layerzero/LzOftSigned.t.sol`; real Safe 1.5.0/guard staging is

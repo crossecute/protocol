@@ -88,7 +88,7 @@ the seventh; what they mean for an operator is in the README.
   and a chain added after the first deployment, whose files repeat what is already set. zkSync
   and Tron, and every lane to them, are left out of the payloads, and have deploy functions
   the tests use but no production script: their bytecode, with
-  `WormholeMessage` or `LzMessage` linked, their conduits with `ReceiverAuthority`,
+  `CcipMessage`, `WormholeMessage` or `LzMessage` linked where applicable, their conduits with `ReceiverAuthority`,
   `AuthorityRecognition`, `AuthorityTransport` and `SignedTransmitterLib` linked, and their
   `TransceiverExtension` variant are built by
   zksolc and TRON-solc, which these scripts do not drive. zksolc 1.5.18, with ZKsync's solc
@@ -107,12 +107,10 @@ the seventh; what they mean for an operator is in the README.
   archive-service operation and live-provider validation. The offline
   [archive utility](../tools/authority-archive/README.md) provides graph and evidence retrieval. Current authority update
   measurements are in [updates.md](benchmarks/authority-109/updates.md).
-- **Nothing indexes `LeafPublished` events yet.** `publishLeaves` follows #108's leaf and
-  tree rules. The guard's tests check its root and leaf hashes against a vector computed with
-  `cast` and its proofs against OpenZeppelin's `MerkleProof`. The versioned Merkle package in the
-  SDK ([sdk#15](https://github.com/crossecute/sdk/pull/15), merged to `main` in
-  [sdk#13](https://github.com/crossecute/sdk/pull/13)) asserts the same vector, and its shared
-  Solidity/TypeScript vectors cover odd-sized trees.
+- **Published leaves need an indexer.** The [SDK Merkle package](https://github.com/crossecute/sdk/pull/13)
+  and the guard tests check the same three-leaf publication vector. An indexer can recover
+  ordered leaves from the guard call input and use the SDK to build proofs. See
+  [Merkle leaf publication](safe-guard-design.md#merkle-leaf-publication) for trace requirements.
 - **Nothing checks for Cancun before the Safe guard is installed.** The guard reads transient
   storage in every owner pre-hook, so on a chain without EIP-1153 it would make every owner
   transaction revert, including its own removal. Installation tooling should confirm the chain
@@ -253,3 +251,13 @@ The signature-enabled transmitter and receiver
   includes source activation/updates, receiver catch-up and offline evidence archives. SDK
   execution, archive-service operation and live-provider validation remain in the
   [verification plan](safe-authority-verification-review.md#implementation-coverage-and-remaining-work).
+
+## CCIP 2.0 production enablement
+
+Local option coverage, actual OffRamp/Router enforcement tests, and native compilation
+for [issue #150](https://github.com/crossecute/protocol/issues/150) are recorded in
+[the validation report](ccip-v2-validation.md). Live lane/version evidence, actual native
+VM deployment and delivery gas, and production executor/proof services remain tracked in
+[deployment issue #118](https://github.com/crossecute/protocol/issues/118). Follow
+[the options guide](ccip-v2.md) and
+[deployment checks](../contracts/evm/deploy/CHECKS.md#ccip-20-options) before enabling V3.

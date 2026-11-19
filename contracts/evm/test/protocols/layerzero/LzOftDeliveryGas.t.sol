@@ -39,7 +39,7 @@ contract LzOftDeliveryGasTest is DeliveryGasMeter {
         oft = new MockOft(address(endpoint));
         oft.setPeer(HOME_EID, HOME_OFT);
         factory = new LzOftConduitFactory(
-            address(new LzOftTransmitter()), address(new LzOftReceiver(address(0), address(0)))
+            address(new LzOftTransmitter()), address(new LzOftReceiver(address(0), address(0))), address(0x7EA5)
         );
     }
 

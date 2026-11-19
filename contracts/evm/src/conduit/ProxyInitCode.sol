@@ -23,7 +23,7 @@ library ProxyInitCode {
 
     /// @notice Deploy the code-only contract. `Proxy`'s initcode appears only in the caller's
     ///         initcode when this runs from a constructor.
-    function store() internal returns (address at) {
+    function store() internal returns (address initCodeStore) {
         bytes memory initCode = type(Proxy).creationCode;
         // PUSH2 len, DUP1, PUSH1 12, PUSH1 0, CODECOPY, PUSH1 0, RETURN: on any call, returns what
         // follows this 12-byte prefix, the initcode.
@@ -33,15 +33,15 @@ library ProxyInitCode {
         // forge-lint: disable-next-line(unsafe-typecast) a constant 0.6 KB
         bytes memory creation = abi.encodePacked(hex"63", uint32(runtime.length), hex"80600e6000396000f3", runtime);
         assembly {
-            at := create(0, add(creation, 0x20), mload(creation))
+            initCodeStore := create(0, add(creation, 0x20), mload(creation))
         }
-        if (at == address(0)) revert StoreFailed();
+        if (initCodeStore == address(0)) revert StoreFailed();
     }
 
-    /// @notice The initcode `store` kept at `at`.
-    function load(address at) internal view returns (bytes memory code) {
+    /// @notice The initcode `store` kept at `initCodeStore`.
+    function load(address initCodeStore) internal view returns (bytes memory code) {
         bool ok;
-        (ok, code) = at.staticcall("");
+        (ok, code) = initCodeStore.staticcall("");
         if (!ok || code.length == 0) revert StoreFailed();
     }
 }

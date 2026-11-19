@@ -309,15 +309,17 @@ its one address, and, per candidate OFT, the prerequisites O1 to O7 of
 [`layerzero-oft-spec.md` §2](../../../docs/layerzero-oft-spec.md#2-oft-prerequisites).
 
 **Placement.** The factory and its two logic contracts deploy through Arachnid's factory at
-salt zero (§1), so the address follows from their bytecode alone. A dry run prints it, and it
-must be empty until the deploy:
+salt zero (§1), with the canonical treasury address from `governance.toml` as a factory
+argument. Deploy the chain treasury with `DeployChain.s.sol` first. A dry run prints the
+factory address, and it must be empty until the deploy:
 
 ```sh
-forge script script/DeployLzOft.s.sol --rpc-url $RPC        # factory: 0x96ef3e86a1e5Ce9F8A0c30CD0411d7778480Dd32
-cast code 0x96ef3e86a1e5Ce9F8A0c30CD0411d7778480Dd32 --rpc-url $RPC   # 0x until deployed
+forge script script/DeployLzOft.s.sol --rpc-url $RPC
+cast code <factory-address-from-dry-run> --rpc-url $RPC   # 0x until deployed
 ```
 
-Any change to the three contracts moves the address, so it is rerun after one. The script
+Changing compiled initcode or the treasury address moves the factory, so rerun the check
+after either changes and use the same treasury address on every chain. The script
 refuses a chain `chains.toml` does not list as `parity`.
 
 **Per OFT.** `<oft>` is the OFT on the chain `RPC` reaches, `<eid>` the other end's eid, and
@@ -409,8 +411,9 @@ root publication/registration/relay, nonce-42/43 atomic batching and rollback, a
 followed by a bootstrap to a new chain that trusts only the rotated owners, and destination
 out-of-gas followed by a successful direct retry.
 
-All production contracts remain below EIP-170: CCIP transmitter headroom 1,194 bytes,
-LayerZero 1,271, Hyperlane 1,545; OFT transmitter headroom 689 bytes. Source gas includes mock mailbox journaling and is not a real provider fee.
+The production size check leaves 1,830 bytes on the CCIP transmitter, 250 on the CCIP
+receiver, 982 on the LayerZero transmitter, 1,256 on the Hyperlane transmitter, and 400 on
+the OFT transmitter. Source gas includes mock mailbox journaling.
 The three existing external-fork tests are still RPC-dependent. The measurements above cover
 the standard provider paths; OFT transport uses separate lane validation.
 
@@ -425,3 +428,35 @@ local OFT tests use mock transport and do not certify live gas, fees, payload ca
 compatibility. Confirm all copies of the factory, its logic and linked libraries use the same
 release build and deterministic addresses, including the receiver authority pins. Plain and
 signed modes use the same route-bound salt and six-argument factory prediction.
+
+## CCIP 2.0 options
+
+Existing CCIP checks and recorded results do not establish V3 compatibility. V3 is
+initially disabled for every outbound lane. Before the transceiver owner calls
+`setCcipV3Lane(selector, true, evidenceHash)`:
+
+1. Verify the source lane's deployed OnRamp/FeeQuoter supports V3 and the destination
+   OffRamp supports the receiver policy interface. Record contract addresses, versions,
+   block numbers, direction, and date. Do not infer this from the npm package version.
+2. Quote representative V3 messages with defaults and every intended custom option.
+   Confirm the reverse direction independently where it is used. An arbitrary quote
+   failure is not evidence that fallback to V2 is safe.
+3. Check the configured CCVs, executor, and finality modes on that lane. Confirm that
+   receiver/transceiver inbound policies are satisfiable, including automatic reports
+   which still send without attributes. A receiver policy that becomes unsatisfiable also
+   blocks the message that would reset it
+   ([options guide](../../../docs/ccip-v2.md#configure-inbound-policies)).
+4. Validate actual delivery, full-finality rejection of faster requests, policy updates
+   with pending messages, No Exec/manual execution, and delivery gas on the target VM.
+5. Store the results in this file or a linked versioned record and use its content hash
+   as evidenceHash. The contract records this hash in an event; it does not verify the
+   evidence or detect lane versions itself.
+
+No V3 lane checks have been recorded by this refactor, and no lane is enabled by it.
+Local option and actual OffRamp/Router tests for
+[issue #150](https://github.com/crossecute/protocol/issues/150), together with successful
+zkSync/Tron compilation, are recorded in
+[the local validation report](../../../docs/ccip-v2-validation.md). Production lane
+evidence and native deployment/delivery-gas checks remain tracked in
+[deployment issue #118](https://github.com/crossecute/protocol/issues/118).
+See [the CCIP options guide](../../../docs/ccip-v2.md) for configuration and defaults.

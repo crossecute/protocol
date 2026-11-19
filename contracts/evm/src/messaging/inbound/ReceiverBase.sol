@@ -331,9 +331,19 @@ abstract contract ReceiverBase is
     ///         this conduit's home and its transmitter there.
     /// @param origin The source chain in `homeOrigin`'s naming.
     function _onMessageFrom(bytes32 origin, address sender, bytes calldata payload) internal {
+        _authenticateSource(origin, sender);
+        _onMessage(payload);
+    }
+
+    /// @notice Delivery from providers whose callback has already copied the payload to memory.
+    function _onMessageFromMemory(bytes32 origin, address sender, bytes memory payload) internal {
+        _authenticateSource(origin, sender);
+        _onMessageMemory(payload);
+    }
+
+    function _authenticateSource(bytes32 origin, address sender) private view {
         if (origin != homeOrigin) revert NotHomeOrigin(origin);
         if (!isSourceTransmitter(sender)) revert NotSourceTransmitter();
-        _onMessage(payload);
     }
 
     /// @notice Run a payload that arrived over the wire.
@@ -343,10 +353,17 @@ abstract contract ReceiverBase is
     ///      A payload that should wait carries a self-call to `commit`; nothing on the wire
     ///      distinguishes it.
     ///
-    /// @dev `nonReentrant`, shared with `finalize`, since it calls arbitrary targets from a
+    /// @dev Delivery shares the `finalize` lock because it calls arbitrary targets from a
     ///      provider callback.
-    function _onMessage(bytes calldata payload) internal virtual nonReentrant {
-        Call[] memory calls = Payload.decodeCalls(payload);
+    function _onMessage(bytes calldata payload) internal virtual {
+        _deliverCalls(Payload.decodeCalls(payload));
+    }
+
+    function _onMessageMemory(bytes memory payload) internal virtual {
+        _deliverCalls(Payload.decodeCallsFromMemory(payload));
+    }
+
+    function _deliverCalls(Call[] memory calls) private nonReentrant {
         emit Delivered(calls.length);
         _execute(calls);
     }

@@ -59,6 +59,11 @@ them for a candidate.
   at salt zero, with no constructor argument that varies by chain (`LzOftDeploy.factory`).
   Signed receiver implementations MUST use the same source authority guard and MultiSend
   pins on every chain; the pins participate in receiver initcode and factory identity.
+
+  The factory's immutable treasury MUST be the same address on every chain, alongside its
+  logic addresses. `DeployLzOft` reads governance configuration, predicts the chain treasury,
+  and requires it to be deployed first. Changing that address changes the factory and conduit
+  addresses; it cannot redirect fees from existing deployments.
 - **L1.2** A conduit's CREATE2 salt MUST be
   `keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot))`, deployed by
   the factory with `Proxy`'s initcode (`LzOftConduitFactory.conduitSalt`, `predictConduit`), where
@@ -97,6 +102,9 @@ them for a candidate.
 
 - **L3.1** Every send MUST have `amountLD` and `minAmountLD` of 0. No binding carries value
   but its fee.
+
+Routine sends pay the Crossecute fee in [R7.7](provider-spec.md#r7-fees-and-value), using
+this factory's fixed treasury. Bootstrap still pays only its provider quote.
 
 ### L4. The bootstrap at a destination
 

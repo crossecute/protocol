@@ -23,7 +23,7 @@ contract ReceiverAuthorityPinsTest is Test {
             WormholeDeploy.receiverImplementation(WormholeDeploy.Endpoints(endpoint, endpoint)),
             OpStackDeploy.receiverImplementation(),
             OpStackInteropDeploy.receiverImplementation(),
-            LzOftDeploy.factory().receiverImplementation()
+            LzOftDeploy.factory(address(0x7EA5)).receiverImplementation()
         ];
     }
 

@@ -104,10 +104,8 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         private
         returns (bytes32)
     {
-        uint256 fee = _quoteStandalone(recipient, wire, attributes);
-        _requireFunded(fee);
-        emit MessageSent(bytes32(0), Erc7930.encodeEvm(block.chainid, address(this)), recipient, wire, fee, attributes);
-        return _sendMessage(recipient, wire, attributes, fee);
+        uint256 providerFee = _quoteStandalone(recipient, wire, attributes);
+        return _sendFundedMessage(recipient, wire, attributes, providerFee, _crossecuteFee(providerFee));
     }
 
     /// @notice Validate the conduit recipient and quote the complete signed wire payload.
@@ -280,14 +278,14 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     /// @notice Quote the plain send path, reverting when this transmitter is in signed mode.
     /// @dev Signed transport fees depend on signatures absent from these arguments, so signed
     ///      callers must use `quoteSignedMessage` instead.
-    function quoteMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
+    function quoteMessageBreakdown(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
         public
         view
         override
-        returns (uint256)
+        returns (uint256 providerFee, uint256 crossecuteFee)
     {
         if (_signedStorage().signed) revert SignedQuoteRequired();
-        return super.quoteMessage(recipient, payload, attributes);
+        return super.quoteMessageBreakdown(recipient, payload, attributes);
     }
 
     /// @notice Quote a bootstrap in either mode; a signed one validates and prices its selected graph.
@@ -310,7 +308,8 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         evidence;
         (bytes memory recipient, bytes memory wire, bytes[] memory attributes) =
             SignedTransmitterLib.quoteMessage(msg.data[4:]);
-        return _quoteStandalone(recipient, wire, attributes);
+        uint256 providerFee = _quoteStandalone(recipient, wire, attributes);
+        return providerFee + _crossecuteFee(providerFee);
     }
 
     /// @notice Return the fee for relaying the supplied signed registration, leaf and proof.

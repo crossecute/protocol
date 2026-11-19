@@ -20,8 +20,8 @@ import {SourceAuthorityGuard} from "./authority/SourceAuthorityGuard.sol";
 /// @notice Safe 1.5.0 transaction guard, and optionally module guard, shared by any number of
 ///         Safes. On top of the inherited policy engine it stages each owner-signed
 ///         `sendMessage` and `bootstrap` for the signed target to consume, caches child Safe
-///         approvals, records published Merkle roots, and lets an owner `registerRoot` through only
-///         for a published root.
+///         approvals, records published Merkle roots, and checks publication for top-level owner
+///         `registerRoot` calls.
 /// @dev Every record is keyed by the hook caller, so a contract that calls the hooks directly
 ///      can only write and clear records under its own address.
 contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard, SourceAuthorityGuard {
