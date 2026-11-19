@@ -136,7 +136,7 @@ contract LzOftScriptsTest is Test {
         address recorded = LzOftDeploy.predictFactory(TREASURY, guard, multiSend);
         harness.requireFactory(TREASURY, recorded);
 
-        address other = LzOftDeploy.predictFactory(TREASURY, GUARD_B, MULTISEND);
+        address other = LzOftDeploy.predictFactory(TREASURY, guard == GUARD_B ? GUARD_A : GUARD_B, MULTISEND);
         assertTrue(other != recorded);
         vm.expectRevert(
             abi.encodeWithSelector(
