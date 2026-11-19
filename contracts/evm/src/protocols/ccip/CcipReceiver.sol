@@ -11,7 +11,10 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user conduit on a non-home chain.
 contract CcipReceiver is ProviderReceiver, CCIPReceiver, CcipPolicy {
-    constructor(address router_) CCIPReceiver(_checkedRouter(router_)) {}
+    constructor(address router_, address guard, address multiSendCallOnly)
+        ProviderReceiver(guard, multiSendCallOnly)
+        CCIPReceiver(_checkedRouter(router_))
+    {}
 
     function _checkedRouter(address router_) private pure returns (address) {
         if (router_ == address(0)) revert ProviderAddress.ZeroEndpoint();

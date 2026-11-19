@@ -6,6 +6,7 @@ import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
 import {WormholeTransmitter} from "src/protocols/wormhole/WormholeTransmitter.sol";
 import {
     TransceiverDeployment,
+    receiverAuthorityPins,
     deployTransceiverProxy,
     checkGovernorHomeId,
     transceiverExtension
@@ -20,7 +21,8 @@ library WormholeDeploy {
     }
 
     function receiverImplementation(Endpoints memory e) internal returns (address) {
-        return address(new WormholeReceiver(e.coreBridge));
+        (address guard, address multiSend) = receiverAuthorityPins();
+        return address(new WormholeReceiver(e.coreBridge, guard, multiSend));
     }
 
     function transmitterImplementation(Endpoints memory e) internal returns (address) {

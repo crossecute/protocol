@@ -47,7 +47,11 @@ contract DestinationNamingTest is Test {
                         implementation,
                         abi.encodeCall(
                             LzTransceiver.initialize,
-                            (transceiverConfig(address(new LzReceiver(ENDPOINT))), uint32(0), address(0))
+                            (
+                                transceiverConfig(address(new LzReceiver(ENDPOINT, address(0), address(0)))),
+                                uint32(0),
+                                address(0)
+                            )
                         )
                     )
                 ))

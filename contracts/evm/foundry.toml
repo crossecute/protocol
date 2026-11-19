@@ -2,12 +2,14 @@
 src = "src"
 out = "out"
 libs = ["lib"]
-allow_paths = ["."]
+allow_paths = [".", "../safe-guard/src"]
 # Deploy scripts read the chain and provider configuration under deploy/.
 # GovernancePayloads writes its batches under out/governance/.
 fs_permissions = [
     { access = "read", path = "./deploy" },
     { access = "read", path = "./test/deploy/config" },
+    # AuthorityVectors.t.sol replays the shared #109 vectors.
+    { access = "read", path = "../../docs/vectors" },
     { access = "read", path = "./test/fixtures/ccip-v2" },
     { access = "read-write", path = "./out/governance" },
     { access = "read-write", path = "./out/rotation" },
@@ -31,6 +33,9 @@ bytecode_hash = "none"
 cbor_metadata = false
 remappings = [
     "src/=src/",
+    # Shared source-guard interfaces reuse protocol Call without duplicating the type.
+    "crossecute/=src/",
+    "@crossecute/safe-guard/=../safe-guard/src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
     # Hand-copied, not submodules: none of the four has a dedicated package repo that

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
 import {GasAttribute} from "script/deploy/GasAttribute.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 
@@ -67,6 +68,14 @@ abstract contract HyperlaneFixture is ProviderGasFixture {
 
     function _receiverImplementation() internal override returns (address) {
         return HyperlaneDeploy.receiverImplementation(address(mailbox));
+    }
+
+    function _signedReceiverImplementation(address guard, address multiSendCallOnly)
+        internal
+        override
+        returns (address)
+    {
+        return address(new HyperlaneReceiver(address(mailbox), guard, multiSendCallOnly));
     }
 
     function _transmitterImplementation() internal override returns (address) {

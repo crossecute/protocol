@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Call} from "src/messaging/Call.sol";
-import {ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
+import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 import {
     OAppReceiverUpgradeable,
     Origin
@@ -22,8 +22,11 @@ interface ILzReceiverInit {
 /// @notice Per-user conduit on a non-home chain.
 /// @dev Receiver-only: inherits `OAppReceiverUpgradeable`, not the combined `OAppUpgradeable`,
 ///      since this contract never sends via LayerZero.
-contract LzReceiver is ReceiverBase, OAppReceiverUpgradeable, LzHomePeer, ILzReceiverInit {
-    constructor(address _endpoint) OAppCoreUpgradeable(_endpoint) {
+contract LzReceiver is SignedReceiver, OAppReceiverUpgradeable, LzHomePeer, ILzReceiverInit {
+    constructor(address _endpoint, address guard, address multiSendCallOnly)
+        SignedReceiver(guard, multiSendCallOnly)
+        OAppCoreUpgradeable(_endpoint)
+    {
         if (_endpoint == address(0)) revert ProviderAddress.ZeroEndpoint();
     }
 

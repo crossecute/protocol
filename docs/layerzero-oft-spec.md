@@ -12,7 +12,8 @@ creates the conduit on its home and its receiver on each destination.
 
 It is not a provider in `provider-spec.md`'s sense. It has no transceiver, so §4.4, R5,
 R7.3 to R7.6, §6 and the transceiver specs of §8 do not apply to it, and it has no registry
-route, provenance bar, bootstrap fee, receiver report or governor. The rest of that file's
+route, provenance bar, protocol bootstrap surcharge, receiver report or governor. Bootstrap
+still pays the home OFT's quoted transport fee. The rest of that file's
 rules on conduits hold here as they do for every binding. What the conduit
 trusts instead is in the README's
 [message providers](../README.md#message-providers) section.
@@ -29,7 +30,8 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 - **Destination root**: the root `LzOftMessage.root` computes over a conduit's leaves, in
   ascending `chainKey` order. Bound into the conduit's address.
 - **Factory**: `LzOftConduitFactory`, the CREATE2 deployer of every conduit of this binding, the
-  builder of every bootstrap's compose on the home (`conduitBootstrap`), and its target on each
+  builder of every bootstrap's compose on the home (`conduitBootstrap` or
+  `signedConduitBootstrap`), and its target on each
   destination.
 
 ## 2. OFT prerequisites
@@ -41,7 +43,7 @@ them for a candidate.
 
 | | Requirement | Why |
 | --- | --- | --- |
-| O1 | It is an OFT or OFT adapter whose `send` writes `addressToBytes32(msg.sender)` as `composeFrom` (`OFTMsgCodec.encode`) | `composeFrom` is the conduit's only authentication |
+| O1 | It is an OFT or OFT adapter whose `send` writes `addressToBytes32(msg.sender)` as `composeFrom` (`OFTMsgCodec.encode`) | `composeFrom` authenticates the source conduit for bootstrap and provider delivery; signed application and authority messages also verify Safe authorization |
 | O2 | It is peered both ways with every destination's OFT | the home and destination peer checks |
 | O3 | Its enforced options for a send with a compose message carry lzReceive gas | the binding's default options carry only lzCompose gas; without them the send is refused at home |
 | O4 | It accepts a send of 0 tokens | no message carries tokens (L3) |
@@ -55,6 +57,9 @@ them for a candidate.
 
 - **L1.1** The factory and its two logic contracts MUST be deployed through Arachnid's factory
   at salt zero, with no constructor argument that varies by chain (`LzOftDeploy.factory`).
+  Signed receiver implementations MUST use the same source authority guard and MultiSend
+  pins on every chain; the pins participate in receiver initcode and factory identity.
+
   The factory's immutable treasury MUST be the same address on every chain, alongside its
   logic addresses. `DeployLzOft` reads governance configuration, predicts the chain treasury,
   and requires it to be deployed first. Changing that address changes the factory and conduit
@@ -76,13 +81,22 @@ them for a candidate.
   (`LzOftMessage.sendParam`).
 - **L2.3** Every send and quote MUST refuse a destination its home OFT no longer peers as the
   conduit recorded or created it (`LzOftMessage.requirePeer`).
-- **L2.4** A bootstrap MUST be sent to the factory, and carry
+- **L2.4** A plain bootstrap MUST be sent to the factory, and carry
   `LzOftMessage.Bootstrap(owner, salt, homeChainKey, homeEid, homeOft, destRoot, proof, calls)` as the
   home factory's `conduitBootstrap` builds it from the stored leaves, for the conduit its
   `(owner, salt)` derive. A message MUST be sent to the
   receiver, with the payload as `composeMsg`.
 - **L2.5** The only attribute MUST be `LzMessage.OPTIONS_ATTRIBUTE`, which replaces the
   default lzCompose option whole.
+- **L2.6** Signed mode MUST use the same route-bound salt as plain mode and be fixed by the
+  source Safe's guard capability at creation. Before sending or quoting a signed bootstrap,
+  the transmitter MUST validate its head and graph against the source guard's activated selection.
+  `signedConduitBootstrap` MUST build
+  `abi.encode(SIGNED_BOOTSTRAP, LzOftMessage.Bootstrap, sourceChainId, signedBody)` from the
+  stored routing fields, with empty header calls. `signedBody` carries the selected guard,
+  head, encoded authority graph and setup calls. The graph and setup arrays are variable-size
+  because they represent the selected owners and requested setup; complete wire sizes require
+  lane-specific validation.
 
 ### L3. No tokens
 
@@ -104,6 +118,12 @@ this factory's fixed treasury. Bootstrap still pays only its provider quote.
   MUST reach the conduit before its receiver is armed.
 - **L4.3** The receiver MUST be armed with the conduit as its source transmitter, the source
   eid as its home, the home OFT, and `_from` as its local OFT.
+- **L4.4** A signed bootstrap MUST bind `sourceChainId` to `homeChainKey` and pass the
+  same endpoint, route proof, peer, eid and `composeFrom` checks as a plain bootstrap. The
+  receiver MUST be armed with no calls, then initialize its signed authority and setup
+  atomically on the provider's authentication. Its guard and MultiSend pins MUST match the
+  source guard and the helper it recognizes. A duplicate bootstrap MUST revert `ConduitExists`.
+  Failed source transport MUST revert bootstrap state and allow another Safe execution.
 
 ### L5. Receive
 
@@ -112,6 +132,10 @@ this factory's fixed treasury. Bootstrap still pays only its provider quote.
   eid; the compose's source eid is its home; and `composeFrom` is its source transmitter, read
   through `ProviderAddress.evmSender`.
 - **L5.2** It MUST NOT read the executor or `_extraData`.
+- **L5.3** Signed receivers MUST use the shared signature, authority-update and replay checks
+  for compose and direct submission. Leaf and authority relay fees MUST come from the relayer,
+  with the OFT refund recipient set to that relayer and preexisting conduit funds preserved.
+  Safe-funded sends MUST retain conduit refunds.
 
 ## 4. What it gives up
 
@@ -139,8 +163,17 @@ the conduit).
 | L2.2 | the same two, which compare the value paid with the quote |
 | L2.3 | `test_aRePeeredHomeOftRefusesTheBootstrapAndItsQuote`, `test_aRePeerAfterTheBootstrapRefusesMessages` |
 | L2.5 | `test_theOptionsAttributeReplacesTheDefaultWhole`, `test_aSecondAttributeIsRefused`, `test_anotherBindingsAttributeIsRefused`, `test_onlyTheOptionsAttributeIsSupported` |
+| L2.6 | `test_signedCreationUsesThePlainDerivation`, `test_quoteAndSendRejectUnselectedBootstrapAuthority`, `test_realSafeGuardBootstrapAndComposeShareDirectReplay` |
 | L3.1 | `test_aSendMovesNoTokensAndCarriesTheDefaultCompose`, `LzOftForkTest` |
 | L4.1 | `test_aCallerOtherThanTheOftsEndpointIsRefused`, `test_anOftOutsideTheRootIsRefused`, `test_aLeafForAnotherChainIsRefused`, `test_aComposeFromAnotherEidThanTheHomesIsRefused`, `test_anOftThatNoLongerPeersTheHomeIsRefused`, `test_aSenderOtherThanTheConduitIsRefused`, `test_aForgedRootCreatesAnotherConduit`, `test_aSecondBootstrapIsRefused` |
 | L4.2, L4.3 | `test_valueReachesTheConduit`, `test_theBootstrapCreatesTheReceiverAtTheConduitsAddress` |
+| L4.4 | `test_bootstrapChainDomainCannotBeSubstituted`, `test_bootstrapTransportFailureRollsBackAndSafeCanRetry`, `test_signedBootstrapRepeatReverts`, `test_setupCallsExecuteOnceAndDuplicateBootstrapReverts` |
 | L5.1 | `ProviderReceiveSpec`, `test_aComposeQueuedByAnotherContractIsRefused`, `test_aRePeeredLocalOftIsRefused` |
+| L5.3 | `test_signedBootstrapAndProviderDeliveryShareReplayWithDirectSubmission`, `test_merkleRelayPricesFullWireRefundsRelayerAndSharesReplay`, `test_realSafeGuardBootstrapAndComposeShareDirectReplay` |
 | C29 | `test_aDeliveredComposeCannotRunAgain`, `test_aFailedComposeIsRetried` |
+
+Signed transport coverage: `LzOftSigned.t.sol` checks common salt derivation, quote/send
+selection validation, atomic transport failure, bootstrap duplication, source domain binding,
+message/Merkle replay and relayer refund accounting. `SignedOftIntegration.t.sol` exercises
+real Safe activation, bootstrap, dispatch, authority update relay/direct replay and post-update
+execution. Live OFT compatibility, fees, compose gas and payload caps remain #118 gates.

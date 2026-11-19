@@ -19,7 +19,10 @@ contract is right.
 ## Three properties the whole design turns on
 
 **The home chain is a property of the conduit.** Any chain can be home: an owner picks one
-per conduit by calling `createTransmitter` there, and it is part of the conduit's address.
+per conduit by calling `createTransmitter` there, and it is part of the conduit's address. A
+Safe whose transaction guard advertises `ICrossecuteGuard` gets a Safe-signed conduit instead,
+at the same address
+([`safe-signed-dispatch.md`](safe-signed-dispatch.md#implementation)).
 Every chain runs one transceiver per provider, which creates transmitters for conduits homed
 on its chain and receivers for conduits homed elsewhere. Everything below reads "home" and
 "destination" rather than "Ethereum" and "elsewhere" for that reason.
@@ -158,7 +161,22 @@ Hop by hop:
   `addressesDiverge` is set. It arrives at the home's `_handleInbound`, which passes it to
   `_onDestinationReceiver` and on to the conduit's own counterpart slot, not the registry.
 
-Four facts about that path are worth stating here, because no single file holds all of
+In signed mode, `bootstrap` carries the source guard's selected head and graph plus setup
+calls. Quote and send validate that selection before transport. The destination stores it
+on authenticated delivery, initializes signed mode before setup, and rejects a second
+bootstrap. Failed source transport reverts the bootstrap execution. Authority updates later
+advance each receiver independently, through direct submission or provider delivery.
+The [signed dispatch design](safe-signed-dispatch.md) defines those checks.
+
+For `layerzero-oft`, the factory builds the bootstrap and the conduit sends it through its
+own OFT, so `composeFrom` remains the conduit. Plain and signed conduits use the same salt
+binding the owner, user salt, home chain/eid/OFT and destination root. The receiving factory
+checks the route proof, endpoint, eid, peer and conduit derivation; signed bootstrap also
+binds the source-chain domain and the receiver's authority guard pin. After bootstrap,
+signed receivers accept direct message, leaf and authority submissions even if OFT delivery
+is unavailable. See [signed OFT transport](safe-signed-dispatch.md#layerzero-oft-signed-transport).
+
+Four facts about the transceiver path are worth stating here, because no single file holds all of
 them:
 
 **The message carries the owner, their salt, and the transmitter.** The conduit's own address
@@ -300,6 +318,8 @@ receives and never sends. The guard is `ReentrancyGuardUpgradeable` and covers `
 | `messaging/outbound/OutboundBase.sol` | The sending half. No storage and no opinion about who may send. | `quoteMessage`, `routeFor`, `chainKeyOfRoute`, `hasRoute`, `counterpartOn`, `hasCounterpart`, `routeTo` |
 | `messaging/outbound/TransmitterBase.sol` | The per-user conduit on its home chain. One transmitter fans out to every chain. | `sendMessage`, `quoteMessageBreakdown`, `execute`, `bootstrap`, `quoteBootstrap`, `bootstrapPayload`, `recipientOn`, `chainIdentifierFor`, `payloadForCalls`, `payloadForElements`, `commitmentCall`, `cancellationCall`, `commitmentFor`, `commitmentForChain`, `isBootstrapped`, `isReachable`, `destinationReceiverOn`, `onDestinationReceiverReported` |
 | `messaging/inbound/ReceiverBase.sol` | The destination-side conduit. One per transmitter per destination, reused for every payload. Not an `OutboundBase`: a receiver never sends. | `initialize`, `receiveMessage`, `commit`, `cancel(bytes32)`, `finalize(Call[])`, `finalize(Call[][])`, `execute`, `revokeGateway`, `outstanding`, `isCommitted`, `commitments`, `pendingCount`, `isSourceTransmitter`, `isAuthorizedCaller`, `receive()` |
+| `messaging/signed/`, `outbound/SignedTransmitterLib.sol` | Safe-signed dispatch (#108): owner graph helpers, the shared `SafeQuorum` signature walk, leaf hashing and the linked transmitter builder. Used by `outbound/SignedTransmitter.sol` and `inbound/SignedReceiver.sol`, including OFT. See [`safe-signed-dispatch.md`](safe-signed-dispatch.md#implementation). | `registerRoot`, `relayLeaf`, `quoteSignedMessage`, `quoteRelay`, `isSigned`; `submitMessage`, `submitLeaf`, `authorityRecords`; `initializeSigned` |
+| `messaging/authority/` | Per-receiver selected graph/head, shared source-call recognition, linked update verification and direct/provider transport. The source guard runs the same verifier with caller-supplied graph witnesses. | `selection`, `graph`, `submitAuthority`, `submitAuthorityBatch`; transmitter `relayAuthority`, `quoteAuthority` |
 | `messaging/transceiver/TransceiverBase.sol` | One transceiver per chain per provider, at one address on every standard EVM chain of one deployer. It creates transmitters for conduits homed here and receivers for conduits homed on any authenticated origin, sends and accepts both bootstraps and receiver reports, applies the registry's grade and suspension to every chain it talks to, and refuses a bootstrap whose carried transmitter is not the one the home's transceiver derives, as the registry records it, when that home is `Predetermined` (`SourceTransmitterMismatch`). It refuses to bootstrap, or quote a bootstrap to, a chain the registry has not marked live (`DestinationNotLive`). Its default counterpart on a `Predetermined` chain is the registry's prediction from the deployer recorded for that chain. Owned by the governor's own conduit on this chain; holds the report float. Has no upgrade function: it is a `Proxy` that `ProxyDeployer` arms and locks in one call. | `predictReceiver`, `createTransmitter`, `bootstrap`, `bootstrapElements`, `quoteBootstrap`, `quoteBootstrapElements`, `conduitBootstrap`, `reportsReceiver`, `extension`, `receive()`, `fallback()`, and every `TransceiverExtension` function through it |
 | `messaging/transceiver/TransceiverExtension.sol` | Initialization, owner configuration, the float's withdrawal, and the views no contract calls, for every provider's transceiver on a chain. Runs only by `DELEGATECALL` from a transceiver's `fallback`, and has no upgrade path. Called directly, it runs on its own empty storage and refuses every owner and treasury call. | `initializeBase` (the transceiver's own call, while it initializes), `conduitSalt`, `predictConduit`, `predictTransmitter`, `reportPayload`, `setRoute`, `setRouting`, `setCounterpart`, `resolveCounterpart`, `setOperator`, `setBootstrapFee`, `setBootstrapAllowlist`, `withdraw`, `receiverImplementation`, `transmitterImplementation`, `addressesDiverge`, `chainRegistry`, `messageProvider`, `minCounterpartProvenance`, `bootstrapFee`, `operator`, `bootstrapAllowlist`, `treasury` |
 | `messaging/transceiver/TransceiverCore.sol` | The state, events, errors, and internal logic `TransceiverBase` and `TransceiverExtension` share, so both lay out storage alike. | `localChainKey`, `PROXY_INIT_CODE_HASH` |

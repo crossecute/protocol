@@ -228,7 +228,7 @@ contract CcipOffRampTest is CcipOffRampFixture {
         _deployOffRamp();
         receiver = CcipReceiver(
             payable(deployConduit(
-                    address(new CcipReceiver(ccipRouter)),
+                    address(new CcipReceiver(ccipRouter, address(0), address(0))),
                     abi.encodeCall(IReceiverInit.initialize, (SENDER, bytes32(uint256(SOURCE)), new Call[](0)))
                 ))
         );

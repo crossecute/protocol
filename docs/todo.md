@@ -88,11 +88,38 @@ the seventh; what they mean for an operator is in the README.
   and a chain added after the first deployment, whose files repeat what is already set. zkSync
   and Tron, and every lane to them, are left out of the payloads, and have deploy functions
   the tests use but no production script: their bytecode, with
-  `WormholeMessage` or `LzMessage` linked, and their `TransceiverExtension` variant are built by
+  `CcipMessage`, `WormholeMessage` or `LzMessage` linked where applicable, their conduits with `ReceiverAuthority`,
+  `AuthorityRecognition`, `AuthorityTransport` and `SignedTransmitterLib` linked, and their
+  `TransceiverExtension` variant are built by
   zksolc and TRON-solc, which these scripts do not drive. zksolc 1.5.18, with ZKsync's solc
   0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19).
   zksolc 1.5.15, with 0.8.28-1.0.1, compiles `ChainRegistry` (2026-10-20, #82), but not
   `VmDeriver`, whose Bitcoin schemes use `ripemd160`. CI runs neither.
+- **Signed delivery needs an explicit, simulated gas budget.** #134's reproducible gas,
+  size and real Safe 1.5.0 integration evidence is in
+  [safe-signed-dispatch-measurements.md](safe-signed-dispatch-measurements.md). The inherited
+  200k/1m defaults do not cover general signed delivery. Live provider lanes still need exact
+  gas estimates, configured-size-limit checks and fee quotes; local mocks certify none of
+  those live configurations. #109 now implements source activation and updates, receiver
+  bootstrap and selected-graph verification, publication, provider relay/quote and atomic
+  direct catch-up. Its [verification plan](safe-authority-verification-review.md) tracks
+  external [SDK execution tooling](https://github.com/crossecute/sdk/issues/14),
+  archive-service operation and live-provider validation. The offline
+  [archive utility](../tools/authority-archive/README.md) provides graph and evidence retrieval. Current authority update
+  measurements are in [updates.md](benchmarks/authority-109/updates.md).
+- **Published leaves need an indexer.** The [SDK Merkle package](https://github.com/crossecute/sdk/pull/13)
+  and the guard tests check the same three-leaf publication vector. An indexer can recover
+  ordered leaves from the guard call input and use the SDK to build proofs. See
+  [Merkle leaf publication](safe-guard-design.md#merkle-leaf-publication) for trace requirements.
+- **Nothing checks for Cancun before the Safe guard is installed.** The guard reads transient
+  storage in every owner pre-hook, so on a chain without EIP-1153 it would make every owner
+  transaction revert, including its own removal. Installation tooling should confirm the chain
+  supports `TLOAD`/`TSTORE` first; there is no such tooling yet.
+- **The policy-engine fork does not test `_ownerSignatures` itself.** The guard builds on
+  `crossecute/policy-engine` at `f6805df`, two commits on upstream `8ee68a8`. The fork's CI
+  passes at `f6805df`, including all 182 upstream Hardhat tests
+  ([run](https://github.com/crossecute/policy-engine/actions/runs/42433450396)). The second
+  commit, which adds `_ownerSignatures`, adds no test, so only the guard's own tests cover it.
 - **Wormhole publish-only messages need a deliverer.** A multisig cannot carry a relay
   provider's quote, which expires an hour after it is issued (deploy/CHECKS.md), so its
   Wormhole sends and bootstraps take the publish-only attribute: the transaction publishes
@@ -208,6 +235,22 @@ is live: `deploy/providers/op-stack-l2-l2.toml` lists no chain. Before listing o
   retry, so this is the provider checklist's work
   ([spec §2](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)).
 
+## 6. Safe-signed dispatch
+
+The signature-enabled transmitter and receiver
+([#108](https://github.com/crossecute/protocol/issues/108)) are built;
+[`safe-signed-dispatch.md`](safe-signed-dispatch.md) holds the decisions and, under
+"Implementation", what the build leaves out. Outstanding:
+
+- **Signed receivers on diverging chains.** zkSync and Tron refuse a signed bootstrap; supporting
+  them is outside #108's scope.
+- **Signed OFT deployment validation.** Bootstrap, dispatch and authority relay are implemented;
+  each intended OFT lane still needs the [signed-route checks](../contracts/evm/deploy/CHECKS.md#signed-layerzero-oft-routes)
+  for zero-amount compose compatibility, exact gas/fees, payload limits and receiver authority pins.
+- **Authority execution tooling and operation.** The [#109 implementation](safe-authority-updates.md)
+  includes source activation/updates, receiver catch-up and offline evidence archives. SDK
+  execution, archive-service operation and live-provider validation remain in the
+  [verification plan](safe-authority-verification-review.md#implementation-coverage-and-remaining-work).
 
 ## CCIP 2.0 production enablement
 

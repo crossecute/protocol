@@ -17,6 +17,7 @@ import {MockExecutor} from "test/protocols/wormhole/MockExecutor.sol";
 import {
     ProviderIdTableSpec,
     ProviderWideSenderSpec,
+    ProviderSignedLockSpec,
     ProviderEvmRecipientSpec,
     ProviderFeeSpec,
     ProviderRefundSpec,
@@ -210,7 +211,7 @@ contract WormholeTransceiverSendTest is
 
 /// @notice `executeVAAv1` is permissionless: guardian signatures (checked by Core) authenticate
 ///         the emitter and its chain, and `_onMessageFrom` is the only check of either.
-contract WormholeReceiveTest is ProviderWideSenderSpec, WormholeFixture {
+contract WormholeReceiveTest is ProviderWideSenderSpec, ProviderSignedLockSpec, WormholeFixture {
     function _validVaa(uint64 seq) internal view returns (bytes memory) {
         return _vaa(
             1, BASE_WORMHOLE_CHAIN, SOURCE_TRANSMITTER, seq, _envelope(HERE_WORMHOLE_CHAIN, receiver, _emptyPayload())

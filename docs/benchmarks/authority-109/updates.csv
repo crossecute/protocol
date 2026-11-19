@@ -1,0 +1,8 @@
+scope,case,measured_gas,calldata_bytes,submission_bytes,provider_bytes
+source-cancun,test_measureAuthorityCachedChildAdoption,517409,5476,4128,4224
+source-cancun,test_measureAuthorityEoaRotation,344686,2788,1696,1792
+source-cancun,test_measureAuthorityNestedAdoption,484225,4804,3392,3488
+source-cancun,test_measureAuthoritySharedChildAdoption,698679,6788,4384,4480
+source-cancun,test_measureAuthorityTwoLevelAdoption,563916,5572,3776,3872
+receiver-paris,test_batchCatchUpSharesProviderReplayState,260592,3012,,
+receiver-paris,test_measureAuthorityReceiverOwnerRotation,469979,1764,,

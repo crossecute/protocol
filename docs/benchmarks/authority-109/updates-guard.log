@@ -1,0 +1,49 @@
+Compiling 8 files with Solc 0.8.30
+Solc 0.8.30 finished in 19.66s
+Compiler run successful!
+
+Ran 5 tests for test/SignedDispatchIntegration.t.sol:SignedDispatchIntegrationTest
+[PASS] test_measureAuthorityCachedChildAdoption() (gas: 13823057)
+Logs:
+  authorityShape: 2
+  authoritySourceBatchGas: 517409
+  authoritySourceBatchCalldataBytes: 5476
+  authoritySubmissionBytes: 4128
+  authorityProviderBytes: 4224
+
+[PASS] test_measureAuthorityEoaRotation() (gas: 7081520)
+Logs:
+  authorityShape: 0
+  authoritySourceBatchGas: 344686
+  authoritySourceBatchCalldataBytes: 2788
+  authoritySubmissionBytes: 1696
+  authorityProviderBytes: 1792
+
+[PASS] test_measureAuthorityNestedAdoption() (gas: 12825731)
+Logs:
+  authorityShape: 1
+  authoritySourceBatchGas: 484225
+  authoritySourceBatchCalldataBytes: 4804
+  authoritySubmissionBytes: 3392
+  authorityProviderBytes: 3488
+
+[PASS] test_measureAuthoritySharedChildAdoption() (gas: 22414515)
+Logs:
+  authorityShape: 4
+  authoritySourceBatchGas: 698679
+  authoritySourceBatchCalldataBytes: 6788
+  authoritySubmissionBytes: 4384
+  authorityProviderBytes: 4480
+
+[PASS] test_measureAuthorityTwoLevelAdoption() (gas: 16954746)
+Logs:
+  authorityShape: 3
+  authoritySourceBatchGas: 563916
+  authoritySourceBatchCalldataBytes: 5572
+  authoritySubmissionBytes: 3776
+  authorityProviderBytes: 3872
+
+Suite result: ok. 5 passed; 0 failed; 0 skipped; finished in 41.67ms (119.08ms CPU time)
+
+Ran 1 test suite in 42.47ms (41.67ms CPU time): 5 tests passed, 0 failed, 0 skipped (5 total tests)
+2026-11-18T21:13:33.697865Z  WARN evm::traces: failed to flush signature cache err=failed to create file "/home/carter/.foundry/cache/signatures": Read-only file system (os error 30)

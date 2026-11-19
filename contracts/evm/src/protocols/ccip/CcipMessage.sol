@@ -13,6 +13,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///         and the transceiver and its variants). The id `ccipSend` returns is discarded: senders
 ///         return a zero sendId, ERC-7786's "sent" (see `ProviderSendSpec`); the id is in
 ///         the on-ramp's send event.
+/// @dev The linked entry points keep V2/V3 encoding out of conduit and transceiver bytecode.
 library CcipMessage {
     // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant EXTRA_ARGS_ATTRIBUTE = bytes4(keccak256("crossecute.ccip.extraArgs"));
@@ -40,7 +41,7 @@ library CcipMessage {
         uint256 value,
         uint256 defaultGas,
         address laneConfig
-    ) internal {
+    ) public {
         // forge-lint: disable-start(unused-return) the id is in the on-ramp's event; sends return 0
         IRouterClient(router).ccipSend{value: value}(
             selector, buildOnLane(laneConfig, selector, recipient, payload, attributes, defaultGas)
@@ -56,7 +57,7 @@ library CcipMessage {
         bytes[] memory attributes,
         uint256 defaultGas,
         address laneConfig
-    ) internal view returns (uint256) {
+    ) public view returns (uint256) {
         return IRouterClient(router)
             .getFee(selector, buildOnLane(laneConfig, selector, recipient, payload, attributes, defaultGas));
     }

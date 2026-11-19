@@ -31,7 +31,7 @@ contract CcipPolicyTest is Test {
     function setUp() public {
         MockCcipRouter router = new MockCcipRouter();
         router.configureV3Pricing(1, false);
-        CcipReceiver implementation = new CcipReceiver(address(router));
+        CcipReceiver implementation = new CcipReceiver(address(router), address(0), address(0));
         targets[0] = deployConduit(
             address(implementation),
             abi.encodeCall(IReceiverInit.initialize, (SENDER, bytes32(uint256(SOURCE)), new Call[](0)))

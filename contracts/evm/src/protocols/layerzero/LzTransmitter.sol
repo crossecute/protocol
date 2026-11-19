@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {SignedTransmitter} from "src/messaging/outbound/SignedTransmitter.sol";
 import {OwnableTransmitter} from "src/messaging/outbound/OwnableTransmitter.sol";
 import {OAppSenderUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppSenderUpgradeable.sol";
 import {OAppCoreUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppCoreUpgradeable.sol";
@@ -13,7 +14,7 @@ import {LzWriteOncePeer} from "src/protocols/layerzero/LzWriteOncePeer.sol";
 /// @notice Per-user transmitter, created by `TransceiverBase.createTransmitter`.
 /// @dev Sender-only: inherits `OAppSenderUpgradeable`, not the combined `OAppUpgradeable`, so
 ///      there is no `lzReceive` to override-and-revert for R3.1. Absence, not a guard.
-contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOncePeer {
+contract LzTransmitter is SignedTransmitter, OAppSenderUpgradeable, LzWriteOncePeer {
     bytes4 public constant LZ_OPTIONS_ATTRIBUTE = LzMessage.OPTIONS_ATTRIBUTE;
 
     /// @param _endpoint LayerZero endpoint on this chain. Set on the implementation; safe
@@ -34,6 +35,16 @@ contract LzTransmitter is OwnableTransmitter, OAppSenderUpgradeable, LzWriteOnce
 
     function _checkOwner() internal view override(OwnableTransmitter, OwnableUpgradeable) {
         super._checkOwner();
+    }
+
+    /// @dev Resolves the inheritance diamond; the body is `SignedTransmitter`'s.
+    function transferOwnership(address newOwner) public override(SignedTransmitter, OwnableUpgradeable) {
+        super.transferOwnership(newOwner);
+    }
+
+    /// @dev Resolves the inheritance diamond; the body is `SignedTransmitter`'s.
+    function renounceOwnership() public override(SignedTransmitter, OwnableUpgradeable) {
+        super.renounceOwnership();
     }
 
     /// @dev Resolves the inheritance diamond; the body is `LzWriteOncePeer`'s.

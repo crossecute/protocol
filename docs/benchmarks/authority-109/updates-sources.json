@@ -1,0 +1,20 @@
+{
+  "revision": "9505ccdcaeee2294bed20200b44c1900221537d3",
+  "forge": "forge Version: 1.8.1",
+  "sha256": {
+    "contracts/evm/src/messaging/authority/AuthorityGraph.sol": "4308da3b1a7c2dd20cfec8300a32e8533b83e5560031ec12830dcdd2c7e7fa9c",
+    "contracts/evm/src/messaging/authority/AuthorityMutations.sol": "a1b1d636a176d9b8240a1a311586d5856618b17642928673383fb9d7df4b0f9a",
+    "contracts/evm/src/messaging/authority/AuthorityRecognition.sol": "50436ca4e772cda294d76cd4ffb9a3de57e8fa1c718517a9784316ff79655615",
+    "contracts/evm/src/messaging/authority/AuthorityTransport.sol": "c30f9fd61cd24f53c226aaf66af6b952cd3017b14592d571f358f2edc394194a",
+    "contracts/evm/src/messaging/authority/AuthorityUpdateEncoding.sol": "fc3488998c65e5628a641d21987bf325c59ac594d63ded60e6057c333161e8aa",
+    "contracts/evm/src/messaging/authority/ChildUpdate.sol": "9ca9d9a5774f6ff37c2a5294ff140e575abbb5a8c78406dd9abfb246922f9cf0",
+    "contracts/evm/src/messaging/authority/IReceiverAuthority.sol": "0b6861b6ef2687d610e4435993709401975abff03647b37221c79f33ace828c7",
+    "contracts/evm/src/messaging/authority/ReceiverAuthority.sol": "660fa7130d9d811b47405ee5f43c46bc246bcfe6e08d18aed98058af34a898ee",
+    "contracts/evm/src/messaging/authority/ReceiverAuthorityTemplate.sol": "a3c7cf841467b2b87394565a00f2857b34b555a40205f50095d23ade77018f62",
+    "contracts/evm/src/messaging/inbound/SignedReceiver.sol": "3a009dfde8f3cb63df9b5aef0cbe5e025d17e764a3fe0ac095eabe3a9b613a6e",
+    "contracts/safe-guard/src/CrossecuteGuard.sol": "67480075a21c24ae84118b8bdb0f4afc8bda8f65d4437c044e01e9afb86d8810",
+    "contracts/safe-guard/src/authority/SourceAuthorityGuard.sol": "b1185b4344c095e9e3559f074b6ff66ade5399e05256fa46bbbb85b4d71fb9c0",
+    "contracts/evm/test/signed/SignedReceiver.t.sol": "23b55c755ba2b2677c9c7e31872b7a20f52c2e120c961e13eb48dc808134211e",
+    "contracts/safe-guard/test/SignedDispatchIntegration.t.sol": "0a2c95e42d539301b087bc12310d2aede3ed24f97f8c361d7c3d42594c338dbf"
+  }
+}

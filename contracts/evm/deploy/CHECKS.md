@@ -383,6 +383,52 @@ for it was not checked.
   messages if a route to the chain exists. Routes and peers wait for `markLive`; nothing enforces
   it.
 
+## 8. Safe-signed dispatch (#134, 2026-11-17)
+
+Measured 2026-11-17 at code commit `a4dde1a039b5b8bb11ce802fae61381e70f28b2f`.
+[Complete reproducible tables, assumptions and provider-size checks](../../../docs/safe-signed-dispatch-measurements.md)
+are in the signed-dispatch measurement note. Paris production receiver measurements and
+Cancun real-Safe source integration are separate; no live fee or lane-cap certification is implied.
+
+| Paris fixture | Standalone gas | Merkle gas | initializeSigned gas | Merkle wire bytes |
+| --- | ---: | ---: | ---: | ---: |
+| 2-of-3 EOA | 167,961 | 158,116 | 237,440 | 1,600 |
+| Inline child | 176,798 | 166,999 | 313,789 | 1,696 |
+| Cached child approval | 191,743 | 181,908 | 313,789 | 2,432 |
+| Two nested levels | 185,899 | 176,071 | 390,475 | 1,792 |
+| Shared child | 213,371 | 203,625 | 493,810 | 2,112 |
+| Large cached graph, 10 calls, depth 8, attributes | 385,799 | 384,234 | 851,875 | 7,264 |
+
+`initializeSigned` excludes conduit deployment and outer transceiver work. Application state
+and benchmark boundaries are documented in the full note. **The 200k payload and 1m bootstrap
+defaults are unsuitable for general signed delivery.** Sign explicit gas attributes after
+simulating the exact full provider-entry-point call. No universal constant can cover unbounded
+authority graphs and arbitrary application calls. No protocol cap or gas floor is added.
+
+Real Safe 1.5.0/guard/conduit tests in `contracts/safe-guard/test/SignedDispatchIntegration.t.sol`
+cover both provider/direct delivery, cached child evidence, shared nested owners, two-destination
+root publication/registration/relay, nonce-42/43 atomic batching and rollback, an owner rotation
+followed by a bootstrap to a new chain that trusts only the rotated owners, and destination
+out-of-gas followed by a successful direct retry.
+
+The production size check leaves 1,830 bytes on the CCIP transmitter, 250 on the CCIP
+receiver, 982 on the LayerZero transmitter, 1,256 on the Hyperlane transmitter, and 400 on
+the OFT transmitter. Source gas includes mock mailbox journaling.
+The three existing external-fork tests are still RPC-dependent. The measurements above cover
+the standard provider paths; OFT transport uses separate lane validation.
+
+### Signed LayerZero OFT routes
+
+Before enabling signed OFT routes, run the #118 deployment validation against each intended
+OFT pair. Verify zero-amount sends and compose support, peers and endpoint/eid configuration,
+complete signed-bootstrap and message wire sizes, byte-sensitive quote/send fee parity and
+refund recipients. Simulate the complete factory/receiver compose entry point with the actual
+authority graph and application calls, and provide explicit compose gas attributes. The
+local OFT tests use mock transport and do not certify live gas, fees, payload caps or OFT
+compatibility. Confirm all copies of the factory, its logic and linked libraries use the same
+release build and deterministic addresses, including the receiver authority pins. Plain and
+signed modes use the same route-bound salt and six-argument factory prediction.
+
 ## CCIP 2.0 options
 
 Existing CCIP checks and recorded results do not establish V3 compatibility. V3 is

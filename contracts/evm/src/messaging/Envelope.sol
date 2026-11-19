@@ -18,6 +18,7 @@ library Envelope {
     uint8 internal constant BOOTSTRAP = 1;
     uint8 internal constant BOOTSTRAP_ELEMENTS = 2;
     uint8 internal constant RECEIVER_REPORT = 3;
+    uint8 internal constant SIGNED_BOOTSTRAP = 4;
 
     /// @dev Shorter than the one word that holds the kind.
     error EnvelopeTooShort();
@@ -30,7 +31,7 @@ library Envelope {
     function kindOf(bytes calldata message) internal pure returns (uint8) {
         if (message.length < 32) revert EnvelopeTooShort();
         uint256 kind = abi.decode(message[:32], (uint256));
-        if (kind == 0 || kind > RECEIVER_REPORT) revert UnknownEnvelopeKind(kind);
+        if (kind == 0 || kind > SIGNED_BOOTSTRAP) revert UnknownEnvelopeKind(kind);
         // forge-lint: disable-next-line(unsafe-typecast) bounded by the check above
         return uint8(kind);
     }
@@ -85,6 +86,27 @@ library Envelope {
         returns (bytes memory)
     {
         return abi.encode(BOOTSTRAP_ELEMENTS, owner, salt, transmitter, elements);
+    }
+
+    /// @notice A signed conduit's bootstrap (#108): `body` is `abi.encode(SignedBootstrap)`, the
+    ///         authority records the receiver stores and its setup calls.
+    /// @dev `owner`, `salt` and `transmitter` are as in `encodeBootstrap`, and derive the same
+    ///      addresses; the kind is what marks the receiver signed.
+    function encodeSignedBootstrap(address owner, bytes32 salt, bytes32 transmitter, bytes memory body)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(SIGNED_BOOTSTRAP, owner, salt, transmitter, body);
+    }
+
+    function decodeSignedBootstrap(bytes calldata message)
+        internal
+        pure
+        returns (address owner, bytes32 salt, bytes32 transmitter, bytes memory body)
+    {
+        _expect(message, SIGNED_BOOTSTRAP);
+        (, owner, salt, transmitter, body) = abi.decode(message, (uint8, address, bytes32, bytes32, bytes));
     }
 
     /* ============================== receiver report ============================= */

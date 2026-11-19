@@ -128,7 +128,7 @@ abstract contract ReceiverBase is
     ///      `_execute` can produce it, reachable from an authenticated inbound message or a
     ///      gated entry point. Stated explicitly because receiver and transmitter addresses
     ///      differ on zkSync and Tron.
-    function isAuthorizedCaller(address conduit) public view returns (bool) {
+    function isAuthorizedCaller(address conduit) public view virtual returns (bool) {
         return conduit == address(this) || isSourceTransmitter(conduit);
     }
 
@@ -181,8 +181,8 @@ abstract contract ReceiverBase is
     ///
     /// @dev The only membership change after initialization anywhere, and it only subtracts:
     ///      `grantRole` is `onlyInitializing`, and `Proxy` arms once, so a dropped
-    ///      transport is never replaced. A gateway that can deliver can forge, so going deaf is
-    ///      the recoverable failure.
+    ///      transport is never replaced. In plain mode a gateway that can deliver can forge, so
+    ///      going deaf is the recoverable failure.
     ///
     /// @dev A transceiver has no equivalent: it is shared by every owner on its chain.
     function revokeGateway(address gateway) external onlySourceTransmitter {
@@ -338,7 +338,7 @@ abstract contract ReceiverBase is
     /// @notice Delivery from providers whose callback has already copied the payload to memory.
     function _onMessageFromMemory(bytes32 origin, address sender, bytes memory payload) internal {
         _authenticateSource(origin, sender);
-        _deliverCalls(Payload.decodeCallsFromMemory(payload));
+        _onMessageMemory(payload);
     }
 
     function _authenticateSource(bytes32 origin, address sender) private view {
@@ -355,8 +355,12 @@ abstract contract ReceiverBase is
     ///
     /// @dev Delivery shares the `finalize` lock because it calls arbitrary targets from a
     ///      provider callback.
-    function _onMessage(bytes calldata payload) internal {
+    function _onMessage(bytes calldata payload) internal virtual {
         _deliverCalls(Payload.decodeCalls(payload));
+    }
+
+    function _onMessageMemory(bytes memory payload) internal virtual {
+        _deliverCalls(Payload.decodeCallsFromMemory(payload));
     }
 
     function _deliverCalls(Call[] memory calls) private nonReentrant {

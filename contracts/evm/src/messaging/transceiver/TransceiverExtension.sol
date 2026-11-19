@@ -6,10 +6,12 @@ import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
+import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
+import {SafeViewer} from "src/messaging/signed/SafeViewer.sol";
 
 /// @title TransceiverExtension
-/// @notice A transceiver's initialization, owner configuration, float withdrawal, and the views
-///         no contract calls. Runs only by `DELEGATECALL` from `TransceiverBase`'s `fallback`, so
+/// @notice A transceiver's initialization, owner configuration, float withdrawal, and its views,
+///         kept off `TransceiverBase` for size. Runs only by `DELEGATECALL` from its `fallback`, so
 ///         its storage is the transceiver's and `msg.sender` is the transceiver's caller.
 ///
 /// @dev Provider-agnostic: every provider's transceiver on a chain can name the same one. A
@@ -208,6 +210,15 @@ contract TransceiverExtension is TransceiverCore {
     /// @notice Where an owner's conduit lives on this chain, before it exists.
     function predictConduit(address owner, bytes32 salt, bytes32 homeChainKey) external view returns (address) {
         return _predictConduit(owner, salt, homeChainKey);
+    }
+
+    /// @notice `owner`'s live authority records, `abi.encode(SafeAuthorityRecord[])`, or empty
+    ///         when its guard does not advertise `ICrossecuteGuard`. Read at transmitter creation
+    ///         to choose the mode. Signed bootstraps instead carry the guard's selected graph.
+    /// @dev Here rather than in the transceiver for its size.
+    function signedAuthority(address owner) external view returns (bytes memory) {
+        if (!SafeViewer.isSigned(owner)) return "";
+        return abi.encode(SafeAuthorityGraph.derive(owner));
     }
 
     /// @notice Where `(owner, salt)`'s transmitter lives, before it exists.

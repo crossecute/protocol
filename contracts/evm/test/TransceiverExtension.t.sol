@@ -45,13 +45,13 @@ contract PairedTron is TronTransceiver, Unsent {
         __DivergentTransceiver_init(c, keccak256("tron-solc Proxy"));
     }
 
-    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
+    function _conduitAt(bytes32 conduitSalt)
         internal
         view
         override(TransceiverCore, TronTransceiver)
         returns (address)
     {
-        return super._predictConduit(owner, salt, homeChainKey);
+        return super._conduitAt(conduitSalt);
     }
 }
 

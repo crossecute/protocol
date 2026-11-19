@@ -15,6 +15,7 @@ import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 import {
     ProviderIdTableSpec,
     ProviderWideSenderSpec,
+    ProviderSignedLockSpec,
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
     ProviderTransmitterSpec,
@@ -89,7 +90,7 @@ contract CcipTransceiverSendTest is
 
 /// @notice CCIP reports the source sender; the binding must also match the configured
 ///         home and source transmitter. Per-source CCV policies do not authorize a sender.
-contract CcipReceiveTest is ProviderWideSenderSpec, CcipFixture {
+contract CcipReceiveTest is ProviderWideSenderSpec, ProviderSignedLockSpec, CcipFixture {
     function test_proxyExposesRouterAndReceiverInterfaces() public view {
         CcipReceiver r = CcipReceiver(payable(receiver));
         assertEq(r.getRouter(), address(router));
@@ -120,7 +121,7 @@ contract CcipReceiveTest is ProviderWideSenderSpec, CcipFixture {
 ///         a wrong answer fails silently (no revert: the message just never arrives).
 contract CcipInterfaceSupportTest is Test {
     function test_receiverSupportsIAny2EVMMessageReceiverAndIERC165() public {
-        CcipReceiver receiver = new CcipReceiver(address(0xBEEF));
+        CcipReceiver receiver = new CcipReceiver(address(0xBEEF), address(0), address(0));
         assertTrue(receiver.supportsInterface(type(IAny2EVMMessageReceiver).interfaceId));
         assertTrue(receiver.supportsInterface(type(IERC165).interfaceId));
         assertFalse(receiver.supportsInterface(bytes4(0xdeadbeef)));

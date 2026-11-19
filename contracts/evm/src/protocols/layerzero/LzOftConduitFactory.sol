@@ -13,10 +13,15 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
-import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
+import {ILzOftConduitFactory, ILzOftSignedConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 import {ILzOftTransmitterInit} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {ILzOftReceiverInit} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
+
+import {SafeViewer} from "src/messaging/signed/SafeViewer.sol";
+import {ISignedTransmitterInit} from "src/messaging/outbound/ISignedTransmitter.sol";
+import {ISignedReceiverInit} from "src/messaging/inbound/ISignedReceiver.sol";
+import {Call} from "src/messaging/Call.sol";
 
 /// @title LzOftConduitFactory
 /// @notice Creates every `layerzero-oft` conduit: the transmitter on its home, when its
@@ -27,11 +32,12 @@ import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 ///      addresses, which are the same on every chain, so this has one address
 ///      everywhere and a conduit has one address everywhere.
 ///
-/// @dev A conduit's CREATE2 salt binds `(owner, salt, homeChainKey, homeEid, homeOft, destRoot)`.
+/// @dev A plain conduit's CREATE2 salt binds `(owner, salt, homeChainKey, homeEid, homeOft, destRoot)`.
+///      Both modes use the same salt; mode is fixed at creation.
 ///      Any contract can queue a compose for any target, so the bootstrap is trusted only
 ///      because the delivering OFT proves into the root the message names, and that root is
 ///      part of the address the receiver is created at: a forged root creates another conduit.
-contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
+contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
     /// @notice One destination, as the operator lists it at creation.
     struct Leaf {
         bytes32 chainKey;
@@ -51,6 +57,12 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
         bytes32 destRoot;
     }
 
+    /// @notice Discriminator for the signed OFT bootstrap compose envelope.
+    uint256 public constant SIGNED_BOOTSTRAP = uint256(keccak256("crossecute.layerzero-oft.signed-bootstrap.v1"));
+    mapping(address conduit => bool signed) public isSigned;
+    mapping(address conduit => address owner) internal _creationOwners;
+    mapping(address conduit => bytes32 salt) internal _creationSalts;
+
     address public immutable transmitterImplementation;
     address public immutable receiverImplementation;
     address public immutable treasury;
@@ -68,6 +80,7 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
         address indexed owner, address indexed conduit, bytes32 salt, uint32 homeEid, address homeOft, bytes32 destRoot
     );
     event ReceiverCreated(address indexed conduit, uint32 homeEid, address localOft);
+    event SignedConduitCreated(address indexed conduit);
 
     error NoImplementation();
     error NoTreasury();
@@ -85,6 +98,8 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
     error ValueNotForwarded(address conduit);
     /// @dev The compose carries `Call[]`, which only an EVM chain's factory decodes.
     error NotAnEvmChain(bytes32 chainKey);
+    error WrongBootstrapMode();
+    error HomeChainMismatch(uint256 sourceChainId, bytes32 homeChainKey);
 
     constructor(address transmitterImplementation_, address receiverImplementation_, address treasury_) {
         if (transmitterImplementation_.code.length == 0 || receiverImplementation_.code.length == 0) {
@@ -141,6 +156,7 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
         bytes32[] memory hashes = _checkLeaves(homeOft, homeEid, leaves);
         bytes32 destRoot = LzOftMessage.root(hashes);
 
+        bool signed = SafeViewer.isSigned(msg.sender);
         bytes32 s = conduitSalt(msg.sender, salt, localChainKey, homeEid, homeOft, destRoot);
         conduit = Create2.computeAddress(s, PROXY_INIT_CODE_HASH);
         Conduits.requireVacant(conduit, msg.sender, salt);
@@ -151,6 +167,10 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
             abi.encodeCall(ILzOftTransmitterInit.initialize, (msg.sender, address(this), salt, homeOft))
         );
 
+        if (signed) ISignedTransmitterInit(conduit).initializeSigned();
+        isSigned[conduit] = signed;
+        _creationOwners[conduit] = msg.sender;
+        _creationSalts[conduit] = salt;
         _conduits[conduit] = Conduit(homeOft, homeEid, destRoot);
         _leafHashes[conduit] = hashes;
         for (uint256 i; i < leaves.length; ++i) {
@@ -158,6 +178,7 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
             _destinations[conduit][leaves[i].chainKey] = Destination(leaves[i].eid, leaves[i].oft, uint64(i));
         }
         emit TransmitterCreated(msg.sender, conduit, salt, homeEid, homeOft, destRoot);
+        if (signed) emit SignedConduitCreated(conduit);
     }
 
     /// @notice Where `conduit`'s bootstrap to `chainKey` goes, the home eid and root bound into
@@ -192,6 +213,7 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
     {
         Conduit memory a = _conduits[msg.sender];
         if (a.homeOft == address(0)) revert UnknownConduit(msg.sender);
+        if (isSigned[msg.sender]) revert WrongBootstrapMode();
         address derived = predictConduit(owner, salt, localChainKey, a.homeEid, a.homeOft, a.destRoot);
         if (derived != msg.sender) revert NotTheConduit(msg.sender, derived);
         bytes32 chainKey = keccak256(route);
@@ -212,6 +234,33 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
             )
         );
         recipient = Erc7930.encode(io.chainType, io.chainRef, abi.encodePacked(address(this)));
+    }
+
+    /// @notice Build a signed bootstrap for the calling conduit to send through its own OFT.
+    function signedConduitBootstrap(bytes calldata route, bytes calldata body)
+        external
+        view
+        returns (bytes memory recipient, bytes memory message)
+    {
+        Conduit memory a = _conduits[msg.sender];
+        if (a.homeOft == address(0)) revert UnknownConduit(msg.sender);
+        if (!isSigned[msg.sender]) revert WrongBootstrapMode();
+        bytes32 chainKey = ChainKey.fromIdentifier(route);
+        Destination memory d = _destination(msg.sender, chainKey);
+        Erc7930.Interop memory io = Erc7930.parseStrict(route);
+        if (io.chainType != Erc7930.CT_EIP155) revert NotAnEvmChain(chainKey);
+        LzOftMessage.Bootstrap memory b = LzOftMessage.Bootstrap(
+            _creationOwners[msg.sender],
+            _creationSalts[msg.sender],
+            localChainKey,
+            a.homeEid,
+            a.homeOft,
+            a.destRoot,
+            LzOftMessage.proof(_leafHashes[msg.sender], d.index),
+            new Call[](0)
+        );
+        recipient = Erc7930.encode(io.chainType, io.chainRef, abi.encodePacked(address(this)));
+        message = abi.encode(SIGNED_BOOTSTRAP, b, block.chainid, body);
     }
 
     function _destination(address conduit, bytes32 chainKey) private view returns (Destination memory d) {
@@ -258,7 +307,12 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
         payable
         override
     {
-        _createReceiver(_from, _message);
+        bytes calldata payload = _message[LzOftMessage.COMPOSE_MSG_OFFSET:];
+        if (payload.length >= 32 && abi.decode(payload[:32], (uint256)) == SIGNED_BOOTSTRAP) {
+            _createSignedReceiver(_from, _message, payload);
+        } else {
+            _createReceiver(_from, _message);
+        }
     }
 
     function _createReceiver(address from, bytes calldata message) private {
@@ -277,10 +331,18 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
         view
         returns (LzOftMessage.Bootstrap memory b, bytes32 s, address conduit, uint32 srcEid)
     {
+        b = LzOftMessage.decodeBootstrap(message[LzOftMessage.COMPOSE_MSG_OFFSET:]);
+        (s, conduit, srcEid) = _authenticateBootstrap(from, message, b);
+        Conduits.requireVacant(conduit, b.owner, b.salt);
+    }
+
+    function _authenticateBootstrap(address from, bytes calldata message, LzOftMessage.Bootstrap memory b)
+        private
+        view
+        returns (bytes32 s, address conduit, uint32 srcEid)
+    {
         ILayerZeroEndpointV2 endpoint = IOAppCore(from).endpoint();
         if (msg.sender != address(endpoint)) revert NotTheEndpoint(msg.sender);
-
-        b = LzOftMessage.decodeBootstrap(message[LzOftMessage.COMPOSE_MSG_OFFSET:]);
         bytes32 leaf = LzOftMessage.leaf(localChainKey, endpoint.eid(), from);
         if (!MerkleProof.verify(b.proof, b.destRoot, leaf)) revert NotInRoot(leaf);
 
@@ -293,7 +355,27 @@ contract LzOftConduitFactory is ILzOftConduitFactory, ILayerZeroComposer {
         conduit = Create2.computeAddress(s, PROXY_INIT_CODE_HASH);
         address composeFrom = ProviderAddress.evmSender(OFTComposeMsgCodec.composeFrom(message));
         if (composeFrom != conduit) revert NotTheConduit(composeFrom, conduit);
+    }
+
+    function _createSignedReceiver(address from, bytes calldata message, bytes calldata payload) private {
+        (, LzOftMessage.Bootstrap memory b, uint256 sourceChainId, bytes memory body) =
+            abi.decode(payload, (uint256, LzOftMessage.Bootstrap, uint256, bytes));
+        if (ChainKey.forEvm(sourceChainId) != b.homeChainKey) revert HomeChainMismatch(sourceChainId, b.homeChainKey);
+        (bytes32 s, address conduit, uint32 srcEid) = _authenticateBootstrap(from, message, b);
         Conduits.requireVacant(conduit, b.owner, b.salt);
+        _forwardValue(conduit);
+        Conduits.requireLanded(conduit, Conduits.deploy(s, _proxyInitCode));
+        _armSignedReceiver(conduit, srcEid, b.homeOft, from);
+        ISignedReceiverInit(conduit).initializeSigned(sourceChainId, b.owner, body);
+        emit ReceiverCreated(conduit, srcEid, from);
+    }
+
+    function _armSignedReceiver(address conduit, uint32 srcEid, address homeOft, address from) private {
+        Conduits.arm(
+            conduit,
+            receiverImplementation,
+            abi.encodeCall(ILzOftReceiverInit.initialize, (conduit, srcEid, homeOft, from, new Call[](0)))
+        );
     }
 
     /// @dev Before the conduit has code: an address with none accepts value without running

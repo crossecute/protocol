@@ -33,14 +33,8 @@ abstract contract DivergentTransceiver is TransceiverBase, DivergentConduits {
 /// @title ZkSyncTransceiver
 /// @notice The combined transceiver on zkSync Era. See `ZkSyncConduits`.
 abstract contract ZkSyncTransceiver is DivergentTransceiver, ZkSyncConduits {
-    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
-        internal
-        view
-        virtual
-        override
-        returns (address)
-    {
-        return _zkSyncConduit(_conduitSalt(owner, salt, homeChainKey));
+    function _conduitAt(bytes32 conduitSalt) internal view virtual override returns (address) {
+        return _zkSyncConduit(conduitSalt);
     }
 
     function _deployConduit(bytes32 salt) internal virtual override returns (address) {
@@ -56,14 +50,8 @@ abstract contract ZkSyncTransceiver is DivergentTransceiver, ZkSyncConduits {
 /// @title TronTransceiver
 /// @notice The combined transceiver on Tron. See `TronConduits`.
 abstract contract TronTransceiver is DivergentTransceiver, TronConduits {
-    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
-        internal
-        view
-        virtual
-        override
-        returns (address)
-    {
-        return _tronConduit(_conduitSalt(owner, salt, homeChainKey));
+    function _conduitAt(bytes32 conduitSalt) internal view virtual override returns (address) {
+        return _tronConduit(conduitSalt);
     }
 }
 
@@ -72,26 +60,14 @@ abstract contract DivergentTransceiverExtension is TransceiverExtension, Diverge
 
 /// @notice The extension every `ZkSyncTransceiver` on a chain names.
 contract ZkSyncTransceiverExtension is DivergentTransceiverExtension, ZkSyncConduits {
-    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
-        internal
-        view
-        virtual
-        override
-        returns (address)
-    {
-        return _zkSyncConduit(_conduitSalt(owner, salt, homeChainKey));
+    function _conduitAt(bytes32 conduitSalt) internal view virtual override returns (address) {
+        return _zkSyncConduit(conduitSalt);
     }
 }
 
 /// @notice The extension every `TronTransceiver` on a chain names.
 contract TronTransceiverExtension is DivergentTransceiverExtension, TronConduits {
-    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
-        internal
-        view
-        virtual
-        override
-        returns (address)
-    {
-        return _tronConduit(_conduitSalt(owner, salt, homeChainKey));
+    function _conduitAt(bytes32 conduitSalt) internal view virtual override returns (address) {
+        return _tronConduit(conduitSalt);
     }
 }

@@ -1,0 +1,8 @@
+{
+  "lib/policy-engine": {
+    "rev": "f6805dff6c2761816d94ca33dec6439fd5f8829e"
+  },
+  "lib/safe-smart-account": {
+    "rev": "dc437e8fba8b4805d76bcbd1c668c9fd3d1e83be"
+  }
+}

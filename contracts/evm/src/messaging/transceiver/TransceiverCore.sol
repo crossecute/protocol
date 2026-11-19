@@ -194,6 +194,12 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///      with this chain's. Refused on the first bootstrap rather than leaving every such
     ///      conduit unreachable.
     error SourceTransmitterMismatch(address expected, address carried);
+    /// @dev A signed receiver is created only for a home whose transmitter this chain can derive.
+    error SourceTransmitterNotDerivable(bytes32 home);
+    /// @dev A signed receiver is not created where this chain's addresses diverge (#108 scope).
+    error SignedReceiverNotDerivable();
+    /// @dev The bootstrap kind does not match the calling conduit's mode.
+    error BootstrapModeMismatch(address conduit);
     error NotTreasury(address caller);
     error NotOwnerOrOperator(address caller);
     error NotAllowed(address conduit);
@@ -211,6 +217,8 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     ///      transmitter on one would otherwise sit where the other's receiver lands. The home
     ///      is its own field: adding or XORing it into `salt` would let one owner make two
     ///      homes collide. `abi.encode` is fixed-width, so no two triples collide.
+    ///
+    /// @dev Signed conduits (#108) use the same salt: no address commits to the owner's authority.
     function _conduitSalt(address owner, bytes32 salt, bytes32 homeChainKey) internal pure returns (bytes32) {
         return keccak256(abi.encode(owner, salt, homeChainKey));
     }
@@ -218,16 +226,16 @@ abstract contract TransceiverCore is Initializable, OutboundBase, Roles, Ownable
     /// @notice Where an owner's conduit lives on this chain, before it exists.
     /// @dev Ethereum's CREATE2, identical wherever the formula holds since all three inputs
     ///      are: this address (one per provider on every chain), the salt, and a constant
-    ///      initcode. zkSync and Tron derive differently, so a variant there overrides this,
-    ///      in both its `TransceiverBase` and its extension, and `_deployConduit` with it;
-    ///      `_createConduit` checks the two agree.
-    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey)
-        internal
-        view
-        virtual
-        returns (address)
-    {
-        return Create2.computeAddress(_conduitSalt(owner, salt, homeChainKey), PROXY_INIT_CODE_HASH, address(this));
+    ///      initcode. zkSync and Tron derive differently, so a variant there overrides
+    ///      `_conduitAt`, in both its `TransceiverBase` and its extension, and `_deployConduit`
+    ///      with it; `_createConduit` checks the two agree.
+    function _predictConduit(address owner, bytes32 salt, bytes32 homeChainKey) internal view returns (address) {
+        return _conduitAt(_conduitSalt(owner, salt, homeChainKey));
+    }
+
+    /// @notice Where the conduit deployed under `conduitSalt` lands on this chain.
+    function _conduitAt(bytes32 conduitSalt) internal view virtual returns (address) {
+        return Create2.computeAddress(conduitSalt, PROXY_INIT_CODE_HASH, address(this));
     }
 
     /// @notice `(owner, salt)`'s conduit homed on this chain: its transmitter here.

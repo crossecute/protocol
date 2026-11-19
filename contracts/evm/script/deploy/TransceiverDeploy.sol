@@ -9,7 +9,19 @@ import {IChainRegistryRefs, ProviderDeployment} from "src/registry/IChainRegistr
 import {AddressDerive} from "src/derivation/AddressDerive.sol";
 import {PROXY_DEPLOYER, proxySalt} from "src/conduit/ProxyDeployer.sol";
 import {IProviderIdTable} from "src/protocols/ProviderChainId.sol";
-import {check, deployProxy, arachnidDeploy} from "script/deploy/ProxyDeploy.sol";
+import {VM, check, deployProxy, arachnidDeploy} from "script/deploy/ProxyDeploy.sol";
+
+/// @notice Fixed source-authority pins; both unset disables signed receiver initialization.
+function receiverAuthorityPins() view returns (address guard, address multiSendCallOnly) {
+    guard = VM.envOr("CROSSECUTE_AUTHORITY_GUARD", address(0));
+    multiSendCallOnly = VM.envOr("CROSSECUTE_MULTISEND_CALL_ONLY", address(0));
+    return receiverAuthorityPins(guard, multiSendCallOnly);
+}
+
+function receiverAuthorityPins(address guard, address multiSendCallOnly) pure returns (address, address) {
+    check((guard == address(0)) == (multiSendCallOnly == address(0)), "both receiver authority pins are set or unset");
+    return (guard, multiSendCallOnly);
+}
 
 /// @notice The extension every provider's transceiver implementation on this chain names, deployed
 ///         on first use. It takes no constructor arguments, so it has one address on every parity

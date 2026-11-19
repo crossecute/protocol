@@ -27,6 +27,12 @@ jobs:
 
       - run: forge --version
 
+      - name: Check authority archive and retrieval
+        run: |
+          python3 -m venv "$RUNNER_TEMP/authority-archive-venv"
+          "$RUNNER_TEMP/authority-archive-venv/bin/python" -m pip install -r ../../tools/authority-archive/requirements.txt
+          "$RUNNER_TEMP/authority-archive-venv/bin/python" -B -m unittest discover -s ../../tools/authority-archive -v
+
       - run: forge fmt --check
 
       - run: forge build
@@ -42,6 +48,40 @@ jobs:
       - run: forge lint -D notes
 
       - run: forge lint -D notes src
+        env:
+          FOUNDRY_PROFILE: lint-src
+
+      - run: forge test -vvv
+
+      - name: Check configured receiver authority pins
+        run: forge test --match-contract ReceiverAuthorityPinsTest -vvv
+        env:
+          CROSSECUTE_AUTHORITY_GUARD: "0x0000000000000000000000000000000000001234"
+          CROSSECUTE_MULTISEND_CALL_ONLY: "0x0000000000000000000000000000000000005678"
+
+  # The Safe guard is a separate Cancun project; see contracts/safe-guard/README.md.
+  safe-guard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts/safe-guard
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Also fetches contracts/evm/lib/forge-std and openzeppelin-contracts, which this project shares.
+          submodules: true
+
+      - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
+        with:
+          version: v1.8.1
+
+      - run: forge fmt --check
+
+      - run: forge build --sizes src
+
+      - run: python3 script/lint.py -D notes
+
+      - run: python3 script/lint.py -D notes src
         env:
           FOUNDRY_PROFILE: lint-src
 

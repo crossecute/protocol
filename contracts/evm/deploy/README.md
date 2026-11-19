@@ -99,9 +99,20 @@ transceiver's configuration, and the registry's record (R8.4). The deployer choo
 implementation behind the proxy, and nothing on chain checks it, so no registry marks the
 transceiver live because the script passed: see "Marking a chain live".
 
-Wormhole's and LayerZero's contracts link `WormholeMessage` (#29) and `LzMessage`. `forge script`
-deploys each before them, through Arachnid's factory, so it has one address on every parity
-chain.
+CCIP, Wormhole and LayerZero link `CcipMessage`, `WormholeMessage` (#29) and `LzMessage`. Every
+binding's signed implementation, including LayerZero OFT's, uses `SignedTransmitterLib`,
+`ReceiverAuthority`, `AuthorityRecognition` and `AuthorityTransport`. OFT send/quote/parameter
+encoding also links `LzOftMessage`. `forge script` deploys linked libraries before their callers,
+through Arachnid's factory, so
+it has one address on every parity chain.
+
+Set `CROSSECUTE_AUTHORITY_GUARD` and `CROSSECUTE_MULTISEND_CALL_ONLY` before deploying
+receiver implementations for signed mode. The provider deploy helpers, including OFT, pass them as
+constructor immutables, with no setters. Setting just one fails before receiver creation.
+Both unset deploy a receiver implementation for plain mode only. A signed bootstrap names
+its source guard and must match the destination implementation's guard pin; the helper
+address must be the one that source guard recognizes. Verify both pins before enabling a
+signed route. Source Safes must activate before signed bootstrap can be quoted or sent.
 
 Every transceiver implementation names the chain's `TransceiverExtension` (#70), which
 `script/deploy/` deploys on first use through Arachnid's factory, so one serves every provider

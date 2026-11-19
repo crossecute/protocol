@@ -483,15 +483,8 @@ contract DivergingSaltedTransceiver is SaltedTransceiver {
         return address(new DivergingSaltedExtension());
     }
 
-    function _predictConduit(address owner_, bytes32 salt, bytes32 homeChainKey)
-        internal
-        view
-        override
-        returns (address)
-    {
-        return Create2.computeAddress(
-            divergedSalt(_conduitSalt(owner_, salt, homeChainKey)), PROXY_INIT_CODE_HASH, address(this)
-        );
+    function _conduitAt(bytes32 conduitSalt) internal view override returns (address) {
+        return Create2.computeAddress(divergedSalt(conduitSalt), PROXY_INIT_CODE_HASH, address(this));
     }
 
     function _deployConduit(bytes32 salt) internal override returns (address) {
@@ -501,15 +494,8 @@ contract DivergingSaltedTransceiver is SaltedTransceiver {
 
 /// @dev `DivergingSaltedTransceiver`'s extension, deriving as it does.
 contract DivergingSaltedExtension is TransceiverExtension {
-    function _predictConduit(address owner_, bytes32 salt, bytes32 homeChainKey)
-        internal
-        view
-        override
-        returns (address)
-    {
-        return Create2.computeAddress(
-            divergedSalt(_conduitSalt(owner_, salt, homeChainKey)), PROXY_INIT_CODE_HASH, address(this)
-        );
+    function _conduitAt(bytes32 conduitSalt) internal view override returns (address) {
+        return Create2.computeAddress(divergedSalt(conduitSalt), PROXY_INIT_CODE_HASH, address(this));
     }
 }
 
