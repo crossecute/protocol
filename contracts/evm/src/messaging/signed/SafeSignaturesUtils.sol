@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {SafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {Bytes} from "src/messaging/signed/Bytes.sol";
+import {NestedSafeApproval} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 
 /// @notice Safe 1.5.0 signature blob parsing shared by the receiver's verifier and the source's
 ///         evidence collection.
@@ -83,6 +84,25 @@ library SafeSignaturesUtils {
         }
         if (length > total - offset - 32) revert MalformedContractSignature(safe);
         return Bytes.slice(signatures, offset + 32, length);
+    }
+
+    /// @notice The child Safe a contract-owner entry (`v = 0`) names in `r`.
+    /// @dev A claim until the owner set confirms it and the child's own quorum verifies.
+    function contractOwner(bytes32 r) internal pure returns (address) {
+        // forge-lint: disable-next-line(unsafe-typecast) Safe reads the owner the same way
+        return address(uint160(uint256(r)));
+    }
+
+    /// @notice The index of the approval for this exact child and message hash, or
+    ///         `approvals.length` when there is none.
+    function indexOfApproval(NestedSafeApproval[] memory approvals, address child, bytes32 messageHash)
+        internal
+        pure
+        returns (uint256 i)
+    {
+        for (; i < approvals.length; ++i) {
+            if (approvals[i].childSafe == child && approvals[i].messageHash == messageHash) return i;
+        }
     }
 
     /// @notice Compute the child Safe's message hash for the parent's signed hash.

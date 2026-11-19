@@ -103,8 +103,7 @@ library SafeQuorum {
             if (!source.isOwner(owners, signer, OWNER_EOA)) revert NotAnOwner(safe, signer);
             return signer;
         }
-        // forge-lint: disable-next-line(unsafe-typecast) Safe reads the owner the same way
-        signer = address(uint160(uint256(r)));
+        signer = SafeSignaturesUtils.contractOwner(r);
         if (!source.isOwner(owners, signer, OWNER_SAFE)) revert NotAnOwner(safe, signer);
         _checkNested(
             source,
@@ -132,7 +131,9 @@ library SafeQuorum {
             _check(source, child, messageHash, signatures, approvals);
             return;
         }
-        SignedSafeTx memory approval = _approval(approvals, child, messageHash);
+        uint256 found = SafeSignaturesUtils.indexOfApproval(approvals, child, messageHash);
+        if (found == approvals.length) revert MissingNestedSafeApproval(child, messageHash);
+        SignedSafeTx memory approval = approvals[found].approval;
         _check(
             source,
             child,
@@ -140,22 +141,5 @@ library SafeQuorum {
             approval.signatures,
             approvals
         );
-    }
-
-    /// @notice Find the signed approval for this exact child and message hash, reverting if
-    ///         absent.
-    /// @dev An empty nested payload is not self-authenticating; the caller must obtain and
-    ///      verify the matching child transaction evidence.
-    function _approval(NestedSafeApproval[] memory approvals, address child, bytes32 messageHash)
-        private
-        pure
-        returns (SignedSafeTx memory)
-    {
-        for (uint256 i; i < approvals.length; ++i) {
-            if (approvals[i].childSafe == child && approvals[i].messageHash == messageHash) {
-                return approvals[i].approval;
-            }
-        }
-        revert MissingNestedSafeApproval(child, messageHash);
     }
 }
