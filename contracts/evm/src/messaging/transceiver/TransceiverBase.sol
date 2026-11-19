@@ -129,21 +129,12 @@ abstract contract TransceiverBase is TransceiverCore {
     ///      deploys (#30), so a diverging transceiver takes it from the provider's deployment
     ///      record, which R8.4 holds equal to solc's.
     function predictReceiver(bytes32 chainKey, address owner, bytes32 salt) public view returns (bytes memory) {
-        return predictReceiver(chainKey, owner, salt, bytes32(0));
-    }
-
-    /// @notice `predictReceiver`, for a signed conduit whose salt commits to `graph`.
-    function predictReceiver(bytes32 chainKey, address owner, bytes32 salt, bytes32 graph)
-        public
-        view
-        returns (bytes memory)
-    {
-        return abi.encodePacked(_conduitUnder(_evmCounterpartOn(chainKey), owner, salt, localChainKey, graph));
+        return abi.encodePacked(_conduitUnder(_evmCounterpartOn(chainKey), owner, salt, localChainKey));
     }
 
     /// @dev Where `(owner, salt)`'s conduit homed on `homeChainKey` sits under the transceiver at
     ///      `transceiver_`, with the initcode hash that chain's compiler produces.
-    function _conduitUnder(address transceiver_, address owner, bytes32 salt, bytes32 homeChainKey, bytes32 graph)
+    function _conduitUnder(address transceiver_, address owner, bytes32 salt, bytes32 homeChainKey)
         private
         view
         returns (address)
@@ -153,7 +144,7 @@ abstract contract TransceiverBase is TransceiverCore {
             initCodeHash = _chainRegistry.providerDeployment(_messageProvider).proxyInitCodeHash;
             if (initCodeHash == bytes32(0)) revert NoProviderDeployment();
         }
-        return Create2.computeAddress(_conduitSalt(owner, salt, homeChainKey, graph), initCodeHash, transceiver_);
+        return Create2.computeAddress(_conduitSalt(owner, salt, homeChainKey), initCodeHash, transceiver_);
     }
 
     /// @notice Create the caller's transmitter.
@@ -161,19 +152,15 @@ abstract contract TransceiverBase is TransceiverCore {
     ///      another party will occupy on every chain.
     ///
     /// @dev Signed mode (#108) when the caller is a Safe whose transaction guard advertises
-    ///      `ICrossecuteGuard`: the conduit's salt also commits to the caller's live owner graph,
-    ///      and the transmitter keeps those records to forward at bootstrap. The mode is fixed
-    ///      here; a guard installed or removed later changes neither the address nor the mode.
+    ///      `ICrossecuteGuard`, at the same address a plain conduit of `(owner, salt)` would have.
+    ///      The mode is fixed here; a guard installed or removed later does not change it. The
+    ///      owner graph is derived here only to check it derives; bootstraps read it again.
     /// @param salt Chosen by the caller; `bytes32(0)` suits an owner who wants one conduit.
     /// @return conduit The transmitter, at the address its receivers occupy on parity chains.
     function createTransmitter(bytes32 salt) external returns (address conduit) {
-        bytes memory records = TransceiverExtension(address(this)).signedAuthority(msg.sender);
-        if (records.length == 0) {
-            return _createConduit(msg.sender, salt, localChainKey, bytes32(0), address(0), new Call[](0));
-        }
-
-        conduit = _createConduit(msg.sender, salt, localChainKey, keccak256(records), address(0), new Call[](0));
-        ISignedTransmitterInit(conduit).initializeSigned(records);
+        bool signed = TransceiverExtension(address(this)).signedAuthority(msg.sender).length != 0;
+        conduit = _createConduit(msg.sender, salt, localChainKey, address(0), new Call[](0));
+        if (signed) ISignedTransmitterInit(conduit).initializeSigned();
     }
 
     /// @notice Deploy the proxy at `salt`, and return where it actually landed.
@@ -193,14 +180,13 @@ abstract contract TransceiverBase is TransceiverCore {
     ///      `sourceTransmitter`, the conduit a report is forwarded to.
     /// @param sourceTransmitter The transmitter a receiver will answer to; zero for a
     ///        transmitter, which answers to its owner.
-    /// @param graph Zero for a plain conduit. A signed conduit is armed with the plain
-    ///        initializer and no calls, and its caller completes it with `initializeSigned` in
-    ///        the same call, so provider setup has one path for both modes.
+    /// @dev A signed conduit is armed with the plain initializer and no calls, and its caller
+    ///      completes it with `initializeSigned` in the same call, so provider setup has one
+    ///      path for both modes.
     function _createConduit(
         address owner,
         bytes32 salt,
         bytes32 homeChainKey,
-        bytes32 graph,
         address sourceTransmitter,
         Call[] memory calls
     ) internal returns (address conduit) {
@@ -209,16 +195,15 @@ abstract contract TransceiverBase is TransceiverCore {
         address implementation = _conduitImplementation(homeChainKey);
         if (implementation == address(0)) revert NoConduitImplementation();
 
-        conduit = _predictConduit(owner, salt, homeChainKey, graph);
+        conduit = _predictConduit(owner, salt, homeChainKey);
         Conduits.requireVacant(conduit, owner, salt);
 
-        address deployed = _deployConduit(_conduitSalt(owner, salt, homeChainKey, graph));
+        address deployed = _deployConduit(_conduitSalt(owner, salt, homeChainKey));
         Conduits.requireLanded(conduit, deployed);
 
         Conduits.arm(conduit, implementation, _conduitInitializer(owner, salt, homeChainKey, sourceTransmitter, calls));
 
         emit ConduitCreated(owner, conduit, salt, homeChainKey);
-        if (graph != bytes32(0)) emit SignedConduitCreated(conduit, graph);
     }
 
     /// @notice The logic a conduit homed on `homeChainKey` is armed with.
@@ -264,7 +249,7 @@ abstract contract TransceiverBase is TransceiverCore {
         Call[] calldata calls,
         bytes[] calldata attributes
     ) external payable {
-        bytes32 transmitter = _bootstrapCaller(owner, salt);
+        bytes32 transmitter = _bootstrapCaller(owner, salt, false);
         _sendBootstrap(
             destinationChainKey, owner, salt, _bootstrapEnvelope(owner, salt, transmitter, calls), attributes
         );
@@ -280,7 +265,7 @@ abstract contract TransceiverBase is TransceiverCore {
         bytes[] calldata elements,
         bytes[] calldata attributes
     ) external payable {
-        bytes32 transmitter = _bootstrapCaller(owner, salt);
+        bytes32 transmitter = _bootstrapCaller(owner, salt, false);
         _sendBootstrap(
             destinationChainKey,
             owner,
@@ -290,10 +275,8 @@ abstract contract TransceiverBase is TransceiverCore {
         );
     }
 
-    /// @notice `bootstrap` for a signed conduit, carrying `abi.encode(SignedBootstrap)`, which
-    ///         the destination's receiver verifies before it stores authority or runs a call.
-    /// @dev The caller check derives with the graph of the records in `body`, so only the signed
-    ///      conduit of `(owner, salt)` with exactly those records can send it.
+    /// @notice `bootstrap` for a signed conduit, carrying `abi.encode(SignedBootstrap)`: the
+    ///         source guard, selected head and graph, and the receiver's setup calls.
     function bootstrapSigned(
         bytes32 destinationChainKey,
         address owner,
@@ -301,7 +284,7 @@ abstract contract TransceiverBase is TransceiverCore {
         bytes calldata body,
         bytes[] calldata attributes
     ) external payable {
-        bytes32 transmitter = _bootstrapCaller(owner, salt, _bootstrapGraph(body));
+        bytes32 transmitter = _bootstrapCaller(owner, salt, true);
         _sendBootstrap(
             destinationChainKey, owner, salt, Envelope.encodeSignedBootstrap(owner, salt, transmitter, body), attributes
         );
@@ -315,17 +298,12 @@ abstract contract TransceiverBase is TransceiverCore {
         bytes calldata body,
         bytes[] calldata attributes
     ) external view returns (uint256 nativeFee) {
-        address conduit = _allowedConduit(owner, salt, _bootstrapGraph(body));
+        address conduit = _allowedConduit(owner, salt);
         return _quoteBootstrap(
             destinationChainKey,
             Envelope.encodeSignedBootstrap(owner, salt, _transmitterWord(conduit), body),
             attributes
         );
-    }
-
-    /// @dev Asked of the receiver logic, which decodes and validates the same body on arrival.
-    function _bootstrapGraph(bytes memory body) private view returns (bytes32) {
-        return ISignedReceiverInit(_receiverImplementation).bootstrapGraph(body);
     }
 
     /// @notice Empty: this transceiver sends a conduit's bootstrap itself, through `bootstrap`.
@@ -381,25 +359,27 @@ abstract contract TransceiverBase is TransceiverCore {
 
     /// @notice Refuse any caller but the conduit `(owner, salt)` resolves to here, and return
     ///         it as the bootstrap carries it.
-    function _bootstrapCaller(address owner, bytes32 salt) private view returns (bytes32) {
-        return _bootstrapCaller(owner, salt, bytes32(0));
+    /// @dev Signed and plain conduits share an address, so the envelope kind is held to the
+    ///      conduit's mode here; the destination creates a signed receiver only from a signed
+    ///      envelope.
+    function _bootstrapCaller(address owner, bytes32 salt, bool signed) private view returns (bytes32) {
+        address conduit = _allowedConduit(owner, salt);
+        if (conduit != msg.sender) revert NotTheConduit(owner, salt, msg.sender);
+        if (_isSignedConduit(conduit) != signed) revert BootstrapModeMismatch(conduit);
+        return _transmitterWord(conduit);
     }
 
-    function _bootstrapCaller(address owner, bytes32 salt, bytes32 graph) private view returns (bytes32) {
-        address conduit = _allowedConduit(owner, salt, graph);
-        if (conduit != msg.sender) revert NotTheConduit(owner, salt, msg.sender);
-        return _transmitterWord(conduit);
+    /// @dev Conduit logic without `isSigned` is plain.
+    function _isSignedConduit(address conduit) private view returns (bool) {
+        (bool ok, bytes memory ret) = conduit.staticcall(abi.encodeCall(ISignedTransmitterInit.isSigned, ()));
+        return ok && ret.length == 32 && abi.decode(ret, (bool));
     }
 
     /// @notice The conduit `(owner, salt)` resolves to here, refused unless the allowlist, where
     ///         one is set, allows it.
     /// @dev Shared by `bootstrap` and its quotes so they refuse the same conduits.
     function _allowedConduit(address owner, bytes32 salt) private view returns (address conduit) {
-        return _allowedConduit(owner, salt, bytes32(0));
-    }
-
-    function _allowedConduit(address owner, bytes32 salt, bytes32 graph) private view returns (address conduit) {
-        conduit = _localConduit(owner, salt, graph);
+        conduit = _localConduit(owner, salt);
         IBootstrapAllowlist allowlist = _bootstrapAllowlist;
         if (address(allowlist) != address(0) && !allowlist.isAllowed(conduit)) revert NotAllowed(conduit);
     }
@@ -542,28 +522,22 @@ abstract contract TransceiverBase is TransceiverCore {
         address sourceTransmitter,
         Call[] memory calls
     ) internal {
-        address receiver = _createConduit(owner, salt, home, bytes32(0), sourceTransmitter, calls);
+        address receiver = _createConduit(owner, salt, home, sourceTransmitter, calls);
         if (_addressesDiverge) {
             _reportReceiver(home, owner, salt, receiver);
         } else if (_chainRegistry.provenanceFor(home) == Provenance.Predetermined) {
-            address expected = _conduitUnder(_evmCounterpartOn(home), owner, salt, home, bytes32(0));
+            address expected = _conduitUnder(_evmCounterpartOn(home), owner, salt, home);
             if (sourceTransmitter != expected) revert SourceTransmitterMismatch(expected, sourceTransmitter);
         }
     }
 
-    /// @notice Stand up the signed receiver of a conduit homed on `home`, or acknowledge a
-    ///         repeat of the bootstrap that already did.
+    /// @notice Stand up the signed receiver of a conduit homed on `home` with the authority its
+    ///         bootstrap carried.
     ///
-    /// @dev The carried transmitter must be the one this chain derives for `(owner, salt)` and
-    ///      the body's graph under the home's transceiver, so the home must be `Predetermined`:
-    ///      the receiver accepts Safe transactions signed for that address and nothing else
-    ///      vouches for it. The receiver derives with the same graph, so its address commits to
-    ///      the authority it stores. A diverging chain would have to report the receiver with
-    ///      the graph, which no report carries yet.
-    ///
-    /// @dev A second delivery reaches the receiver's own check instead of `ConduitExists`: the
-    ///      same leaf inside its window returns, anything else reverts. It changes nothing either
-    ///      way.
+    /// @dev The carried transmitter must be the one this chain derives for `(owner, salt)` under
+    ///      the home's transceiver, so the home must be `Predetermined`: the receiver accepts Safe
+    ///      transactions signed for that address. Signed receivers are not created where this
+    ///      chain's addresses diverge (#108 scope). A second delivery reverts `ConduitExists`.
     function _signedBootstrapInbound(
         address owner,
         bytes32 salt,
@@ -573,18 +547,12 @@ abstract contract TransceiverBase is TransceiverCore {
     ) internal {
         if (_addressesDiverge) revert SignedReceiverNotDerivable();
         if (_chainRegistry.provenanceFor(home) != Provenance.Predetermined) revert SourceTransmitterNotDerivable(home);
-        bytes32 graph = _bootstrapGraph(body);
-        address expected = _conduitUnder(_evmCounterpartOn(home), owner, salt, home, graph);
+        address expected = _conduitUnder(_evmCounterpartOn(home), owner, salt, home);
         if (sourceTransmitter != expected) revert SourceTransmitterMismatch(expected, sourceTransmitter);
 
-        address receiver = _predictConduit(owner, salt, home, graph);
-        if (receiver.code.length != 0) {
-            ISignedReceiverInit(receiver).requireBootstrapRepeat(body);
-            return;
-        }
-        _createConduit(owner, salt, home, graph, sourceTransmitter, new Call[](0));
+        address receiver = _createConduit(owner, salt, home, sourceTransmitter, new Call[](0));
         ISignedReceiverInit(receiver)
-            .initializeSigned(Erc7930.evmChainId(Erc7930.parseStrict(routeFor(home))), owner, graph, body);
+            .initializeSigned(Erc7930.evmChainId(Erc7930.parseStrict(routeFor(home))), owner, body);
     }
 
     /* ================================== the report ================================= */

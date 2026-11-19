@@ -22,14 +22,13 @@ contract GraphHarness {
     }
 
     /// @notice Expose the encoded graph commitment.
-    /// @dev Tests can check that ownership changes move the hash used in signed address
-    ///      derivation.
+    /// @dev Tests can check that ownership changes move the stored graph hash.
     function hash(SafeAuthorityRecord[] memory records) external pure returns (bytes32) {
         return SafeAuthorityGraph.hash(records);
     }
 }
 
-/// @dev Canonical derivation and validation of the creation graph (#108 "Owner and nested-Safe
+/// @dev Canonical derivation and validation of the owner graph (#108 "Owner and nested-Safe
 ///      composition"): depth first from the root in `getOwners()` order, one record per Safe.
 contract SafeAuthorityGraphTest is Test {
     GraphHarness h = new GraphHarness();
@@ -193,7 +192,7 @@ contract SafeAuthorityGraphTest is Test {
     }
 
     /// @notice Change owner kind, record order and threshold independently.
-    /// @dev Every authority-relevant difference must affect the signed address commitment.
+    /// @dev Every authority-relevant difference must change the graph hash.
     function test_kindOrderAndThresholdEachChangeTheHash() public view {
         SafeAuthorityRecord[] memory records = _two();
         bytes32 base = h.hash(records);

@@ -10,6 +10,7 @@ import {StandardHookMetadata} from "@hyperlane/hooks/libs/StandardHookMetadata.s
 import {
     ProviderIdTableSpec,
     ProviderWideSenderSpec,
+    ProviderSignedLockSpec,
     ProviderEvmRecipientSpec,
     ProviderPayloadPricedSpec,
     ProviderRefundSpec,
@@ -107,7 +108,7 @@ contract HyperlaneTransceiverSendTest is
 
 /// @notice `Mailbox.process` asserts nothing about the source-chain sender, so
 ///         `_onMessageFrom` inside `handle` is the only origin and sender check.
-contract HyperlaneReceiveTest is ProviderWideSenderSpec, HyperlaneFixture {}
+contract HyperlaneReceiveTest is ProviderWideSenderSpec, ProviderSignedLockSpec, HyperlaneFixture {}
 
 contract HyperlaneTransmitterInboundTest is ProviderTransmitterSpec, HyperlaneFixture {}
 

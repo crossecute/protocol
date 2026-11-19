@@ -7,8 +7,8 @@ import {NestedOwnerManagerLib} from "src/messaging/signed/NestedOwnerManagerLib.
 /// @notice The canonical owner graph of a Safe and its nested Safes, and its commitment.
 /// @dev Canonical order is depth first from the root: each Safe's owners in `getOwners()` order,
 ///      recursing into each nested Safe, one record per Safe at its first visit. A shared child
-///      has one record. `hash` over that order is the graph field of a signed conduit's salt, so the
-///      transmitter and the receiver must produce the same order: both go through `walk`.
+///      has one record. Live derivation and selected-graph validation share `walk`. Authority
+///      updates also commit to each record's selected position through AuthorityUpdateEncoding.
 library SafeAuthorityGraph {
     error EmptyAuthorityGraph();
     /// @dev An owner with code that does not answer `getOwners()` and `getThreshold()`.
@@ -24,14 +24,12 @@ library SafeAuthorityGraph {
     error NonCanonicalAuthorityGraph();
 
     /// @notice Hash the encoded ordered Safe authority records.
-    /// @dev Signed conduit addresses commit to this hash, so a different owner graph must
-    ///      derive a different signed address.
     function hash(SafeAuthorityRecord[] memory records) internal pure returns (bytes32) {
         return keccak256(abi.encode(records));
     }
 
     /// @notice Read the root Safe and its nested Safes into canonical authority records.
-    /// @dev This captures the live source ownership used to derive a signed conduit. Empty code
+    /// @dev Used to validate live source ownership when selecting signed mode. Empty code
     ///      and exact EIP-7702 delegation indicators count as EOAs; other owners must answer as
     ///      Safes, but their implementation is not attested.
     function derive(address root) internal view returns (SafeAuthorityRecord[] memory) {
@@ -40,8 +38,7 @@ library SafeAuthorityGraph {
 
     /// @notice Validate the supplied graph's owner groups, reachability, kinds and canonical
     ///         record order.
-    /// @dev Receivers must reject ambiguous or substituted graph encodings before trusting
-    ///      their authority or matching their address commitment.
+    /// @dev Receivers reject ambiguous graph encodings before storing them as authority.
     function requireCanonical(SafeAuthorityRecord[] memory records) internal view {
         if (records.length == 0) revert EmptyAuthorityGraph();
         bytes32 context;

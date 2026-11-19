@@ -36,6 +36,8 @@ contract LzOftReceiver is SignedReceiver, ILayerZeroComposer, ILzOftReceiverInit
     /// @notice This chain's OFT, the only `_from` accepted.
     address public localOft;
 
+    constructor(address guard, address multiSendCallOnly) SignedReceiver(guard, multiSendCallOnly) {}
+
     error UseLzOftInitializer();
     error NotTheOft(address from);
 

@@ -5,7 +5,7 @@ import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
 import {IReceiverInit} from "src/messaging/inbound/ReceiverBase.sol";
 import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
-import {SafeAuthority} from "src/messaging/signed/SafeAuthority.sol";
+import {ReceiverAuthority} from "src/messaging/authority/ReceiverAuthority.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
 import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
 import {IERC7786GatewaySource} from "src/messaging/IErc7786.sol";
@@ -13,8 +13,6 @@ import {SafeAuthorityRecord, SafeOwner, OWNER_SAFE} from "src/messaging/signed/t
 import {
     SafeTxEvidence,
     ExecutionLeaf,
-    BootstrapLeaf,
-    SignedBootstrap,
     NestedSafeApproval,
     WIRE_STANDALONE,
     WIRE_MERKLE
@@ -152,32 +150,20 @@ contract SignedDispatchGasTest is Test {
     function _cold(address receiver) internal {
         vm.cool(receiver);
         vm.cool(implementation);
-        vm.cool(address(SafeAuthority));
+        vm.cool(address(ReceiverAuthority));
         vm.cool(address(sink));
     }
 
     /// @notice Measure initialization against the graph and return its armed receiver.
-    function _initialize(SafeAuthorityRecord[] memory records, bool empty) internal returns (address receiver) {
-        implementation = address(new HyperlaneReceiver(address(mailbox)));
+    function _initialize(SafeAuthorityRecord[] memory records) internal returns (address receiver) {
+        implementation = address(new HyperlaneReceiver(address(mailbox), address(0x1234), address(0x5678)));
         receiver = deployConduit(
             implementation, abi.encodeCall(IReceiverInit.initialize, (TRANSMITTER, bytes32(SOURCE), new Call[](0)))
         );
-        BootstrapLeaf memory boot = BootstrapLeaf(
-            Erc7930.encodeEvm(block.chainid, receiver), block.timestamp, block.timestamp + 1 days, _calls(0)
-        );
-        SafeTxEvidence memory e = _evidence(
-            records,
-            abi.encodeCall(
-                ISignedTransmitter.bootstrap,
-                (abi.encode(DispatchLeaves.hash(boot), uint256(0), boot, new bytes32[](0)), new bytes[](0))
-            ),
-            0,
-            empty
-        );
-        bytes memory body = abi.encode(SignedBootstrap(e, records));
+        bytes memory body = Records.bootstrap(address(0x1234), records, _calls(0));
         _cold(receiver);
         uint256 g = gasleft();
-        SignedReceiver(payable(receiver)).initializeSigned(SOURCE, SAFE, keccak256(abi.encode(records)), body);
+        SignedReceiver(payable(receiver)).initializeSigned(SOURCE, SAFE, body);
         emit log_named_uint("initializeSignedGas", g - gasleft());
         emit log_named_uint("bootstrapBodyBytes", body.length);
     }
@@ -207,7 +193,7 @@ contract SignedDispatchGasTest is Test {
     {
         vm.warp(1_000_000);
         SafeAuthorityRecord[] memory records = _records(shape, ownerCount);
-        address receiver = _initialize(records, (shape == 2 || shape == 6));
+        address receiver = _initialize(records);
         bytes[] memory attrs = new bytes[](attributeBytes == 0 ? 0 : 1);
         if (attrs.length != 0) attrs[0] = new bytes(attributeBytes);
         {

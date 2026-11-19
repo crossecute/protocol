@@ -7,6 +7,7 @@ import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
 import {CcipTransmitter} from "src/protocols/ccip/CcipTransmitter.sol";
 import {
     TransceiverDeployment,
+    receiverAuthorityPins,
     deployTransceiverProxy,
     checkGovernorHomeId,
     transceiverExtension,
@@ -16,7 +17,8 @@ import {
 /// @notice CCIP's contracts. The router is the gateway.
 library CcipDeploy {
     function receiverImplementation(address router) internal returns (address) {
-        return address(new CcipReceiver(router));
+        (address guard, address multiSend) = receiverAuthorityPins();
+        return address(new CcipReceiver(router, guard, multiSend));
     }
 
     function transmitterImplementation(address router) internal returns (address) {

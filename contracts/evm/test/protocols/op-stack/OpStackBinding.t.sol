@@ -15,6 +15,7 @@ import {OpStackMessage, IOpStackRecipient} from "src/protocols/op-stack/OpStackM
 import {
     ProviderIdTableSpec,
     ProviderReceiveSpec,
+    ProviderSignedLockSpec,
     ProviderEvmRecipientSpec,
     ProviderTransmitterSpec,
     ProviderTransmitterSendSpec,
@@ -88,7 +89,7 @@ contract OpStackTransceiverSendTest is
 ///         delivered calldata, which the origin-side caller wrote in full. The receiver's one
 ///         messenger relays only from its home, so the unconfigured-origin case is the
 ///         impersonator case.
-contract OpStackReceiveTest is ProviderReceiveSpec, OpStackFixture {
+contract OpStackReceiveTest is ProviderReceiveSpec, ProviderSignedLockSpec, OpStackFixture {
     /// @dev `sendMessage` is permissionless: an attacker can put the transmitter's address
     ///      anywhere in the message they send. Only `xDomainMessageSender()` counts.
     function test_aSenderClaimedInsideTheMessageIsIgnored() public {

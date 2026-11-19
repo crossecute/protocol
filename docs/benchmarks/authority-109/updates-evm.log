@@ -1,0 +1,17 @@
+No files changed, compilation skipped
+
+Ran 2 tests for test/signed/SignedReceiver.t.sol:SignedReceiverTest
+[PASS] test_batchCatchUpSharesProviderReplayState() (gas: 731316)
+Logs:
+  authorityReceiverBatchTwoSelectionCalldataBytes: 3012
+  authorityReceiverBatchTwoSelectionGas: 260592
+
+[PASS] test_measureAuthorityReceiverOwnerRotation() (gas: 548010)
+Logs:
+  authorityReceiverDirectCalldataBytes: 1764
+  authorityReceiverOwnerRotationGas: 469979
+
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 5.01ms (3.57ms CPU time)
+
+Ran 1 test suite in 9.73ms (5.01ms CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)
+2026-11-18T21:13:34.118979Z  WARN evm::traces: failed to flush signature cache err=failed to create file "/home/carter/.foundry/cache/signatures": Read-only file system (os error 30)

@@ -7,6 +7,7 @@ import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
 import {HyperlaneTransmitter} from "src/protocols/hyperlane/HyperlaneTransmitter.sol";
 import {
     TransceiverDeployment,
+    receiverAuthorityPins,
     deployTransceiverProxy,
     checkGovernorHomeId,
     transceiverExtension,
@@ -16,7 +17,8 @@ import {
 /// @notice Hyperlane's contracts. The Mailbox is the gateway.
 library HyperlaneDeploy {
     function receiverImplementation(address mailbox) internal returns (address) {
-        return address(new HyperlaneReceiver(mailbox));
+        (address guard, address multiSend) = receiverAuthorityPins();
+        return address(new HyperlaneReceiver(mailbox, guard, multiSend));
     }
 
     function transmitterImplementation(address mailbox) internal returns (address) {

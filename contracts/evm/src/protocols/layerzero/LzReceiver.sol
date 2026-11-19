@@ -23,7 +23,10 @@ interface ILzReceiverInit {
 /// @dev Receiver-only: inherits `OAppReceiverUpgradeable`, not the combined `OAppUpgradeable`,
 ///      since this contract never sends via LayerZero.
 contract LzReceiver is SignedReceiver, OAppReceiverUpgradeable, LzHomePeer, ILzReceiverInit {
-    constructor(address _endpoint) OAppCoreUpgradeable(_endpoint) {
+    constructor(address _endpoint, address guard, address multiSendCallOnly)
+        SignedReceiver(guard, multiSendCallOnly)
+        OAppCoreUpgradeable(_endpoint)
+    {
         if (_endpoint == address(0)) revert ProviderAddress.ZeroEndpoint();
     }
 

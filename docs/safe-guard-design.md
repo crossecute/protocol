@@ -1,7 +1,7 @@
 # Safe guard
 
 The Safe guard a conduit owner installs so that its transmitter can attach the owners'
-signatures to a `sendMessage` or a signed `bootstrap`, and so that a child Safe's approval of a parent transaction
+signatures to a `sendMessage` and accept a signed `bootstrap` only from an owner transaction, and so that a child Safe's approval of a parent transaction
 leaves evidence a receiver can check. Tracked in
 [issue #107](https://github.com/crossecute/protocol/issues/107).
 
@@ -18,6 +18,22 @@ test transmitter, and an end-to-end test joining the two is
 argued in the NatSpec of the contract that implements it. This file says what the pieces are
 and how they connect. Where the two disagree, the contract is right.
 
+## Authority updates (#109)
+
+`CrossecuteGuard` also inherits
+[`SourceAuthorityGuard`](../contracts/safe-guard/src/authority/SourceAuthorityGuard.sol), the
+source half of the [authority design](safe-authority-updates.md#source-guard-and-mutation-batch):
+activation, linked portable updates staged with stageUpdate, and ownership changes as one
+SafeTx through the pinned MultiSendCallOnly. The guard stores selection hashes and
+authenticates a caller-supplied currentGraph before using the linked ReceiverAuthority
+transition verifier. Receivers keep full records and graph entries. The guard takes its pins at
+deployment: MultiSendCallOnly, SignMessageLib, the Safe and SafeL2 singletons and the fallback
+handler. Before activation, policies govern ordinary calls, subject to the execution lock
+and the restriction of the pinned MultiSend executor to authority changes.
+An activated Safe also needs both guard slots, which activation checks; the #107 baseline permits
+the module slot to stay optional. The
+[verification plan](safe-authority-verification-review.md) lists what remains.
+
 ## Decisions
 
 These are settled. The sections below describe each in full.
@@ -26,12 +42,13 @@ These are settled. The sections below describe each in full.
 - **One guard.** A single shared `CrossecuteGuard` extends `SafePolicyGuard` and reuses its
   `PolicyEngine`, with all state keyed by Safe. `SafenetPolicy` is a policy a Safe may select,
   not part of the guard. The guard registers, forwards to, and delegatecalls no other guard.
-- **Guard slots.** The transaction guard slot is required. The module guard slot is the
+- **Guard slots (#107 baseline).** The transaction guard slot is required. The module guard slot is the
   multisig's choice; leaving it empty trusts enabled modules with their Safe permissions.
 - **Staging.** An owner transaction whose top-level selector is `sendMessage(bytes,bytes,bytes[])`
   or `bootstrap(bytes,bytes[])` is staged, whatever its target or operation. Both write the same
-  staged record. The complete signature blob is staged, with no size cap. The plain
-  `bootstrap(uint256,Call[],bytes[])` and `bootstrapTo` overloads are not staged.
+  staged record. The complete signature blob is staged, with no size cap. A plain-mode
+  transmitter's `bootstrap` has the same selector; its record goes unconsumed and the post-hook
+  clears it.
 - **Leaf publication.** Anyone can publish a Merkle tree's ordered, encoded leaves to the guard,
   which records the root and emits one event per leaf. An owner `registerRoot(bytes32)` reverts
   unless its root is published on the Safe's guard, and stages nothing. Publication authorizes
@@ -43,27 +60,30 @@ These are settled. The sections below describe each in full.
   `sendMessage` and `bootstrap`. It pins no guard address and never falls back to an unsigned send.
 - **Unconsumed records.** A staged call that nobody consumes succeeds and is cleared in the
   post-hook, including a call to an unrelated contract that shares the selector.
-- **Nesting.** While a Safe has a live staged record, every nested owner execution by that
-  Safe is rejected, before and after consumption, until the post-hook clears it.
-- **No other staging paths.** A staged selector inside a single signed MultiSend and any module
-  transaction stage nothing. With the module guard installed, a module transaction with either
+- **Nesting.** Every owner execution holds a per-Safe lock until its matching post-hook,
+  even if it stages no record. Same-Safe owner and guarded module reentry rejects.
+- **MultiSend.** The pinned executor is accepted only for a recognized authority-change
+  batch. Ordinary owner batches and module batches reject, including before activation.
+- **No other staging paths.** Module transactions stage nothing. With the module guard installed, a module transaction with either
   staged selector, or with `registerRoot(bytes32)`, is rejected for every target.
 - **Approval capture.** A child's direct delegatecall with the `signMessage(bytes)` selector is
-  cached, recognized by operation and selector alone, with no target or code-hash check. One
+  cached after the authority protected-call checks. Before activation the candidate matches
+  operation and selector alone; an activated Safe must use the pinned signing library. One
   record per child and message hash; a later approval replaces it; no size cap; `getApproval`
   reads without consuming.
 - **Installation.** Fresh and already-guarded Safes install through the standard entry points
   in one owner-approved batch, with no migration-specific API.
 - **Chains and build.** Cancun is required for EIP-1153 and is documented, with no installation
-  preflight. The guard is a separate Foundry project; the Paris build of `contracts/evm/` is
-  unchanged.
+  preflight. The guard is a separate Foundry project; `contracts/evm/` keeps its Paris
+  target and legacy compiler pipeline.
 - **Dependencies and license.** The patched policy engine is vendored from the
   `crossecute/policy-engine` fork, not applied as a patch at build time. Crossecute's guard
   sources are MIT; vendored policy-engine files keep their `LGPL-3.0-only` headers.
 - **Out of scope here.** Receiver checks on what the guard hands out, including approved-hash
   (`v = 1`) entries and signing modes, are [#108](https://github.com/crossecute/protocol/issues/108).
-  The guard only advertises `ICrossecuteGuard` through ERC-165; the transceiver reads that at
-  `createTransmitter` to choose a plain or signed transmitter (#108).
+  The guard advertises `ICrossecuteGuard` for transmitter mode selection, as well as the
+  source-authority, policy and Safe guard interfaces. Authority updates also run the portable
+  signature check in the source pre-hook (#109).
 
 ## Shape
 
@@ -81,8 +101,8 @@ Crossecute adds runs in those callbacks.
 - **Policy.** The inherited `PolicyEngine` governs every owner and module transaction.
   `SafenetPolicy` is one policy a Safe may select, not part of the guard.
 - **Slots.** Crossecute requires the guard in the Safe's transaction guard slot. Putting the
-  same contract in the module guard slot is the multisig's choice (see
-  [Module execution](#module-execution)).
+  same contract in the module guard slot is optional before activation; activation requires
+  both slots and no enabled modules (see [Module execution](#module-execution)).
 - **No composition.** The guard does not register, forward to, or delegatecall other guards.
   A Safe uses exactly this guard.
 
@@ -94,20 +114,20 @@ except for the three configuration entry points.
 
 Safe 1.5.0 increments the nonce and checks signatures, then calls the transaction guard's
 `checkTransaction`, executes, and calls `checkAfterExecution(txHash, success)` on the guard
-it read before execution. After the inherited policy check, `CrossecuteGuard` does four
-things in the pre-hook, in this order:
+it read before execution. After the inherited policy check, `CrossecuteGuard`:
 
-1. **Nesting.** If the calling Safe has a live staged record, revert. See
-   [Nesting](#nesting).
-2. **Staging.** If the top-level calldata selector is `sendMessage(bytes,bytes,bytes[])` or
-   `bootstrap(bytes,bytes[])`, write a transient staged record for the calling Safe.
-3. **Approval capture.** If the operation is `DELEGATECALL` and the selector is
-   `signMessage(bytes)`, write the persistent approval record for the calling Safe.
-4. **Root registration.** If the selector is `registerRoot(bytes32)`, revert unless the root is
-   published. See [Merkle leaf publication](#merkle-leaf-publication).
+1. Requires no live owner execution for this Safe, then holds its transaction hash
+   until the matching post-hook.
+2. Runs authority recognition and protected-call checks. A recognized activation or
+   update verifies its staged witness and writes its selection and executed head. A successor
+   also publishes its submission. The pre-hook stores the transient expected final ownership hash.
+3. For other calls, checks publication when the selector is `registerRoot(bytes32)`;
+   otherwise stages a `sendMessage`/`bootstrap` record or captures a `signMessage` approval
+   according to selector and operation.
 
-The selectors differ, so one transaction triggers at most one of steps 2 to 4. The
-post-hook clears the calling Safe's staged record if one exists.
+The post-hook checks the execution hash and, for an authority operation, final ordered
+owners and threshold. It then clears transient records and releases the lock. Any failure
+reverts the pre-hook writes with the Safe transaction.
 
 ## Transient staged record
 
@@ -128,9 +148,10 @@ arguments. The record holds, for the calling Safe:
 transaction as a `SafeTx` with `data` empty, and the signed target fills it from its own
 calldata, which the Safe passed it. The signature blob is the complete original `signatures`
 argument: owner signatures, any nested contract-signature data with its offsets, and the policy
-extension if present. There is no byte cap. Staging and cleanup together cost about 10,000 gas
-for a blob of two EOA signatures and about 14 gas per further byte
-([`contracts/safe-guard/README.md`](../contracts/safe-guard/README.md#gas)). The record lives in
+extension if present. There is no byte cap. Staging, cleanup and the owner-execution lock
+cost 16,263 gas for the two-EOA-signature fixture without an extension. Larger blobs add
+copying and transient-storage costs; the measured sizes are in
+[`contracts/safe-guard/README.md`](../contracts/safe-guard/README.md#gas). The record lives in
 EIP-1153 transient storage starting at a per-Safe id, `keccak256(abi.encode(safe, NAMESPACE))`.
 
 **Not all of the blob is signed.** Safe checks the first threshold-many signatures and ignores
@@ -152,9 +173,10 @@ selector-matched call that nobody consumed stands, including one to an unrelated
 that shares the selector. Cleanup does not rely on the end-of-transaction reset, so a second
 Safe execution in the same parent transaction starts clean.
 
-**No staging path.** A single signed MultiSend carrying a staged call has the `multiSend`
-selector at top level, and module transactions never enter the owner hook. Neither stages a
-record, so a protected transmitter reached that way finds nothing to consume and rejects.
+**No batch or module staging path.** The pinned MultiSendCallOnly accepts only recognized
+authority-change batches, which contain no application sends. Other delegatecalls reject
+after activation, and no inner `sendMessage`/`bootstrap` runs the owner pre-hook. Module
+transactions never stage a record and the installed module guard rejects both selectors.
 
 ## Merkle leaf publication
 
@@ -204,8 +226,10 @@ A signature-enabled transmitter, called directly by its owner Safe through `send
 2. reads the Safe's transaction guard slot with `getStorageAt(slot, 1)`, decoding the reply
    strictly;
 3. calls `consume(msg.sender)` on that guard before any other external call;
-4. sets the returned transaction's `data` to its own calldata, uses it and the signature blob in
-   memory, and rejects if discovery or consumption fails.
+4. for `sendMessage`, sets the returned transaction's `data` to its own calldata and uses it and
+   the signature blob in memory; for `bootstrap`, uses nothing from the record, since consuming it
+   is the check that an owner transaction made the call. Either rejects if discovery or
+   consumption fails.
 
 It never pins a guard address and never falls back to an unsigned send. It does not compare
 calldata or value with the record: the direct call from the Safe already delivers what the
@@ -217,28 +241,32 @@ transmitter or receiver can import them.
 
 ## Nesting
 
-While a Safe has a live staged record, the guard rejects any nested owner execution by
-that same Safe, before and after consumption, until the post-hook clears the record. A
-separately signed execution after cleanup in the same parent transaction proceeds. Verifying
+Every owner execution holds a per-Safe transient lock, including calls that stage no
+message or authority record. Same-Safe owner and guarded module reentry and stageUpdate
+reject until the matching post-hook clears the lock. A post-hook without a live execution
+or with another transaction hash rejects. A separately signed execution after cleanup in
+the same parent transaction proceeds. Verifying
 a nested Safe owner's signature calls that Safe's signature validator, not
 `execTransaction`, so it never reaches the owner hook. Execution by a different Safe is
-subject to that Safe's own record and the inherited policy check.
+subject to that Safe's own lock and the inherited policy check.
 
 ## Module execution
 
 When the Safe puts the guard in its module guard slot, the module callback rejects any
 module transaction whose top-level selector is `sendMessage(bytes,bytes,bytes[])` or
 `bootstrap(bytes,bytes[])`, whatever the target, and likewise `registerRoot(bytes32)`, which
-would otherwise skip the owner hook's publication check. Every other module transaction goes
+would otherwise skip the owner hook's publication check. It also rejects the pinned MultiSend
+executor and same-Safe module reentry while an owner execution is live. Other module transactions go
 through the inherited policy engine, whose
 configuration must deny module self-calls and delegatecalls. The policy engine already
 refuses configuration changes from modules and any call that targets the guard. Together
 these keep a module from changing the transaction guard, the module guard, owners,
 threshold, handler, or policy.
 
-A multisig may leave the module guard slot empty and keep modules enabled. It then trusts
+Before activation, a multisig may leave the module guard slot empty and keep modules enabled. It then trusts
 those modules with their Safe permissions, including any ability to bypass Crossecute's
-authority checks. The authority-change path is [#109](https://github.com/crossecute/protocol/issues/109).
+authority checks. Activation requires both guard slots and no enabled modules; protected
+self-call rules keep that configuration fixed afterwards.
 
 ## Persistent child approval evidence
 
@@ -248,8 +276,9 @@ holds no signatures. To let a receiver check the child's authorization without l
 the child's guard keeps the signed transaction that set the flag.
 
 **Capture.** In the child's pre-hook, after policy checks, a `DELEGATECALL` whose selector is
-`signMessage(bytes)` is an approval candidate. The guard does not check the target address or
-its code hash. Safe has no built-in `SignMessageLib` allowlist, so an authorized delegatecall
+`signMessage(bytes)` is an approval candidate. Before activation the capture check matches
+operation and selector without attesting target code. After activation the protected-call
+check requires the pinned SignMessageLib target. Safe itself has no built-in allowlist, so an authorized delegatecall
 can write any hash, and the handler does not check who wrote it. A cached candidate does not
 establish what the delegatecall wrote. A candidate whose calldata does not decode as
 `signMessage(bytes)` reverts.
@@ -310,8 +339,8 @@ post-hook. After installation, configuration changes go through `requestConfigur
 The guard needs EIP-1153 (`TSTORE`/`TLOAD`), so it targets Cancun. The owner pre-hook reads
 transient storage on every transaction, so on a chain without EIP-1153 every owner transaction
 would revert, including one that removes the guard. Install it only where Cancun is active. It is compiled with Solidity 0.8.30 and via-IR, matching the
-policy-engine. The project keeps its own configuration, output and cache, and does not change
-the Paris build of `contracts/evm/`. [`contracts/safe-guard/README.md`](../contracts/safe-guard/README.md)
+policy-engine. The project keeps its own configuration, output and cache; `contracts/evm/`
+retains its Paris target and legacy compiler pipeline. [`contracts/safe-guard/README.md`](../contracts/safe-guard/README.md)
 has the pins and commands.
 
 ## Earlier work

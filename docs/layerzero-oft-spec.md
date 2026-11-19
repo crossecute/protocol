@@ -72,13 +72,23 @@ them for a candidate.
   (`LzOftMessage.sendParam`).
 - **L2.3** Every send and quote MUST refuse a destination its home OFT no longer peers as the
   conduit recorded or created it (`LzOftMessage.requirePeer`).
-- **L2.4** A bootstrap MUST be sent to the factory, and carry
+- **L2.4** A plain bootstrap MUST be sent to the factory, and carry
   `LzOftMessage.Bootstrap(owner, salt, homeChainKey, homeEid, homeOft, destRoot, proof, calls)` as the
   home factory's `conduitBootstrap` builds it from the stored leaves, for the conduit its
   `(owner, salt)` derive. A message MUST be sent to the
   receiver, with the payload as `composeMsg`.
 - **L2.5** The only attribute MUST be `LzMessage.OPTIONS_ATTRIBUTE`, which replaces the
   default lzCompose option whole.
+
+- **L2.6** Signed mode MUST use the same route-bound salt as plain mode and be fixed by the
+  source Safe's guard capability at creation. Before sending or quoting a signed bootstrap,
+  the transmitter MUST validate its head and graph against the source guard's activated selection.
+  `signedConduitBootstrap` MUST build
+  `abi.encode(SIGNED_BOOTSTRAP, LzOftMessage.Bootstrap, sourceChainId, signedBody)` from the
+  stored routing fields, with empty header calls. `signedBody` carries the selected guard,
+  head, encoded authority graph and setup calls. The graph and setup arrays are variable-size
+  because they represent the selected owners and requested setup; complete wire sizes require
+  lane-specific validation.
 
 ### L3. No tokens
 
@@ -98,6 +108,13 @@ them for a candidate.
 - **L4.3** The receiver MUST be armed with the conduit as its source transmitter, the source
   eid as its home, the home OFT, and `_from` as its local OFT.
 
+- **L4.4** A signed bootstrap MUST bind `sourceChainId` to `homeChainKey` and pass the
+  same endpoint, route proof, peer, eid and `composeFrom` checks as a plain bootstrap. The
+  receiver MUST be armed with no calls, then initialize its signed authority and setup
+  atomically on the provider's authentication. Its guard and MultiSend pins MUST match the
+  source guard and the helper it recognizes. A duplicate bootstrap MUST revert `ConduitExists`.
+  Failed source transport MUST revert bootstrap state and allow another Safe execution.
+
 ### L5. Receive
 
 - **L5.1** A receiver MUST refuse a compose unless, in order: the caller holds
@@ -105,6 +122,11 @@ them for a candidate.
   eid; the compose's source eid is its home; and `composeFrom` is its source transmitter, read
   through `ProviderAddress.evmSender`.
 - **L5.2** It MUST NOT read the executor or `_extraData`.
+
+- **L5.3** Signed receivers MUST use the shared signature, authority-update and replay checks
+  for compose and direct submission. Leaf and authority relay fees MUST come from the relayer,
+  with the OFT refund recipient set to that relayer and preexisting conduit funds preserved.
+  Safe-funded sends MUST retain conduit refunds.
 
 ## 4. What it gives up
 
@@ -137,3 +159,9 @@ the conduit).
 | L4.2, L4.3 | `test_valueReachesTheConduit`, `test_theBootstrapCreatesTheReceiverAtTheConduitsAddress` |
 | L5.1 | `ProviderReceiveSpec`, `test_aComposeQueuedByAnotherContractIsRefused`, `test_aRePeeredLocalOftIsRefused` |
 | C29 | `test_aDeliveredComposeCannotRunAgain`, `test_aFailedComposeIsRetried` |
+
+Signed transport coverage: `LzOftSigned.t.sol` checks common salt derivation, quote/send
+selection validation, atomic transport failure, bootstrap duplication, source domain binding,
+message/Merkle replay and relayer refund accounting. `SignedOftIntegration.t.sol` exercises
+real Safe activation, bootstrap, dispatch, authority update relay/direct replay and post-update
+execution. Live OFT compatibility, fees, compose gas and payload caps remain #118 gates.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
 import {GasAttribute} from "script/deploy/GasAttribute.sol";
 import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@ccip/libraries/Client.sol";
@@ -78,6 +79,14 @@ abstract contract CcipFixture is ProviderGasFixture {
 
     function _receiverImplementation() internal override returns (address) {
         return CcipDeploy.receiverImplementation(address(router));
+    }
+
+    function _signedReceiverImplementation(address guard, address multiSendCallOnly)
+        internal
+        override
+        returns (address)
+    {
+        return address(new CcipReceiver(address(router), guard, multiSendCallOnly));
     }
 
     function _transmitterImplementation() internal override returns (address) {

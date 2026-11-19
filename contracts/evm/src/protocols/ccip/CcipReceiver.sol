@@ -18,7 +18,7 @@ contract CcipReceiver is ProviderReceiver, IAny2EVMMessageReceiver {
     ///         initcode, so this never moves a derived conduit address.
     address public immutable router;
 
-    constructor(address router_) {
+    constructor(address router_, address guard, address multiSendCallOnly) ProviderReceiver(guard, multiSendCallOnly) {
         if (router_ == address(0)) revert ProviderAddress.ZeroEndpoint();
         router = router_;
     }

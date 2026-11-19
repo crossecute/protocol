@@ -410,7 +410,7 @@ premise is false there, and the merkle-policy work is moot, because **the vocabu
 the policy**. Non-EVM receivers are constrained conduits by construction.
 
 **One argument-free `Proxy` per conduit, at a CREATE2 address derived from
-`(owner, salt, home)`, plus the owner graph's hash for a Safe-signed conduit** (`conduit/Proxy.sol`,
+`(owner, salt, home)`, for plain and Safe-signed conduits alike** (`conduit/Proxy.sol`,
 `TransceiverCore._conduitSalt`). Move modules
 are published at addresses, not instantiated; there is no per-owner deployment at all. A
 Move deployment is one module holding a table keyed by owner. The one-conduit-per-owner
@@ -533,6 +533,21 @@ wrong once and wrong forever.
 Also unverified: **keccak256 availability on Cardano.** Solana, Aptos, and Sui all expose
 it natively; Plutus gained a `keccak_256` builtin later than the others and the target
 version needs checking. Starknet's `starknet_keccak` is *not* keccak256: see above.
+
+## Authority-update encoding (#109)
+
+This file owns application Call[] wire encoding and opaque commitments. #109's
+separate management encoding is defined by the
+[authority design](safe-authority-updates.md#linked-universally-reusable-updates)
+and [AuthorityUpdateEncoding](../contracts/evm/src/messaging/authority/AuthorityUpdateEncoding.sol).
+It uses signed predecessor hashes, no numeric destination nonce watermark and no
+destination-specific authority-update fields. Source SafeTx nonces remain signed.
+Ownership Call[] batches are packed as zero-value self-CALLs for MultiSendCallOnly;
+that packed helper encoding is distinct from application abi.encode(Call[]).
+The [shared authority vectors](vectors/safe-authority-updates-109.json) pin SafeTx and
+SafeMessage hashes and the #109 record, graph, ownership-batch, child-update, bootstrap and
+submission encodings, and `test/authority/AuthorityVectors.t.sol` replays them against the
+receiver. Freezing the final authority ABI remains a verification-plan gate.
 
 ## Rejected
 

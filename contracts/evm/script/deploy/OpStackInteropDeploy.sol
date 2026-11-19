@@ -7,13 +7,19 @@ import {OpStackInteropTransmitter} from "src/protocols/op-stack/OpStackInteropTr
 import {OpStackInteropMessage} from "src/protocols/op-stack/OpStackInteropMessage.sol";
 import {VM, check} from "script/deploy/ProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
-import {TransceiverDeployment, deployTransceiverProxy, transceiverExtension} from "script/deploy/TransceiverDeploy.sol";
+import {
+    TransceiverDeployment,
+    deployTransceiverProxy,
+    transceiverExtension,
+    receiverAuthorityPins
+} from "script/deploy/TransceiverDeploy.sol";
 
 /// @notice `op-stack-l2-l2`'s contracts. The messenger is a predeploy, so nothing provider-specific
 ///         is an argument, and it is the gateway.
 library OpStackInteropDeploy {
     function receiverImplementation() internal returns (address) {
-        return address(new OpStackInteropReceiver());
+        (address guard, address multiSend) = receiverAuthorityPins();
+        return address(new OpStackInteropReceiver(guard, multiSend));
     }
 
     function transmitterImplementation() internal returns (address) {

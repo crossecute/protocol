@@ -12,8 +12,8 @@ interface ILzOftConduitFactory {
 /// @notice Bootstrap transport for a signed OFT conduit; the conduit remains the OFT sender.
 interface ILzOftSignedConduitFactory is ILzOftConduitFactory {
     /// @notice Encode the calling conduit's signed bootstrap and its destination factory route.
-    /// @dev Quote and retry use identical bytes without making the factory the composeFrom.
-    function signedConduitBootstrap(bytes32 chainKey, bytes calldata body)
+    /// @dev Quote and send use identical bytes without making the factory the composeFrom.
+    function signedConduitBootstrap(bytes calldata route, bytes calldata body)
         external
         view
         returns (bytes memory recipient, bytes memory message);

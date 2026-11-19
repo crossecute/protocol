@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {WormholeReceiver} from "src/protocols/wormhole/WormholeReceiver.sol";
 import {IVaaV1Receiver} from "@wormhole-sdk/interfaces/IExecutor.sol";
 
 import {TransceiverDeployment, transceiverExtension} from "script/deploy/TransceiverDeploy.sol";
@@ -108,6 +109,14 @@ abstract contract WormholeFixture is ProviderGasFixture {
 
     function _receiverImplementation() internal override returns (address) {
         return WormholeDeploy.receiverImplementation(_endpoints());
+    }
+
+    function _signedReceiverImplementation(address guard, address multiSendCallOnly)
+        internal
+        override
+        returns (address)
+    {
+        return address(new WormholeReceiver(_endpoints().coreBridge, guard, multiSendCallOnly));
     }
 
     function _transmitterImplementation() internal override returns (address) {

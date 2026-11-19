@@ -6,6 +6,7 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
+import {receiverAuthorityPins} from "script/deploy/TransceiverDeploy.sol";
 import {arachnidDeploy, check} from "script/deploy/ProxyDeploy.sol";
 
 /// @notice A destination as an operator names it: its EVM chain id and LayerZero eid.
@@ -23,7 +24,9 @@ library LzOftDeploy {
     ///         initcode.
     function factory() internal returns (LzOftConduitFactory f) {
         address t = arachnidDeploy(type(LzOftTransmitter).creationCode);
-        address r = arachnidDeploy(type(LzOftReceiver).creationCode);
+        (address guard, address multiSendCallOnly) = receiverAuthorityPins();
+        address r =
+            arachnidDeploy(abi.encodePacked(type(LzOftReceiver).creationCode, abi.encode(guard, multiSendCallOnly)));
         f = LzOftConduitFactory(
             arachnidDeploy(abi.encodePacked(type(LzOftConduitFactory).creationCode, abi.encode(t, r)))
         );

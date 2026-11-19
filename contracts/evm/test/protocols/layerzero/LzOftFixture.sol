@@ -26,7 +26,7 @@ abstract contract LzOftFixture is ProviderConduitFixture {
     }
 
     function _receiverImplementation() internal override returns (address) {
-        return address(new LzOftReceiver());
+        return address(new LzOftReceiver(address(0), address(0)));
     }
 
     function _transmitterImplementation() internal override returns (address) {

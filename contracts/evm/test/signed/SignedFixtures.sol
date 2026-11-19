@@ -5,7 +5,9 @@ import {Vm} from "forge-std/Vm.sol";
 import {SafeTx} from "@crossecute/safe-guard/ICrossecuteGuard.sol";
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {SafeAuthorityRecord, SafeOwner, OWNER_EOA, OWNER_SAFE} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
-import {NestedSafeApproval} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {NestedSafeApproval, SignedBootstrap} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {AuthorityGraph, AuthorityNode} from "src/messaging/authority/AuthorityGraph.sol";
+import {AuthorityUpdateEncoding} from "src/messaging/authority/AuthorityUpdateEncoding.sol";
 
 /// @notice An independent Merkle builder for the dispatch tree: sorted pairs, the unpaired last
 ///         hash of a level carried up, a single leaf as its own root.
@@ -175,6 +177,26 @@ library SafeSigs {
 
 /// @notice `SafeAuthorityRecord` builders.
 library Records {
+    /// @dev Provider-authenticated fixtures use nonzero child positions; source integration uses executed heads.
+    function graph(SafeAuthorityRecord[] memory records) internal pure returns (AuthorityGraph memory authority) {
+        authority.nodes = new AuthorityNode[](records.length);
+        for (uint256 i; i < records.length; ++i) {
+            authority.nodes[i] = AuthorityNode(records[i], i == 0 ? bytes32(0) : keccak256(abi.encode(records[i].safe)));
+        }
+    }
+
+    function graphHash(uint256 chain, SafeAuthorityRecord[] memory records) internal pure returns (bytes32) {
+        return AuthorityUpdateEncoding.graphHash(chain, graph(records));
+    }
+
+    function bootstrap(address guard, SafeAuthorityRecord[] memory records, bytes memory setup)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(SignedBootstrap(guard, bytes32(uint256(1)), abi.encode(graph(records)), setup));
+    }
+
     /// @notice Convert test private keys into ordered EOA owner entries.
     /// @dev Graph records and signature fixtures must agree on the same owner addresses and
     ///      kinds.

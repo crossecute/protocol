@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
-import {ExecutionLeaf, BootstrapLeaf} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {ExecutionLeaf} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {MerkleBuilder} from "test/signed/SignedFixtures.sol";
@@ -21,12 +21,6 @@ contract LeafHarness {
     ///      includes delivery attributes.
     function executionId(ExecutionLeaf memory leaf) external pure returns (bytes32) {
         return DispatchLeaves.executionId(leaf);
-    }
-
-    /// @notice Expose bootstrap-leaf hashing through the harness.
-    /// @dev A separate wrapper makes the bootstrap overload unambiguous in encoding tests.
-    function hashBootstrap(BootstrapLeaf memory leaf) external pure returns (bytes32) {
-        return DispatchLeaves.hash(leaf);
     }
 
     /// @notice Expose Merkle proof verification through an external call.
@@ -103,14 +97,6 @@ contract DispatchLeavesTest is Test {
         l = _leaf(3);
         l.calls = abi.encode(new Call[](0));
         assertTrue(h.hash(l) != base);
-    }
-
-    /// @notice Compare a bootstrap hash with the independent four-field encoding.
-    /// @dev Receiver setup needs its own pinned commitment distinct from execution leaves.
-    function test_theBootstrapLeafHashIsTheDoubleHashOfItsFourFields() public view {
-        BootstrapLeaf memory b = BootstrapLeaf(Erc7930.encodeEvm(8453, address(0xBEEF)), 1, 2, hex"00");
-        bytes memory encoded = abi.encode(b.destination, b.validAfter, b.deadline, b.setupCalls);
-        assertEq(h.hashBootstrap(b), keccak256(abi.encode(keccak256(encoded))));
     }
 
     /// @notice Verify a one-leaf tree using its leaf hash as root and no siblings.

@@ -13,15 +13,14 @@ import {ISignedReceiver} from "src/messaging/inbound/ISignedReceiver.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
-import {
-    BootstrapLeaf,
-    ExecutionLeaf,
-    SafeTxEvidence,
-    SignedBootstrap
-} from "src/messaging/signed/types/SignedDispatchTypes.sol";
+import {ExecutionLeaf, SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {SafeHashes} from "@crossecute/safe-guard/SafeHashes.sol";
 import {StubSafe, StubGuard} from "test/signed/StubSafe.sol";
-import {SafeSigs} from "test/signed/SignedFixtures.sol";
+import {Conduits} from "src/conduit/Conduits.sol";
+import {Payload} from "src/messaging/Payload.sol";
+import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
+import {SignedTransmitterLib} from "src/messaging/outbound/SignedTransmitterLib.sol";
+import {SafeSigs, Records} from "test/signed/SignedFixtures.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 
 /// @notice OFT transport with real cryptographic evidence, independently recreated destination state.
@@ -57,16 +56,33 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         dstOft = destinationOft;
         _chain(HOME, HOME_EID);
         oft.setPeer(DEST_EID, dstOft);
-        guard = new StubGuard();
+        guard = StubGuard(address(0x600D));
+        vm.etch(address(guard), address(new StubGuard()).code);
+        guard.setAdvertises(true);
         safe = new StubSafe();
         address[] memory owners = new address[](2);
         owners[0] = vm.addr(1);
         owners[1] = vm.addr(2);
         safe.setOwners(owners, 2);
         safe.setGuard(address(guard));
+        _select();
         vm.prank(address(safe));
         transmitter = LzOftTransmitter(payable(factory.createTransmitter(SALT, address(oft), _leaves(dstOft))));
         vm.deal(address(transmitter), 1 ether);
+    }
+
+    function _authorityGuard() internal pure override returns (address) {
+        return address(0x600D);
+    }
+
+    function _multiSendCallOnly() internal pure override returns (address) {
+        return address(0xCA11);
+    }
+
+    function _select() internal {
+        guard.setSelection(
+            address(safe), bytes32(uint256(1)), Records.graphHash(HOME, SafeAuthorityGraph.derive(address(safe)))
+        );
     }
 
     function _evidence(bytes memory data) internal returns (SafeTxEvidence memory e) {
@@ -94,16 +110,24 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
     }
 
     function _bootstrapEvidence(Call[] memory calls) internal returns (SafeTxEvidence memory e) {
-        BootstrapLeaf memory leaf = BootstrapLeaf(
-            Erc7930.encodeEvm(DEST, address(transmitter)), block.timestamp, block.timestamp + 1 days, abi.encode(calls)
-        );
-        bytes memory payload = abi.encode(DispatchLeaves.hash(leaf), uint256(0), leaf, new bytes32[](0));
+        bytes memory body =
+            Records.bootstrap(address(guard), SafeAuthorityGraph.derive(address(safe)), abi.encode(calls));
+        bytes memory payload = Payload.encodeBootstrap(Erc7930.encodeEvmChain(DEST), body);
         e = _evidence(abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0))));
+    }
+
+    function _args(bytes memory data) internal pure returns (bytes memory args) {
+        args = new bytes(data.length - 4);
+        for (uint256 i; i < args.length; ++i) {
+            args[i] = data[i + 4];
+        }
     }
 
     function _bootstrap() internal returns (bytes memory wire) {
         SafeTxEvidence memory e = _bootstrapEvidence();
-        (uint256 fee,) = transmitter.quoteSignedBootstrap(e);
+        (bytes memory payload, bytes[] memory attributes) =
+            abi.decode(_args(e.signedSafeTx.safeTx.data), (bytes, bytes[]));
+        uint256 fee = transmitter.quoteBootstrap(payload, attributes);
         _exec(e);
         assertTrue(transmitter.isBootstrapped(destKey));
         MockOft.Sent memory sent = oft.sent(0);
@@ -116,7 +140,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
     function _bundle() internal returns (Bundle memory b) {
         b.conduit = address(transmitter);
         b.homeOft = address(oft);
-        b.graph = transmitter.authorityGraph();
+        b.graph = Records.graphHash(HOME, SafeAuthorityGraph.derive(address(safe)));
         b.bootstrapWire = _bootstrap();
         b.message = _evidence(
             abi.encodeCall(
@@ -140,21 +164,12 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         assertEq(receiver.authorityGraph(), b.graph);
     }
 
-    function test_signedCreationBindsTheGraphAndPreservesPlainDerivation() public view {
+    function test_signedCreationUsesThePlainDerivation() public view {
         (,,, bytes32 root,) = factory.bootstrapRoute(address(transmitter), destKey);
-        assertNotEq(transmitter.authorityGraph(), bytes32(0));
+        assertTrue(transmitter.isSigned());
+        assertTrue(factory.isSigned(address(transmitter)));
         assertEq(
-            address(transmitter),
-            factory.predictConduit(
-                address(safe), SALT, homeKey, HOME_EID, address(oft), root, transmitter.authorityGraph()
-            )
-        );
-        assertNotEq(
             address(transmitter), factory.predictConduit(address(safe), SALT, homeKey, HOME_EID, address(oft), root)
-        );
-        assertEq(
-            factory.predictConduit(owner, SALT, homeKey, HOME_EID, address(oft), root, bytes32(0)),
-            factory.predictConduit(owner, SALT, homeKey, HOME_EID, address(oft), root)
         );
     }
 
@@ -189,25 +204,27 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         assertEq(Sink(target).hits(), 1);
     }
 
-    function test_bootstrapTransportFailureCanBeRetriedByAnyone() public {
+    function test_bootstrapTransportFailureRollsBackAndSafeCanRetry() public {
         SafeTxEvidence memory e = _bootstrapEvidence();
-        (, bytes memory body) = transmitter.quoteSignedBootstrap(e);
         oft.setPeer(DEST_EID, address(0xBAD));
-        _exec(e);
-        assertEq(transmitter.pendingBootstrap(destKey), keccak256(body));
+        guard.stage(address(safe), e.signedSafeTx.safeTx, e.signedSafeTx.signatures);
+        vm.expectPartialRevert(LzOftMessage.PeerChanged.selector);
+        safe.exec(address(transmitter), 0, e.signedSafeTx.safeTx.data);
         assertFalse(transmitter.isBootstrapped(destKey));
+        (uint32 eid, address destination) = transmitter.destinationOf(destKey);
+        assertEq(eid, 0);
+        assertEq(destination, address(0));
         oft.setPeer(DEST_EID, dstOft);
-        transmitter.retryBootstrap(body);
+        _exec(e);
         assertTrue(transmitter.isBootstrapped(destKey));
-        assertEq(transmitter.pendingBootstrap(destKey), bytes32(0));
         assertEq(oft.sent(0).from, address(transmitter));
     }
 
-    function test_signedBootstrapRepeatDoesNotRunSetupTwice() public {
+    function test_signedBootstrapRepeatReverts() public {
         Bundle memory b = _bundle();
         _destination(b);
+        vm.expectPartialRevert(Conduits.ConduitExists.selector);
         oft.deliver(HOME_EID, address(factory), bytes32(uint256(uint160(b.conduit))), b.bootstrapWire);
-        assertEq(LzOftReceiver(payable(b.conduit)).authorityGraph(), b.graph);
     }
 
     function test_plainPayloadCannotExecuteOnSignedReceiver() public {
@@ -290,9 +307,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         owners[0] = vm.addr(1);
         owners[1] = child;
         safe.setOwners(owners, 2);
-        vm.prank(address(safe));
-        transmitter = LzOftTransmitter(payable(factory.createTransmitter(SALT, address(oft), _leaves(dstOft))));
-        vm.deal(address(transmitter), 1 ether);
+        _select();
         Bundle memory b = _bundle();
         LzOftReceiver receiver = _destination(b);
         assertEq(receiver.authorityRecords().length, 2);
@@ -304,11 +319,11 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         );
     }
 
-    function test_setupCallsExecuteOnceAcrossBootstrapRetries() public {
+    function test_setupCallsExecuteOnceAndDuplicateBootstrapReverts() public {
         Bundle memory b;
         b.conduit = address(transmitter);
         b.homeOft = address(oft);
-        b.graph = transmitter.authorityGraph();
+        b.graph = Records.graphHash(HOME, SafeAuthorityGraph.derive(address(safe)));
         _exec(_bootstrapEvidence(_calls(address(0x5151))));
         b.bootstrapWire = oft.sent(0).param.composeMsg;
         vm.revertToState(start);
@@ -317,6 +332,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         Sink implementation = new Sink();
         vm.etch(address(0x5151), address(implementation).code);
         oft.deliver(HOME_EID, address(factory), bytes32(uint256(uint160(b.conduit))), b.bootstrapWire);
+        vm.expectPartialRevert(Conduits.ConduitExists.selector);
         oft.deliver(HOME_EID, address(factory), bytes32(uint256(uint160(b.conduit))), b.bootstrapWire);
         assertEq(Sink(address(0x5151)).hits(), 1);
     }
@@ -336,19 +352,17 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         assertEq(b.conduit.code.length, 0);
     }
 
-    function test_bootstrapAuthorityCannotBeSubstituted() public {
-        Bundle memory b = _bundle();
-        (uint256 tag, LzOftMessage.Bootstrap memory header, uint256 chainId, bytes memory body) =
-            abi.decode(b.bootstrapWire, (uint256, LzOftMessage.Bootstrap, uint256, bytes));
-        SignedBootstrap memory signedBody = abi.decode(body, (SignedBootstrap));
-        signedBody.records[0].threshold = 1;
-        b.bootstrapWire = abi.encode(tag, header, chainId, abi.encode(signedBody));
-        vm.revertToState(start);
-        _chain(DEST, DEST_EID);
-        oft.setPeer(HOME_EID, b.homeOft);
-        vm.expectPartialRevert(LzOftConduitFactory.NotTheConduit.selector);
-        oft.deliver(HOME_EID, address(factory), bytes32(uint256(uint160(b.conduit))), b.bootstrapWire);
-        assertEq(b.conduit.code.length, 0);
+    function test_quoteAndSendRejectUnselectedBootstrapAuthority() public {
+        SafeTxEvidence memory e = _bootstrapEvidence();
+        (bytes memory payload, bytes[] memory attributes) =
+            abi.decode(_args(e.signedSafeTx.safeTx.data), (bytes, bytes[]));
+        guard.setSelection(address(safe), bytes32(uint256(2)), bytes32(uint256(3)));
+        vm.expectRevert(SignedTransmitterLib.BootstrapAuthorityMismatch.selector);
+        transmitter.quoteBootstrap(payload, attributes);
+        guard.stage(address(safe), e.signedSafeTx.safeTx, e.signedSafeTx.signatures);
+        vm.expectRevert(SignedTransmitterLib.BootstrapAuthorityMismatch.selector);
+        safe.exec(address(transmitter), 0, e.signedSafeTx.safeTx.data);
+        assertFalse(transmitter.isBootstrapped(destKey));
     }
 
     function test_signedOwnershipCannotMove() public {

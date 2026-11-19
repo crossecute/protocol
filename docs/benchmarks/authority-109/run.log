@@ -1,0 +1,239 @@
+Compiling 1 files with Solc 0.8.28
+Solc 0.8.28 finished in 695.17ms
+Compiler run successful with warnings:
+Warning (2519): This declaration shadows an existing declaration.
+   --> /home/carter/Documents/crossecute/protocol-109/contracts/evm/test/signed/SignedFixtures.sol:181:24:
+    |
+181 |     function eoaOwners(uint256[] memory pks) internal pure returns (SafeOwner[] memory owners) {
+    |                        ^^^^^^^^^^^^^^^^^^^^
+Note: The shadowed declaration is here:
+   --> /home/carter/Documents/crossecute/protocol-109/contracts/evm/test/signed/SignedFixtures.sol:233:5:
+    |
+233 |     function pks(uint256 a, uint256 b, uint256 c) internal pure returns (uint256[] memory p) {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+Note: The shadowed declaration is here:
+   --> /home/carter/Documents/crossecute/protocol-109/contracts/evm/test/signed/SignedFixtures.sol:241:5:
+    |
+241 |     function pks(uint256 a, uint256 b) internal pure returns (uint256[] memory p) {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Ran 43 tests for test/AuthorityGas.t.sol:AuthorityGasBench
+[PASS] test_per_safe_16_fanout_1() (gas: 2797541)
+Logs:
+  BENCH,per_safe_16_fanout_1,31,1,1,32,2112,2212,230169,157461,54508
+  WIRE,per_safe_16_fanout_1,3200,3296
+
+[PASS] test_per_safe_16_fanout_16() (gas: 20835269)
+Logs:
+  BENCH,per_safe_16_fanout_16,256,16,1,272,18192,18308,1957554,1329210,294548
+  WIRE,per_safe_16_fanout_16,19296,19392
+
+[PASS] test_per_safe_16_fanout_2() (gas: 3903164)
+Logs:
+  BENCH,per_safe_16_fanout_2,46,2,1,48,3184,3300,342724,235275,70596
+  WIRE,per_safe_16_fanout_2,4288,4384
+
+[PASS] test_per_safe_16_fanout_3() (gas: 5007983)
+Logs:
+  BENCH,per_safe_16_fanout_3,61,3,1,64,4256,4356,455373,312927,86508
+  WIRE,per_safe_16_fanout_3,5344,5440
+
+[PASS] test_per_safe_16_fanout_4() (gas: 6131095)
+Logs:
+  BENCH,per_safe_16_fanout_4,76,4,1,80,5328,5444,568629,390881,102548
+  WIRE,per_safe_16_fanout_4,6432,6528
+
+[PASS] test_per_safe_16_fanout_6() (gas: 8410114)
+Logs:
+  BENCH,per_safe_16_fanout_6,106,6,1,112,7472,7588,796076,546832,134500
+  WIRE,per_safe_16_fanout_6,8576,8672
+
+[PASS] test_per_safe_16_fanout_7() (gas: 9572588)
+Logs:
+  BENCH,per_safe_16_fanout_7,121,7,1,128,8544,8644,910216,624761,150460
+  WIRE,per_safe_16_fanout_7,9632,9728
+
+[PASS] test_per_safe_16_fanout_8() (gas: 10771332)
+Logs:
+  BENCH,per_safe_16_fanout_8,136,8,1,144,9616,9732,1024989,702909,166524
+  WIRE,per_safe_16_fanout_8,10720,10816
+
+[PASS] test_per_safe_24_fanout_1() (gas: 3929501)
+Logs:
+  BENCH,per_safe_24_fanout_1,47,1,1,48,3152,3268,340330,234782,71176
+  WIRE,per_safe_24_fanout_1,4256,4352
+
+[PASS] test_per_safe_24_fanout_2() (gas: 5596823)
+Logs:
+  BENCH,per_safe_24_fanout_2,70,2,1,72,4744,4868,509060,351760,95456
+  WIRE,per_safe_24_fanout_2,5856,5952
+
+[PASS] test_per_safe_24_fanout_4() (gas: 9043738)
+Logs:
+  BENCH,per_safe_24_fanout_4,116,4,1,120,7928,8036,848731,585966,143960
+  WIRE,per_safe_24_fanout_4,9024,9120
+
+[PASS] test_per_safe_32_fanout_1() (gas: 5150284)
+Logs:
+  BENCH,per_safe_32_fanout_1,63,1,1,64,4192,4292,450684,311855,87680
+  WIRE,per_safe_32_fanout_1,5280,5376
+
+[PASS] test_per_safe_32_fanout_16() (gas: 45655001)
+Logs:
+  BENCH,per_safe_32_fanout_16,528,16,1,544,35872,35972,4016027,2675950,576800
+  WIRE,per_safe_32_fanout_16,36960,37056
+
+[PASS] test_per_safe_32_fanout_2() (gas: 7495603)
+Logs:
+  BENCH,per_safe_32_fanout_2,94,2,1,96,6304,6404,676211,468093,120284
+  WIRE,per_safe_32_fanout_2,7392,7488
+
+[PASS] test_per_safe_32_fanout_3() (gas: 9843812)
+Logs:
+  BENCH,per_safe_32_fanout_3,125,3,1,128,8416,8516,903389,624621,152792
+  WIRE,per_safe_32_fanout_3,9504,9600
+
+[PASS] test_per_safe_32_fanout_32() (gas: 108670739)
+Logs:
+  BENCH,per_safe_32_fanout_32,1024,32,1,1056,69664,69764,8374983,5244561,1098704
+  WIRE,per_safe_32_fanout_32,70752,70848
+
+[PASS] test_per_safe_32_fanout_4() (gas: 12258509)
+Logs:
+  BENCH,per_safe_32_fanout_4,156,4,1,160,10528,10628,1132013,781303,185480
+  WIRE,per_safe_32_fanout_4,11616,11712
+
+[PASS] test_per_safe_32_fanout_8() (gas: 22383360)
+Logs:
+  BENCH,per_safe_32_fanout_8,280,8,1,288,18976,19076,2063161,1409786,315836
+  WIRE,per_safe_32_fanout_8,20064,20160
+
+[PASS] test_total_16_chain_2() (gas: 1994134)
+Logs:
+  BENCH,total_16_chain_2,16,2,2,18,1234,1348,139313,92988,39388
+  WIRE,total_16_chain_2,2336,2432
+
+[PASS] test_total_16_chain_4() (gas: 2286273)
+Logs:
+  BENCH,total_16_chain_4,16,4,4,20,1428,1540,161557,107128,40312
+  WIRE,total_16_chain_4,2528,2624
+
+[PASS] test_total_16_chain_8() (gas: 2892255)
+Logs:
+  BENCH,total_16_chain_8,16,8,8,24,1816,1924,208857,138160,42088
+  WIRE,total_16_chain_8,2912,3008
+
+[PASS] test_total_16_fanout_0() (gas: 1690924)
+Logs:
+  BENCH,total_16_fanout_0,16,0,0,16,1040,1156,116097,79858,38560
+  WIRE,total_16_fanout_0,2144,2240
+
+[PASS] test_total_16_fanout_1() (gas: 1852773)
+Logs:
+  BENCH,total_16_fanout_1,16,1,1,17,1137,1252,128573,86293,38968
+  WIRE,total_16_fanout_1,2240,2336
+
+[PASS] test_total_16_fanout_2() (gas: 1938415)
+Logs:
+  BENCH,total_16_fanout_2,16,2,1,18,1234,1348,136768,90465,39400
+  WIRE,total_16_fanout_2,2336,2432
+
+[PASS] test_total_16_fanout_4() (gas: 2176450)
+Logs:
+  BENCH,total_16_fanout_4,16,4,1,20,1428,1540,153038,98676,40324
+  WIRE,total_16_fanout_4,2528,2624
+
+[PASS] test_total_16_fanout_8() (gas: 2698589)
+Logs:
+  BENCH,total_16_fanout_8,16,8,1,24,1816,1924,185710,115165,42076
+  WIRE,total_16_fanout_8,2912,3008
+
+[PASS] test_total_24_chain_2() (gas: 2564618)
+Logs:
+  BENCH,total_24_chain_2,24,2,2,26,1754,1860,195895,133294,47676
+  WIRE,total_24_chain_2,2848,2944
+
+[PASS] test_total_24_chain_4() (gas: 2872636)
+Logs:
+  BENCH,total_24_chain_4,24,4,4,28,1948,2052,220631,149874,48552
+  WIRE,total_24_chain_4,3040,3136
+
+[PASS] test_total_24_chain_8() (gas: 3511414)
+Logs:
+  BENCH,total_24_chain_8,24,8,8,32,2336,2436,272943,185801,50328
+  WIRE,total_24_chain_8,3424,3520
+
+[PASS] test_total_24_fanout_0() (gas: 2245932)
+Logs:
+  BENCH,total_24_fanout_0,24,0,0,24,1560,1668,170279,117810,46836
+  WIRE,total_24_fanout_0,2656,2752
+
+[PASS] test_total_24_fanout_1() (gas: 2415506)
+Logs:
+  BENCH,total_24_fanout_1,24,1,1,25,1657,1764,183959,125426,47208
+  WIRE,total_24_fanout_1,2752,2848
+
+[PASS] test_total_24_fanout_2() (gas: 2450570)
+Logs:
+  BENCH,total_24_fanout_2,24,2,1,26,1754,1860,192086,129567,47676
+  WIRE,total_24_fanout_2,2848,2944
+
+[PASS] test_total_24_fanout_4() (gas: 2676460)
+Logs:
+  BENCH,total_24_fanout_4,24,4,1,28,1948,2052,208442,137854,48588
+  WIRE,total_24_fanout_4,3040,3136
+
+[PASS] test_total_24_fanout_8() (gas: 3197543)
+Logs:
+  BENCH,total_24_fanout_8,24,8,1,32,2336,2436,241130,154306,50340
+  WIRE,total_24_fanout_8,3424,3520
+
+[PASS] test_total_32_chain_16() (gas: 5640391)
+Logs:
+  BENCH,total_32_chain_16,32,16,16,48,3632,3748,467310,330091,62296
+  WIRE,total_32_chain_16,4736,4832
+
+[PASS] test_total_32_chain_2() (gas: 3184182)
+Logs:
+  BENCH,total_32_chain_2,32,2,2,34,2274,2404,252886,173872,56068
+  WIRE,total_32_chain_2,3392,3488
+
+[PASS] test_total_32_chain_4() (gas: 3509376)
+Logs:
+  BENCH,total_32_chain_4,32,4,4,36,2468,2596,280275,193026,56908
+  WIRE,total_32_chain_4,3584,3680
+
+[PASS] test_total_32_chain_8() (gas: 4184075)
+Logs:
+  BENCH,total_32_chain_8,32,8,8,40,2856,2980,338015,234253,58708
+  WIRE,total_32_chain_8,3968,4064
+
+[PASS] test_total_32_fanout_0() (gas: 2841307)
+Logs:
+  BENCH,total_32_fanout_0,32,0,0,32,2080,2180,224577,155767,55124
+  WIRE,total_32_fanout_0,3168,3264
+
+[PASS] test_total_32_fanout_1() (gas: 3026599)
+Logs:
+  BENCH,total_32_fanout_1,32,1,1,33,2177,2308,239613,164699,55612
+  WIRE,total_32_fanout_1,3296,3392
+
+[PASS] test_total_32_fanout_2() (gas: 3009965)
+Logs:
+  BENCH,total_32_fanout_2,32,2,1,34,2274,2404,247637,168793,56080
+  WIRE,total_32_fanout_2,3392,3488
+
+[PASS] test_total_32_fanout_4() (gas: 3198310)
+Logs:
+  BENCH,total_32_fanout_4,32,4,1,36,2468,2596,264044,177154,56980
+  WIRE,total_32_fanout_4,3584,3680
+
+[PASS] test_total_32_fanout_8() (gas: 3707605)
+Logs:
+  BENCH,total_32_fanout_8,32,8,1,40,2856,2980,296739,193586,58828
+  WIRE,total_32_fanout_8,3968,4064
+
+Suite result: ok. 43 passed; 0 failed; 0 skipped; finished in 417.24ms (1.93s CPU time)
+
+Ran 1 test suite in 417.97ms (417.24ms CPU time): 43 tests passed, 0 failed, 0 skipped (43 total tests)

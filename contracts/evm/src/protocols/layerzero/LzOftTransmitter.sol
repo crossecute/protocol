@@ -71,24 +71,27 @@ contract LzOftTransmitter is SignedTransmitter, ILzOftTransmitterInit {
     }
 
     /// @dev The same factory envelope is quoted and sent by this conduit through its OFT.
-    function _quoteSignedBootstrap(bytes32 chainKey, bytes memory body, bytes[] memory attributes)
+    function _quoteSignedBootstrap(bytes32, bytes memory route, bytes memory body, bytes[] memory attributes)
         internal
         view
         override
         returns (uint256)
     {
         (bytes memory recipient, bytes memory message) =
-            ILzOftSignedConduitFactory(transceiver).signedConduitBootstrap(chainKey, body);
+            ILzOftSignedConduitFactory(transceiver).signedConduitBootstrap(route, body);
         return _quoteMessage(recipient, message, attributes);
     }
 
     /// @dev Preserve composeFrom and record the destination before the external OFT call.
-    function _sendSignedBootstrap(bytes32 chainKey, bytes memory body, bytes[] memory attributes, uint256 fee)
-        internal
-        override
-    {
+    function _sendSignedBootstrap(
+        bytes32,
+        bytes memory route,
+        bytes memory body,
+        bytes[] memory attributes,
+        uint256 fee
+    ) internal override {
         (bytes memory recipient, bytes memory message) =
-            ILzOftSignedConduitFactory(transceiver).signedConduitBootstrap(chainKey, body);
+            ILzOftSignedConduitFactory(transceiver).signedConduitBootstrap(route, body);
         _sendMessage(recipient, message, attributes, fee);
     }
 
