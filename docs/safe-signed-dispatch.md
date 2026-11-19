@@ -659,10 +659,12 @@ How the pieces fit:
 
 ### LayerZero OFT signed transport
 
-`LzOftConduitFactory` selects signed mode at creation with the registry's check and without
-capturing authority. It stores no per-conduit mode or identity: `isSigned(conduit)` and
-`signedConduitBootstrap` read the conduit's own `isSigned()`, `deployer()` and `conduitSalt()` and
-require them to derive the caller, as `conduitBootstrap` does. Both modes use
+`LzOftConduitFactory` uses the same creation check as the registry. A compatible guard selects
+signed mode, and the owner's live graph must be derivable. The receiver's authority is selected
+at bootstrap. The conduit stores its creation-time mode, deployer and salt.
+`isSigned(conduit)` reports that mode for registered source conduits.
+`signedConduitBootstrap` reads the calling conduit's deployer and salt and checks its address
+against the stored route. Both modes use
 `keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot))` as their CREATE2 salt.
 The six-argument `predictConduit` exposes derivation; `isSigned(conduit)` and
 `SignedConduitCreated` expose the selected source mode. The route root authenticates OFT routing.
@@ -690,7 +692,7 @@ The real Safe fixture's one-route, three-owner, empty-setup bootstrap is 1,280 b
 928 bytes larger than the corresponding plain header encoding. Proofs, graph nodes, owners
 and setup calls change the complete wire size; signatures are absent from bootstrap.
 The Paris/solc 0.8.28 OFT transmitter runtime is 24,176 bytes (400 bytes of EIP-170 headroom),
-the receiver is 22,021 bytes, and the factory is 15,653 bytes.
+the receiver is 22,021 bytes, and the factory is 18,625 bytes.
 
 The focused OFT tests are in
 `contracts/evm/test/protocols/layerzero/LzOftSigned.t.sol`; real Safe 1.5.0/guard staging is
