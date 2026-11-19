@@ -158,6 +158,27 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
         assertEq(guard.selection(address(a)).authorityHash, _hash(_aGraph(_record(b), bHead0)));
     }
 
+    function testActivationCanNameAnEarlierExecutedChildPosition() public {
+        SafeAuthorityRecord memory earlier = _record(b);
+        _runBSwap(KEY_C, KEY_D);
+        AuthorityGraph memory graph = _aGraph(earlier, bHead0);
+        bytes memory data = abi.encodeCall(ISourceAuthorityGuard.activate, (_hash(graph)));
+        bytes32 digest = _txHash(a, address(guard), 0, data, Enum.Operation.Call);
+        _execStaged(
+            a,
+            address(guard),
+            data,
+            Enum.Operation.Call,
+            graph,
+            new ChildUpdate[](0),
+            _sign(_aSigners(KEY_D), digest),
+            _sign(_aSigners(KEY_C), digest)
+        );
+        assertEq(guard.selection(address(a)).authorityHash, _hash(graph));
+        assertTrue(_head(b) != bHead0);
+        assertTrue(b.isOwner(vm.addr(KEY_D)));
+    }
+
     function testActivationRejectsAnUnexecutedPosition() public {
         AuthorityGraph memory graph = _aGraph(_record(b), bytes32(uint256(0xBAD)));
         Batch.Call[] memory calls = _activationCalls(a, graph, _aSigners(KEY_C));

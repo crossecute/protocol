@@ -728,7 +728,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         assertEq(guard.selection(address(safe)).authorityHash, _hash(_graph(_record(safe))));
     }
 
-    function testUnactivatedSafeIsUnrestricted() public {
+    function testUnactivatedSafeAllowsPolicyApprovedOwnerChanges() public {
         bytes memory data = abi.encodeCall(safe.changeThreshold, (1));
         assertTrue(_exec(safe, _ab(), address(safe), 0, data, Enum.Operation.Call));
         assertEq(safe.getThreshold(), 1);
