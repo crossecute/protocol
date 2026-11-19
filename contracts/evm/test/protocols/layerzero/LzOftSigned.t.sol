@@ -175,6 +175,51 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         );
     }
 
+    /// @notice The factory keeps no mode record: it reads the flag the conduit holds.
+    function test_theFactoryReportsTheModeTheConduitHolds() public {
+        vm.prank(address(0xE0A));
+        LzOftTransmitter plain =
+            LzOftTransmitter(payable(factory.createTransmitter(keccak256("plain"), address(oft), _leaves(dstOft))));
+        assertFalse(plain.isSigned());
+        assertFalse(factory.isSigned(address(plain)));
+        assertFalse(factory.isSigned(address(this)), "an address the factory did not create");
+        assertTrue(factory.isSigned(address(transmitter)));
+    }
+
+    /// @notice Each bootstrap builder serves only the mode its caller was created in.
+    function test_eachBootstrapBuilderRefusesTheOtherModesConduit() public {
+        vm.prank(address(0xE0A));
+        LzOftTransmitter plain =
+            LzOftTransmitter(payable(factory.createTransmitter(keccak256("plain"), address(oft), _leaves(dstOft))));
+        bytes memory route = Erc7930.encodeEvmChain(DEST);
+
+        vm.prank(address(plain));
+        vm.expectRevert(LzOftConduitFactory.WrongBootstrapMode.selector);
+        factory.signedConduitBootstrap(route, "");
+
+        vm.prank(address(transmitter));
+        vm.expectRevert(LzOftConduitFactory.WrongBootstrapMode.selector);
+        factory.conduitBootstrap(route, address(safe), SALT, abi.encode(new Call[](0)));
+
+        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.UnknownConduit.selector, address(this)));
+        factory.signedConduitBootstrap(route, "");
+    }
+
+    /// @notice The signed builder derives the caller from the identity the conduit holds and
+    ///         names the same envelope the conduit's own bootstrap carries.
+    function test_theSignedBootstrapNamesTheConduitsOwnerAndSalt() public {
+        bytes memory route = Erc7930.encodeEvmChain(DEST);
+        vm.prank(address(transmitter));
+        (, bytes memory message) = factory.signedConduitBootstrap(route, hex"1234");
+        (, LzOftMessage.Bootstrap memory b,, bytes memory body) =
+            abi.decode(message, (uint256, LzOftMessage.Bootstrap, uint256, bytes));
+        assertEq(b.owner, address(safe));
+        assertEq(b.salt, SALT);
+        assertEq(body, hex"1234");
+        (,,, bytes32 root,) = factory.bootstrapRoute(address(transmitter), destKey);
+        assertEq(b.destRoot, root);
+    }
+
     function test_signedBootstrapAndProviderDeliveryShareReplayWithDirectSubmission() public {
         Bundle memory b = _bundle();
         LzOftReceiver receiver = _destination(b);

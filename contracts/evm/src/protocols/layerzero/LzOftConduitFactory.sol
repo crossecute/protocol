@@ -23,6 +23,12 @@ import {ISignedTransmitterInit} from "src/messaging/outbound/ISignedTransmitter.
 import {ISignedReceiverInit} from "src/messaging/inbound/ISignedReceiver.sol";
 import {Call} from "src/messaging/Call.sol";
 
+/// @dev A conduit's creation-time identity, which it fixes for life.
+interface IConduitIdentity {
+    function deployer() external view returns (address);
+    function conduitSalt() external view returns (bytes32);
+}
+
 /// @title LzOftConduitFactory
 /// @notice Creates every `layerzero-oft` conduit: the transmitter on its home, when its
 ///         operator calls `createTransmitter`, and each receiver, when the conduit's bootstrap
@@ -59,9 +65,6 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
 
     /// @notice Discriminator for the signed OFT bootstrap compose envelope.
     uint256 public constant SIGNED_BOOTSTRAP = uint256(keccak256("crossecute.layerzero-oft.signed-bootstrap.v1"));
-    mapping(address conduit => bool signed) public isSigned;
-    mapping(address conduit => address owner) internal _creationOwners;
-    mapping(address conduit => bytes32 salt) internal _creationSalts;
 
     address public immutable transmitterImplementation;
     address public immutable receiverImplementation;
@@ -168,9 +171,6 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
         );
 
         if (signed) ISignedTransmitterInit(conduit).initializeSigned();
-        isSigned[conduit] = signed;
-        _creationOwners[conduit] = msg.sender;
-        _creationSalts[conduit] = salt;
         _conduits[conduit] = Conduit(homeOft, homeEid, destRoot);
         _leafHashes[conduit] = hashes;
         for (uint256 i; i < leaves.length; ++i) {
@@ -211,11 +211,9 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
         view
         returns (bytes memory recipient, bytes memory message)
     {
-        Conduit memory a = _conduits[msg.sender];
-        if (a.homeOft == address(0)) revert UnknownConduit(msg.sender);
-        if (isSigned[msg.sender]) revert WrongBootstrapMode();
-        address derived = predictConduit(owner, salt, localChainKey, a.homeEid, a.homeOft, a.destRoot);
-        if (derived != msg.sender) revert NotTheConduit(msg.sender, derived);
+        Conduit memory a = _callerConduit();
+        _requireDerived(a, owner, salt);
+        if (ISignedTransmitterInit(msg.sender).isSigned()) revert WrongBootstrapMode();
         bytes32 chainKey = keccak256(route);
         Erc7930.Interop memory io = Erc7930.parseStrict(route);
         if (io.chainType != Erc7930.CT_EIP155) revert NotAnEvmChain(chainKey);
@@ -242,16 +240,18 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
         view
         returns (bytes memory recipient, bytes memory message)
     {
-        Conduit memory a = _conduits[msg.sender];
-        if (a.homeOft == address(0)) revert UnknownConduit(msg.sender);
-        if (!isSigned[msg.sender]) revert WrongBootstrapMode();
+        Conduit memory a = _callerConduit();
+        address owner = IConduitIdentity(msg.sender).deployer();
+        bytes32 salt = IConduitIdentity(msg.sender).conduitSalt();
+        _requireDerived(a, owner, salt);
+        if (!ISignedTransmitterInit(msg.sender).isSigned()) revert WrongBootstrapMode();
         bytes32 chainKey = ChainKey.fromIdentifier(route);
         Destination memory d = _destination(msg.sender, chainKey);
         Erc7930.Interop memory io = Erc7930.parseStrict(route);
         if (io.chainType != Erc7930.CT_EIP155) revert NotAnEvmChain(chainKey);
         LzOftMessage.Bootstrap memory b = LzOftMessage.Bootstrap(
-            _creationOwners[msg.sender],
-            _creationSalts[msg.sender],
+            owner,
+            salt,
             localChainKey,
             a.homeEid,
             a.homeOft,
@@ -261,6 +261,23 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
         );
         recipient = Erc7930.encode(io.chainType, io.chainRef, abi.encodePacked(address(this)));
         message = abi.encode(SIGNED_BOOTSTRAP, b, block.chainid, body);
+    }
+
+    /// @notice Whether `conduit` was created in signed mode.
+    function isSigned(address conduit) external view returns (bool) {
+        return _conduits[conduit].homeOft != address(0) && ISignedTransmitterInit(conduit).isSigned();
+    }
+
+    function _callerConduit() private view returns (Conduit memory a) {
+        a = _conduits[msg.sender];
+        if (a.homeOft == address(0)) revert UnknownConduit(msg.sender);
+    }
+
+    /// @dev `(owner, salt)` must derive the caller from its stored fields, so the compose names the
+    ///      conduit the destination derives.
+    function _requireDerived(Conduit memory a, address owner, bytes32 salt) private view {
+        address derived = predictConduit(owner, salt, localChainKey, a.homeEid, a.homeOft, a.destRoot);
+        if (derived != msg.sender) revert NotTheConduit(msg.sender, derived);
     }
 
     function _destination(address conduit, bytes32 chainKey) private view returns (Destination memory d) {
