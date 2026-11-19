@@ -30,8 +30,8 @@ interface ICrossecuteGuard {
     }
 
     event ApprovalCached(address indexed childSafe, bytes32 indexed messageHash);
-    /// @notice One per leaf of a `publishLeaves` call, in leaf order. The leaf bytes are in that
-    ///         call's calldata at `index`.
+    /// @notice One per leaf of a `publishLeaves` call, in leaf order. Recover the leaf from the
+    ///         indexed element in the guard call's input. Nested calls require a transaction trace.
     event LeafPublished(bytes32 indexed root, bytes32 indexed leafHash, uint256 index);
 
     error NoLiveRecord(address safe);
@@ -65,10 +65,8 @@ interface ICrossecuteGuard {
         returns (SignedSafeTx memory signedSafeTx);
 
     /// @notice Records the Merkle root of `leaves` and emits `LeafPublished` for each. Anyone may
-    ///         call, any number of times. Publication authorizes nothing: it only lets a Safe on
-    ///         this guard execute `registerRoot` for the root. A receiver checks the registration's
-    ///         signatures, not its execution or publication, so a direct submission there does
-    ///         not depend on this record.
+    ///         call, any number of times. The owner pre-hook checks this record for top-level
+    ///         `registerRoot` calls. Direct receiver submissions use the registration's quorum signatures.
     /// @dev Each element is a leaf's `abi.encode`d fields, which the guard does not decode. A leaf
     ///      hash is `keccak256(abi.encode(keccak256(leaf)))`. An internal node hashes its two children
     ///      smaller first. A level's unpaired last hash moves up unchanged. One leaf is its own root.

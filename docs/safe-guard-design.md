@@ -27,12 +27,11 @@ These are settled. The sections below describe each in full.
   multisig's choice; leaving it empty trusts enabled modules with their Safe permissions.
 - **Staging.** An owner transaction whose top-level selector is `sendMessage(bytes,bytes,bytes[])`
   or `bootstrap(bytes,bytes[])` is staged, whatever its target or operation. Both write the same
-  staged record. The complete signature blob is staged, with no size cap. The plain
-  `bootstrap(uint256,Call[],bytes[])` and `bootstrapTo` overloads are not staged.
+  staged record. The complete signature blob is staged, with no size cap. Plain protocol
+  transmitters use the same bootstrap selector and leave the record for the post-hook to clear.
 - **Leaf publication.** Anyone can publish a Merkle tree's ordered, encoded leaves to the guard,
-  which records the root and emits one event per leaf. An owner `registerRoot(bytes32)` reverts
-  unless its root is published on the Safe's guard, and stages nothing. Publication authorizes
-  nothing, and a receiver's direct submission does not require it.
+  which records the root and emits one event per leaf. The owner pre-hook checks publication
+  when `registerRoot(bytes32)` is the top-level Safe call. It stages nothing for registration.
 - **Consumption.** `consume(address safe)` is callable only by the signed target, once. The
   transmitter does not compare calldata or value with the record; the direct call from the Safe
   delivers what the owners signed.
@@ -99,7 +98,7 @@ things in the pre-hook, in this order:
    `bootstrap(bytes,bytes[])`, write a transient staged record for the calling Safe.
 3. **Approval capture.** If the operation is `DELEGATECALL` and the selector is
    `signMessage(bytes)`, write the persistent approval record for the calling Safe.
-4. **Root registration.** If the selector is `registerRoot(bytes32)`, revert unless the root is
+4. **Root registration.** If the top-level selector is `registerRoot(bytes32)`, revert unless the root is
    published. See [Merkle leaf publication](#merkle-leaf-publication).
 
 The selectors differ, so one transaction triggers at most one of steps 2 to 4. The
@@ -156,8 +155,8 @@ record, so a protected transmitter reached that way finds nothing to consume and
 
 For a Merkle dispatch ([#108](https://github.com/crossecute/protocol/issues/108)) the Safe signs
 only `registerRoot(bytes32)`. Each relay or direct submission carries one leaf and its proof,
-so the leaves must be available somewhere else. `publishLeaves(bytes[] leaves)` puts them in
-the calldata of an earlier source transaction.
+so the leaves must be available separately. The ordered leaves are in the input of the
+earlier `publishLeaves(bytes[] leaves)` call.
 
 **Publication.** Anyone can call `publishLeaves`, any number of times. Each element is one leaf's
 `abi.encode`d fields; the guard does not decode them. The guard hashes each leaf as
@@ -165,26 +164,30 @@ the calldata of an earlier source transaction.
 hashes its children smaller first, a level's unpaired last hash moves up unchanged, and one
 leaf is its own root), records the root, and emits `LeafPublished(root, leafHash, index)` for
 each leaf in order. An empty list reverts with `NoLeaves`. Records are keyed by root alone, so
-one publication serves every Safe on the guard. An indexer finds the publication transaction
-from the events, decodes the leaves from its calldata, and builds any leaf's proof.
+one publication serves every Safe on the guard.
 
-**Registration check.** In the pre-hook, an owner transaction with the `registerRoot` selector
+**Indexing.** Use the receipt events to find the publication transaction. For a direct call to
+the guard, decode the transaction input. For a publication through another contract, use a
+transaction trace that exposes the input of the guard call that emitted the events. Match
+events to their call if the transaction publishes more than once. Recompute the leaf hashes
+and root from that call's ordered leaves before building proofs. A publisher can call the
+guard directly to make the leaves recoverable with standard transaction and receipt data.
+
+**Registration check.** In the pre-hook, an owner transaction with the top-level `registerRoot` selector
 reverts with `RootNotPublished(root)` unless the guard has recorded the root. The root is the
 first word after the selector, as the transmitter's ABI decoder reads it. The revert undoes the
 whole Safe execution, so the nonce does not advance and the same signatures can execute after
-publication. The check does not look at the target: a Safe on this guard cannot call any
-contract's `registerRoot(bytes32)` with an unpublished root.
+publication. The guard applies this check to every target with that top-level selector.
+The inherited policy governs batched calls.
 
 **Nothing is staged.** The guard keeps no record of a registration's signatures. They are in the
 source `execTransaction` calldata, and whoever relays a leaf through the transmitter or submits
 it to the receiver supplies them from there.
 
-**What the check covers.** Publication is enforced only when `registerRoot` executes on the
-source chain, which is what the transmitter's relay path relies on. A receiver verifies the
-registration's signatures against its stored authority, not the source execution or the
-publication, so a direct submission there works for a root that is signed to quorum but never
-executed or published. Publication grants no authority to register or relay a root; each Safe
-still signs and executes its own `registerRoot`.
+The signed transmitter in #108 checks its owner Safe's installed guard for publication when
+`registerRoot` executes, including when the call is inside a batch. Provider leaf relays use
+that source registration. Direct receiver submission verifies the registration's quorum
+signatures against stored authority and can proceed without source registration or publication.
 
 **Cost.** Publication execution costs about 56,000 gas for one leaf and about 6,600 gas per
 further leaf, plus the leaves' calldata

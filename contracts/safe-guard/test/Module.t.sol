@@ -12,7 +12,7 @@ import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
-import {Collider, IPlainBootstrap, Sink, TestTransmitter} from "./TestTransmitter.sol";
+import {Collider, IUnstagedBootstrap, Sink, TestTransmitter} from "./TestTransmitter.sol";
 
 /// @dev Permits owner transactions only.
 contract OwnerOnlyPolicy is IPolicy {
@@ -81,7 +81,7 @@ contract Module {
 }
 
 /// @dev The guard in both slots, with a policy that has no fallback: owner self-calls go through
-///      `OwnerOnlyPolicy`, the module may call the sink and the plain bootstrap, and nothing else is
+///      `OwnerOnlyPolicy`, the module may call the sink and the unstaged bootstrap, and nothing else is
 ///      configured. `ModuleBootstrapTest` reruns these tests with `bootstrap` calldata.
 contract ModuleTest is GuardTestBase {
     Module internal module;
@@ -112,7 +112,7 @@ contract ModuleTest is GuardTestBase {
             _config(address(multiSend), multiSend.multiSend.selector, Operation.DELEGATECALL, address(ownerOnly));
         configs[6] = SafePolicyGuard.Configuration(
             address(guardedTransmitter),
-            IPlainBootstrap.bootstrap.selector,
+            IUnstagedBootstrap.bootstrap.selector,
             Operation.CALL,
             address(modulePolicy),
             abi.encode(address(module), true)

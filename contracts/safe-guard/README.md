@@ -8,7 +8,7 @@ Foundry project from [`contracts/evm/`](../evm/), which nothing here changes.
 
 | Path | What it holds |
 | --- | --- |
-| `src/CrossecuteGuard.sol` | The guard: `sendMessage` and `bootstrap` staging, consumption and cleanup, module rejection of both selectors and of `registerRoot`, child approval cache, Merkle leaf publication and the published-root check on `registerRoot` |
+| `src/CrossecuteGuard.sol` | Owner staging, consumption and cleanup, module selector checks, child approval caching, Merkle leaf publication and the publication check for top-level owner `registerRoot` calls |
 | `src/ICrossecuteGuard.sol` | What a transmitter, relayer or publisher calls: `consume`, `getApproval`, `publishLeaves`, `isPublished`, their structs, events and errors; the `SafeTx` struct the guard, transmitter and receiver share |
 | `src/GuardDiscovery.sol` | How a transmitter reads its owner Safe's transaction guard |
 | `src/SafeHashes.sol` | Safe 1.5.0's transaction hash, message hash and domain separator, computed without calling the Safe, for the guard and the receiver |
@@ -38,11 +38,11 @@ from a signature blob. Its `main` branch mirrors upstream.
 The staged selectors are `sendMessage(bytes,bytes,bytes[])` and `bootstrap(bytes,bytes[])`.
 The first is `IERC7786GatewaySource.sendMessage.selector`, imported from
 `contracts/evm/src/messaging/IErc7786.sol`, so the guard and the protocol cannot disagree on it.
-`contracts/evm/` has no `bootstrap(bytes,bytes[])` yet
-([#120](https://github.com/crossecute/protocol/issues/120)), so the guard declares it in a
-minimal `IBootstrap` interface. The plain `bootstrap(uint256,Call[],bytes[])` and `bootstrapTo`
-overloads have other selectors and are not staged. Nor does it have `registerRoot`, so
-`CrossecuteGuard.sol` declares `IRootRegistration` for the checked selector.
+`IBootstrap` mirrors the owner-facing selector of `TransmitterBase.bootstrap`. Plain transmitters
+leave the staged record for post-hook cleanup. `IRootRegistration` declares the signed
+transmitter selector that the guard checks. See the
+[publication and registration rules](../../docs/safe-guard-design.md#merkle-leaf-publication)
+for indexer inputs and the scope of the pre-hook check.
 
 ## Build and chain support
 
