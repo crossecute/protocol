@@ -450,8 +450,8 @@ library GovernancePlan {
             calls = _push(calls, scheduleRegistry(p, x));
             gas += scheduleGas(p, x);
         }
-        bytes memory data =
-            abi.encodeCall(TransmitterBase.bootstrap, (x.chainId, calls, GasAttribute.forMultisig(name, gas)));
+        bytes memory payload = Payload.encodeBootstrap(Erc7930.encodeEvmChain(x.chainId), Payload.encodeCalls(calls));
+        bytes memory data = abi.encodeCall(TransmitterBase.bootstrap, (payload, GasAttribute.forMultisig(name, gas)));
         txs = _push(txs, Tx(conduit, 0, data));
     }
 

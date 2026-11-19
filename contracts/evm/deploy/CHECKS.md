@@ -178,12 +178,13 @@ the same message costs delivered to a contract that does nothing:
 
 | Delivery | CCIP | Hyperlane | LayerZero | OP Stack | Wormhole |
 | --- | --- | --- | --- | --- | --- |
-| Bootstrap to a plain transceiver, no calls | 624,484 | 623,943 | 678,164 | 629,844 | 668,001 |
-| The same with one call to an address with no code | 631,141 | 630,606 | 684,818 | 636,605 | 675,771 |
-| Report arriving at the home transceiver | 127,263 | 126,730 | 127,381 | 124,485 | n/a (170,877) |
-| Payload to an existing receiver, no calls | 24,891 | 24,382 | 27,612 | 23,171 | 67,651 |
+| Bootstrap to a plain transceiver, no calls | 443,017 | 442,478 | 496,641 | 445,520 | 486,538 |
+| The same with one call to an address with no code | 449,273 | 448,740 | 502,895 | 451,875 | 493,908 |
+| Report arriving at the home transceiver | 122,539 | 122,007 | 122,680 | 119,734 | n/a (166,165) |
+| Payload to an existing receiver, no calls | 22,563 | 22,054 | 25,284 | 20,806 | 65,323 |
 
-Measured 2026-10-25 against mock gateways. Wormhole's numbers include verifying the VAA
+Measured 2026-11-08 at `994a586`, with Forge 1.8.1 and the repository's compiler settings,
+against mock gateways. Wormhole's numbers include verifying the VAA
 and recording it consumed, inside the receiver; its mock Core checks no guardian signatures,
 so a real delivery costs more. A payload's default also pays for the caller's calls, so the
 row is only the receiver's share. Wormhole reaches no reporting chain, so it never carries a
@@ -195,11 +196,11 @@ the receiver's frame; the OFT's own lzReceive gas is the operator's enforced opt
 
 | Delivery, `layerzero-oft` | Gas |
 | --- | --- |
-| Bootstrap to the factory, 1 destination, no calls | 651,291 |
-| Bootstrap to the factory, 8 destinations, one call | 659,121 |
-| Payload to an existing receiver, no calls | 34,246 |
+| Bootstrap to the factory, 1 destination, no calls | 469,125 |
+| Bootstrap to the factory, 8 destinations, one call | 476,545 |
+| Payload to an existing receiver, no calls | 31,844 |
 
-Measured 2026-10-25 against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
+Measured 2026-11-08 against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
 (`test/fork/LzOftFork.t.sol`) measures the same way through frxUSD, homed on Fraxtal, on a fork
 of each destination: lzCompose through the real `EndpointV2` into the factory or the receiver,
 and the real OFT's `lzReceive` frame against the lzReceive gas the Fraxtal lockbox enforces for
@@ -207,14 +208,15 @@ a send with a compose message (250,000 to both):
 
 | Delivery through frxUSD, from Fraxtal, no calls | Ethereum | Arbitrum |
 | --- | --- | --- |
-| Bootstrap, lzCompose into the factory, 2 destinations | 649,133 | 649,218 |
-| Bootstrap, the OFT's `lzReceive` | 105,826 | 85,369 |
-| Payload, lzCompose into the receiver | 42,138 | 42,081 |
+| Bootstrap, lzCompose into the factory, 2 destinations | 469,736 | 469,821 |
+| Bootstrap, the OFT's `lzReceive` | 105,814 | 85,357 |
+| Payload, lzCompose into the receiver | 39,773 | 39,716 |
 | Payload, the OFT's `lzReceive` | 97,337 | 76,878 |
 
-Measured 2026-10-25. A payload costs about 7,900 more than against the mocks and a bootstrap
-about 2,100 less; each stays well under its default. The `lzReceive` figure leaves out the
-endpoint's clearing of the verified payload around it.
+Measured 2026-11-09 through public RPCs, on the code the mock rows were measured on. A payload
+costs about 7,900 more than against the mocks and a bootstrap about 600 to 700 more; each stays
+well under its default. The `lzReceive` figure leaves out the endpoint's clearing of the
+verified payload around it.
 
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
 250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote
@@ -307,15 +309,17 @@ its one address, and, per candidate OFT, the prerequisites O1 to O7 of
 [`layerzero-oft-spec.md` §2](../../../docs/layerzero-oft-spec.md#2-oft-prerequisites).
 
 **Placement.** The factory and its two logic contracts deploy through Arachnid's factory at
-salt zero (§1), so the address follows from their bytecode alone. A dry run prints it, and it
-must be empty until the deploy:
+salt zero (§1), with the canonical treasury address from `governance.toml` as a factory
+argument. Deploy the chain treasury with `DeployChain.s.sol` first. A dry run prints the
+factory address, and it must be empty until the deploy:
 
 ```sh
-forge script script/DeployLzOft.s.sol --rpc-url $RPC        # factory: 0x96ef3e86a1e5Ce9F8A0c30CD0411d7778480Dd32
-cast code 0x96ef3e86a1e5Ce9F8A0c30CD0411d7778480Dd32 --rpc-url $RPC   # 0x until deployed
+forge script script/DeployLzOft.s.sol --rpc-url $RPC
+cast code <factory-address-from-dry-run> --rpc-url $RPC   # 0x until deployed
 ```
 
-Any change to the three contracts moves the address, so it is rerun after one. The script
+Changing compiled initcode or the treasury address moves the factory, so rerun the check
+after either changes and use the same treasury address on every chain. The script
 refuses a chain `chains.toml` does not list as `parity`.
 
 **Per OFT.** `<oft>` is the OFT on the chain `RPC` reaches, `<eid>` the other end's eid, and
@@ -378,3 +382,35 @@ for it was not checked.
   before `markLive`, so an unverified deployer-placed contract at that address could originate
   messages if a route to the chain exists. Routes and peers wait for `markLive`; nothing enforces
   it.
+
+## CCIP 2.0 options
+
+Existing CCIP checks and recorded results do not establish V3 compatibility. V3 is
+initially disabled for every outbound lane. Before the transceiver owner calls
+`setCcipV3Lane(selector, true, evidenceHash)`:
+
+1. Verify the source lane's deployed OnRamp/FeeQuoter supports V3 and the destination
+   OffRamp supports the receiver policy interface. Record contract addresses, versions,
+   block numbers, direction, and date. Do not infer this from the npm package version.
+2. Quote representative V3 messages with defaults and every intended custom option.
+   Confirm the reverse direction independently where it is used. An arbitrary quote
+   failure is not evidence that fallback to V2 is safe.
+3. Check the configured CCVs, executor, and finality modes on that lane. Confirm that
+   receiver/transceiver inbound policies are satisfiable, including automatic reports
+   which still send without attributes. A receiver policy that becomes unsatisfiable also
+   blocks the message that would reset it
+   ([options guide](../../../docs/ccip-v2.md#configure-inbound-policies)).
+4. Validate actual delivery, full-finality rejection of faster requests, policy updates
+   with pending messages, No Exec/manual execution, and delivery gas on the target VM.
+5. Store the results in this file or a linked versioned record and use its content hash
+   as evidenceHash. The contract records this hash in an event; it does not verify the
+   evidence or detect lane versions itself.
+
+No V3 lane checks have been recorded by this refactor, and no lane is enabled by it.
+Local option and actual OffRamp/Router tests for
+[issue #150](https://github.com/crossecute/protocol/issues/150), together with successful
+zkSync/Tron compilation, are recorded in
+[the local validation report](../../../docs/ccip-v2-validation.md). Production lane
+evidence and native deployment/delivery-gas checks remain tracked in
+[deployment issue #118](https://github.com/crossecute/protocol/issues/118).
+See [the CCIP options guide](../../../docs/ccip-v2.md) for configuration and defaults.

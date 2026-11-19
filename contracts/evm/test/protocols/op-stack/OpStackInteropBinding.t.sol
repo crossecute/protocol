@@ -14,7 +14,8 @@ import {
     ProviderSendSpec,
     ProviderReceiveSpec,
     ProviderEvmRecipientSpec,
-    ProviderTransmitterSpec
+    ProviderTransmitterSpec,
+    ProviderTransmitterFixture
 } from "test/protocols/ProviderBindingSpec.t.sol";
 import {OpStackInteropFixture} from "test/protocols/op-stack/OpStackInteropFixture.sol";
 import {ext} from "test/Harness.sol";
@@ -81,3 +82,5 @@ contract OpStackInteropReceiveTest is ProviderReceiveSpec, OpStackInteropFixture
 }
 
 contract OpStackInteropTransmitterInboundTest is ProviderTransmitterSpec, OpStackInteropFixture {}
+
+contract OpStackInteropTransmitterFeeTest is ProviderTransmitterFixture, OpStackInteropFixture {}

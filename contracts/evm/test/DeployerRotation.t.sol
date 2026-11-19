@@ -8,7 +8,7 @@ import {proxyDeployer} from "script/deploy/ProxyDeploy.sol";
 import {ProxyDeployer} from "src/conduit/ProxyDeployer.sol";
 import {Proxy} from "src/conduit/Proxy.sol";
 import {Sym, Rcv, RecordingTransmitter} from "test/Transceiver.t.sol";
-import {transceiverConfig, ext} from "test/Harness.sol";
+import {transceiverConfig, ext, bootstrapPayload} from "test/Harness.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
@@ -292,7 +292,7 @@ contract DeployerRotationTest is Test {
 
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.DestinationNotLive.selector, _key(OP)));
-        conduit.bootstrap(OP, _calls(), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(OP, _calls()), new bytes[](0));
         assertFalse(conduit.isBootstrappedOn(OP), "nothing recorded");
 
         vm.expectRevert(notBootstrapped);
@@ -303,7 +303,7 @@ contract DeployerRotationTest is Test {
 
         registry.markLive(_key(OP), ext(address(eth)).messageProvider());
         vm.prank(alice);
-        conduit.bootstrap(OP, _calls(), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(OP, _calls()), new bytes[](0));
         assertTrue(conduit.isBootstrappedOn(OP));
         bytes memory receiver = conduit.recipientOn(OP);
         vm.prank(alice);

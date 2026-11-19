@@ -385,7 +385,7 @@ contract WormholeTransmitterSendTest is ProviderTransmitterSendSpec, WormholeFix
         vm.warp(block.timestamp + 30 days);
         vm.prank(CONDUIT_OWNER);
         TransmitterBase(conduit).sendMessage(recipient, "x", _publishOnly());
-        assertEq(before - conduit.balance, CORE_MESSAGE_FEE);
+        assertEq(before - conduit.balance, CORE_MESSAGE_FEE + CORE_MESSAGE_FEE / 10);
         assertEq(executor.requestsLength(), requests, "no relay provider paid");
         assertEq(core.published(core.publishedLength() - 1).emitter, conduit);
     }

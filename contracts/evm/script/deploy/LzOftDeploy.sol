@@ -21,14 +21,15 @@ library LzOftDeploy {
     /// @notice The factory, deployed with its logic through Arachnid's factory at salt zero on
     ///         first use, so all three sit at one address on every chain that runs the same
     ///         initcode.
-    function factory() internal returns (LzOftConduitFactory f) {
+    function factory(address treasury) internal returns (LzOftConduitFactory f) {
         address t = arachnidDeploy(type(LzOftTransmitter).creationCode);
         address r = arachnidDeploy(type(LzOftReceiver).creationCode);
         f = LzOftConduitFactory(
-            arachnidDeploy(abi.encodePacked(type(LzOftConduitFactory).creationCode, abi.encode(t, r)))
+            arachnidDeploy(abi.encodePacked(type(LzOftConduitFactory).creationCode, abi.encode(t, r, treasury)))
         );
         check(f.transmitterImplementation() == t, "the factory arms transmitters with the logic beside it");
         check(f.receiverImplementation() == r, "the factory arms receivers with the logic beside it");
+        check(f.treasury() == treasury, "the factory fixes the fee treasury");
         check(f.localChainKey() == ChainKey.local(), "the factory names this chain");
     }
 

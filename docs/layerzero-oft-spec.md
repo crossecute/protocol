@@ -28,8 +28,9 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
   destination (`LzOftMessage.leaf`).
 - **Destination root**: the root `LzOftMessage.root` computes over a conduit's leaves, in
   ascending `chainKey` order. Bound into the conduit's address.
-- **Factory**: `LzOftConduitFactory`, the CREATE2 deployer of every conduit of this binding, and the
-  compose target of every bootstrap.
+- **Factory**: `LzOftConduitFactory`, the CREATE2 deployer of every conduit of this binding, the
+  builder of every bootstrap's compose on the home (`conduitBootstrap`), and its target on each
+  destination.
 
 ## 2. OFT prerequisites
 
@@ -54,6 +55,10 @@ them for a candidate.
 
 - **L1.1** The factory and its two logic contracts MUST be deployed through Arachnid's factory
   at salt zero, with no constructor argument that varies by chain (`LzOftDeploy.factory`).
+  The factory's immutable treasury MUST be the same address on every chain, alongside its
+  logic addresses. `DeployLzOft` reads governance configuration, predicts the chain treasury,
+  and requires it to be deployed first. Changing that address changes the factory and conduit
+  addresses; it cannot redirect fees from existing deployments.
 - **L1.2** A conduit's CREATE2 salt MUST be
   `keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot))`, deployed by
   the factory with `Proxy`'s initcode (`LzOftConduitFactory.conduitSalt`, `predictConduit`), where
@@ -72,8 +77,9 @@ them for a candidate.
 - **L2.3** Every send and quote MUST refuse a destination its home OFT no longer peers as the
   conduit recorded or created it (`LzOftMessage.requirePeer`).
 - **L2.4** A bootstrap MUST be sent to the factory, and carry
-  `LzOftMessage.Bootstrap(owner, salt, homeChainKey, homeEid, homeOft, destRoot, proof, calls)`, with
-  the proof the home factory builds from the stored leaves. A message MUST be sent to the
+  `LzOftMessage.Bootstrap(owner, salt, homeChainKey, homeEid, homeOft, destRoot, proof, calls)` as the
+  home factory's `conduitBootstrap` builds it from the stored leaves, for the conduit its
+  `(owner, salt)` derive. A message MUST be sent to the
   receiver, with the payload as `composeMsg`.
 - **L2.5** The only attribute MUST be `LzMessage.OPTIONS_ATTRIBUTE`, which replaces the
   default lzCompose option whole.
@@ -82,6 +88,9 @@ them for a candidate.
 
 - **L3.1** Every send MUST have `amountLD` and `minAmountLD` of 0. No binding carries value
   but its fee.
+
+Routine sends pay the Crossecute fee in [R7.7](provider-spec.md#r7-fees-and-value), using
+this factory's fixed treasury. Bootstrap still pays only its provider quote.
 
 ### L4. The bootstrap at a destination
 
@@ -112,8 +121,8 @@ them for a candidate.
 - **The OFT is fixed.** An operator replaces it by upgrading it in place, or by migrating to a
   new OFT and a new conduit.
 - **No zkSync or Tron.** Their CREATE2 formulas place the factory's conduits elsewhere.
-- **No `Call`-less destinations.** The portable bootstrap form reaches the factory's absent
-  `quoteBootstrapElements` and reverts.
+- **No `Call`-less destinations.** A bootstrap or its quote to a chain that is not `eip155`
+  reverts `NotAnEvmChain` in the factory's `conduitBootstrap`, before the OFT is asked.
 
 ## 5. Compliance
 
@@ -126,7 +135,7 @@ the conduit).
 | L1.1 | `LzOftForkTest`, which deploys through `LzOftDeploy.factory` on each fork and compares the addresses |
 | L1.2 | `test_theConduitLandsWhereItsFieldsDerive`, `testFuzz_everyDestinationProvesIntoTheRoot`, `test_theHomeEidIsBoundIntoTheAddress` |
 | L1.3 | `test_noDestinationsIsRefused`, `test_unsortedOrRepeatedLeavesAreRefused`, `test_aLeafForThisChainIsRefused`, `test_aLeafWithTheHomesEidIsRefused`, `test_aLeafTheHomeOftDoesNotPeerIsRefused`, `test_aHomeOftWithoutAnEndpointIsRefused` |
-| L2.1, L2.4 | `test_theBootstrapGoesThroughTheHomeOftFromTheConduit`, `test_aMessageGoesToTheReceiverWithThePayloadAsTheCompose`, `LzOftForkTest` |
+| L2.1, L2.4 | `test_theBootstrapGoesThroughTheHomeOftFromTheConduit`, `test_aMessageGoesToTheReceiverWithThePayloadAsTheCompose`, `test_theBootstrapIsBuiltFromTheConduitsFields`, `test_aBootstrapForAnotherCallerOrIdentityIsRefused`, `LzOftForkTest` |
 | L2.2 | the same two, which compare the value paid with the quote |
 | L2.3 | `test_aRePeeredHomeOftRefusesTheBootstrapAndItsQuote`, `test_aRePeerAfterTheBootstrapRefusesMessages` |
 | L2.5 | `test_theOptionsAttributeReplacesTheDefaultWhole`, `test_aSecondAttributeIsRefused`, `test_anotherBindingsAttributeIsRefused`, `test_onlyTheOptionsAttributeIsSupported` |

@@ -170,9 +170,11 @@ contract GovernancePlanTest is Test {
 
             for (uint256 j; j < bootstraps.length; ++j) {
                 if (bytes4(bootstraps[j].data) != TransmitterBase.bootstrap.selector) continue;
-                (uint256 chainId, Call[] memory calls,) =
-                    abi.decode(_args(bootstraps[j].data), (uint256, Call[], bytes[]));
-                if (chainId == x.chainId) _arrive(p, x, bootstraps[j].to, calls);
+                (bytes memory payload,) = abi.decode(_args(bootstraps[j].data), (bytes, bytes[]));
+                (bytes memory identifier, bytes memory body) = abi.decode(payload, (bytes, bytes));
+                if (ChainKey.fromIdentifier(identifier) == ChainKey.forEvm(x.chainId)) {
+                    _arrive(p, x, bootstraps[j].to, abi.decode(body, (Call[])));
+                }
             }
             Tx memory execute = GovernancePlan.executeRegistry(p, x);
             vm.warp(block.timestamp + p.g.timelockDelay);

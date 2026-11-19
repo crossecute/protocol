@@ -22,7 +22,8 @@ import {
     AnyGatewayReceiver,
     SharedAddressTransceiver,
     AnyGatewayTransmitter,
-    ext
+    ext,
+    bootstrapPayload
 } from "test/Harness.sol";
 import {TransceiverCore} from "src/messaging/transceiver/TransceiverCore.sol";
 import {IBootstrapAllowlist} from "src/messaging/transceiver/IBootstrapAllowlist.sol";
@@ -496,7 +497,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
         vm.startPrank(owner);
         conduit = Transmitter(payable(homeSide.createTransmitter(SALT)));
         vm.deal(address(conduit), 1 ether);
-        conduit.bootstrap(REMOTE_CHAIN, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(REMOTE_CHAIN, new Call[](0)), new bytes[](0));
         vm.stopPrank();
     }
 
@@ -548,7 +549,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransmitterBase.AlreadyBootstrapped.selector, remoteKey));
-        conduit.bootstrap(REMOTE_CHAIN, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(REMOTE_CHAIN, new Call[](0)), new bytes[](0));
     }
 
     /* ======================== no payload runs on a homeSide ========================= */
@@ -770,7 +771,7 @@ contract BootstrapFeeTest is Test {
     function test_aParityDestinationIsNotCharged() public {
         assertEq(ext(address(t)).bootstrapFee(parityKey), 0);
         vm.prank(owner);
-        conduit.bootstrap(PARITY, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(PARITY, new Call[](0)), new bytes[](0));
         assertEq(treasury.balance, 0);
     }
 
@@ -781,11 +782,11 @@ contract BootstrapFeeTest is Test {
         ext(address(t)).setBootstrapFee(divergingKey, 0);
 
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
-        conduit.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.quoteBootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
-        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
     }
 
     /// @dev A zero fee is the owner's halt for bootstraps to a reporting destination (#78), so
@@ -795,12 +796,12 @@ contract BootstrapFeeTest is Test {
         ext(address(t)).setBootstrapFee(divergingKey, 0);
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
-        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
 
         vm.prank(t.owner());
         ext(address(t)).setBootstrapFee(divergingKey, FEE);
         vm.prank(owner);
-        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
         assertEq(treasury.balance, FEE, "charged the restored fee");
     }
 
@@ -818,7 +819,7 @@ contract BootstrapFeeTest is Test {
         t.quoteBootstrap(divergingKey, owner, SALT, new Call[](0), new bytes[](0));
         vm.prank(owner);
         vm.expectRevert(refused);
-        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
         vm.expectRevert(refused);
         t.quoteBootstrapElements(divergingKey, owner, SALT, elements, new bytes[](0));
         vm.prank(address(conduit));
@@ -828,7 +829,7 @@ contract BootstrapFeeTest is Test {
         list.allow(address(conduit));
         t.quoteBootstrapElements(divergingKey, owner, SALT, elements, new bytes[](0));
         vm.prank(owner);
-        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
     }
 
     /// @dev Only the owner sets or clears it; cleared, every conduit bootstraps again.
@@ -848,7 +849,7 @@ contract BootstrapFeeTest is Test {
         vm.stopPrank();
 
         vm.prank(owner);
-        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
     }
 
     /// @dev The operator prices and halts bootstraps without the owner, whose actions off the
@@ -863,12 +864,12 @@ contract BootstrapFeeTest is Test {
         ext(address(t)).setBootstrapFee(divergingKey, 0);
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.NoBootstrapFee.selector, divergingKey));
-        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
 
         vm.prank(operator);
         ext(address(t)).setBootstrapFee(divergingKey, FEE);
         vm.prank(owner);
-        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
     }
 
     /// @dev Only the owner names or removes the operator, and a removed one sets nothing.
@@ -898,7 +899,7 @@ contract BootstrapFeeTest is Test {
     ///      there is no balance to direct later and nothing to confuse with a provider refund.
     function test_theFeeGoesStraightToTheTreasury() public {
         vm.prank(owner);
-        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
 
         assertEq(treasury.balance, FEE, "paid, not accrued");
         assertEq(address(t).balance, 0, "and the transceiver holds none of it");
@@ -908,7 +909,7 @@ contract BootstrapFeeTest is Test {
     ///      only place a fee is ever withdrawn from now.
     function test_theMsigMovesFeesOnFromTheTreasury() public {
         vm.prank(owner);
-        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
 
         vm.prank(msig);
         Treasury(payable(treasury)).withdraw(msig, FEE);
@@ -929,12 +930,12 @@ contract BootstrapFeeTest is Test {
     /// @dev A conduit that cannot cover the quote, fee included, sends nothing and pays
     ///      nobody.
     function test_anUnfundedConduitCannotBootstrap() public {
-        uint256 quote = conduit.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        uint256 quote = conduit.quoteBootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
         vm.deal(address(conduit), quote - 1);
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransmitterBase.InsufficientBalance.selector, quote, quote - 1));
-        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
         assertEq(treasury.balance, 0);
     }
 
@@ -950,11 +951,11 @@ contract BootstrapFeeTest is Test {
     /// @dev The conduit pays exactly its quote, whatever it holds, and the binding is told
     ///      what is left after the fee.
     function test_theConduitPaysTheQuoteAndTheBindingSeesItLessTheFee() public {
-        uint256 quote = conduit.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        uint256 quote = conduit.quoteBootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
         uint256 before = address(conduit).balance;
 
         vm.prank(owner);
-        conduit.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
 
         assertEq(before - address(conduit).balance, quote, "the quote, not the balance");
         assertEq(t.lastSendValue(), quote - FEE, "message value, fee already taken");
@@ -965,10 +966,10 @@ contract BootstrapFeeTest is Test {
     function test_attachedValueStaysOnTheConduit() public {
         vm.deal(address(conduit), 0);
         vm.deal(owner, 1 ether);
-        uint256 quote = conduit.quoteBootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        uint256 quote = conduit.quoteBootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
 
         vm.prank(owner);
-        conduit.bootstrap{value: 1 ether}(DIVERGING, new Call[](0), new bytes[](0));
+        conduit.bootstrap{value: 1 ether}(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
 
         assertEq(address(conduit).balance, 1 ether - quote);
         assertEq(t.lastSendValue(), quote - FEE);
@@ -1015,7 +1016,7 @@ contract BootstrapFeeTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.FeeTransferFailed.selector, rejecting, FEE));
-        a.bootstrap(DIVERGING, new Call[](0), new bytes[](0));
+        a.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));
     }
 }
 

@@ -11,6 +11,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///      absence rather than a guard, and no gateway is granted here.
 contract CcipTransmitter is OwnableTransmitter {
     bytes4 public constant CCIP_EXTRA_ARGS_ATTRIBUTE = CcipMessage.EXTRA_ARGS_ATTRIBUTE;
+    bytes4 public constant CCIP_EXTRA_ARGS_V3_ATTRIBUTE = CcipMessage.EXTRA_ARGS_V3_ATTRIBUTE;
 
     /// @notice CCIP Router on this chain. Set on the implementation; safe because the
     ///         implementation address lives in the proxy's ERC-1967 slot, not its
@@ -33,7 +34,7 @@ contract CcipTransmitter is OwnableTransmitter {
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint64 setter
         uint64 selector = uint64(providerIdOf(transceiver, recipient));
-        CcipMessage.send(router, selector, recipient, payload, attributes, value, _defaultGas(payload));
+        CcipMessage.send(router, selector, recipient, payload, attributes, value, _defaultGas(payload), transceiver);
         return bytes32(0);
     }
 
@@ -45,10 +46,10 @@ contract CcipTransmitter is OwnableTransmitter {
     {
         // forge-lint: disable-next-line(unsafe-typecast) set through a uint64 setter
         uint64 selector = uint64(providerIdOf(transceiver, recipient));
-        return CcipMessage.quote(router, selector, recipient, payload, attributes, _defaultGas(payload));
+        return CcipMessage.quote(router, selector, recipient, payload, attributes, _defaultGas(payload), transceiver);
     }
 
     function supportsAttribute(bytes4 selector) external pure override returns (bool) {
-        return selector == CCIP_EXTRA_ARGS_ATTRIBUTE;
+        return selector == CCIP_EXTRA_ARGS_ATTRIBUTE || selector == CCIP_EXTRA_ARGS_V3_ATTRIBUTE;
     }
 }

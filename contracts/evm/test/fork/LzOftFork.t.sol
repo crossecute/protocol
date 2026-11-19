@@ -16,6 +16,7 @@ import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftDeploy, LzOftDestination} from "script/deploy/LzOftDeploy.sol";
 import {DeliveryGasMeter} from "test/protocols/DeliveryGasMeter.sol";
+import {bootstrapPayload} from "test/Harness.sol";
 
 /// @dev `OAppOptionsType3`, which this repo does not vendor.
 interface IEnforcedOptions {
@@ -108,7 +109,7 @@ abstract contract LzOftForkBase is Test {
 
     /// @dev On the Fraxtal fork, funded for every send's fee.
     function _createConduit(LzOftConduitFactory.Leaf[] memory leaves) internal {
-        factory = LzOftDeploy.factory();
+        factory = LzOftDeploy.factory(address(0x7EA5));
         conduit = LzOftTransmitter(payable(factory.createTransmitter(SALT, FRAXTAL_OFT, leaves)));
         vm.deal(address(conduit), 100 ether);
     }
@@ -165,10 +166,10 @@ contract LzOftForkTest is LzOftForkBase {
     function _bootstrap(uint256 chainId, uint256 fork, address dstOft) internal {
         vm.selectFork(fraxtal);
         Call[] memory calls = _commitCall(keccak256(abi.encode("bootstrap", chainId)));
-        uint256 quote = conduit.quoteBootstrap(chainId, calls, new bytes[](0));
+        uint256 quote = conduit.quoteBootstrap(bootstrapPayload(chainId, calls), new bytes[](0));
         assertGt(quote, 0, "the lockbox's enforced options price a compose send");
         vm.recordLogs();
-        conduit.bootstrap(chainId, calls, new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(chainId, calls), new bytes[](0));
         bytes memory packet = _sentPacket();
         (,,, bytes32 sendTo, uint64 amountSD, bytes32 composeFrom) = reader.read(packet);
         assertEq(sendTo, bytes32(uint256(uint160(address(factory)))), "to the factory");
@@ -176,7 +177,7 @@ contract LzOftForkTest is LzOftForkBase {
         assertEq(composeFrom, bytes32(uint256(uint160(address(conduit)))), "composeFrom is the conduit");
 
         vm.selectFork(fork);
-        assertEq(address(LzOftDeploy.factory()), address(factory), "one factory address on every chain");
+        assertEq(address(LzOftDeploy.factory(address(0x7EA5))), address(factory), "one factory address on every chain");
         _land(dstOft, address(factory), packet);
 
         LzOftReceiver r = LzOftReceiver(payable(address(conduit)));
@@ -237,11 +238,11 @@ contract LzOftForkDeliveryGasTest is LzOftForkBase, DeliveryGasMeter {
         vm.selectFork(fraxtal);
         uint256 enforced = reader.lzReceiveGas(IEnforcedOptions(FRAXTAL_OFT).enforcedOptions(eid, SEND_AND_CALL));
         vm.recordLogs();
-        conduit.bootstrap(chainId, new Call[](0), new bytes[](0));
+        conduit.bootstrap(bootstrapPayload(chainId, new Call[](0)), new bytes[](0));
         bytes memory packet = _sentPacket();
 
         vm.selectFork(fork);
-        assertEq(address(LzOftDeploy.factory()), address(factory), "one factory address on every chain");
+        assertEq(address(LzOftDeploy.factory(address(0x7EA5))), address(factory), "one factory address on every chain");
         _deliver(oft, packet, address(factory), enforced, DeliveryGas.BOOTSTRAP, string.concat(chain, ", bootstrap"));
         assertGt(address(conduit).code.length, 0, "the receiver exists");
 

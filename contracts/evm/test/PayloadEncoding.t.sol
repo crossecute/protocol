@@ -43,6 +43,10 @@ contract PayloadHarness {
         return Payload.decodeElements(wire);
     }
 
+    function decodeBootstrap(bytes calldata payload) external pure returns (bytes memory, bytes memory) {
+        return Payload.decodeBootstrap(payload);
+    }
+
     function isTypedDestination(bytes calldata identifier) external pure returns (bool) {
         return Payload.isTypedDestination(identifier);
     }
@@ -163,6 +167,32 @@ contract PayloadEncodingTest is Test {
         for (uint256 i; i < elements.length; ++i) {
             assertEq(back[i], elements[i]);
         }
+    }
+
+    /// The transmitter decodes a body it holds in memory, and a receiver its payload in
+    /// calldata; both must read one wire the same way.
+    function test_theMemoryDecodersAgreeWithTheCalldataOnes() public view {
+        bytes memory typedWire = Payload.encodeCalls(_calls());
+        Call[] memory fromCalldata = harness.decodeCalls(typedWire);
+        Call[] memory fromMemory = Payload.decodeCallsFromMemory(typedWire);
+        assertEq(keccak256(abi.encode(fromMemory)), keccak256(abi.encode(fromCalldata)));
+
+        bytes memory opaqueWire = Payload.encodeElements(Calls.encodeAll(_calls()));
+        assertEq(
+            keccak256(abi.encode(Payload.decodeElementsFromMemory(opaqueWire))),
+            keccak256(abi.encode(harness.decodeElements(opaqueWire)))
+        );
+    }
+
+    /// The plain bootstrap payload carries its destination and a body in that destination's
+    /// wire form, which decodes as `sendMessage`'s payload would.
+    function test_theBootstrapPayloadRoundTrips() public view {
+        bytes memory identifier = Erc7930.encodeEvmChain(8453);
+        (bytes memory gotIdentifier, bytes memory body) =
+            harness.decodeBootstrap(Payload.encodeBootstrap(identifier, Payload.encodeCalls(_calls())));
+
+        assertEq(gotIdentifier, identifier);
+        assertEq(body, Payload.encodeCalls(_calls()));
     }
 
     /// There is no tag, and nothing needs one. The form is a property of the destination:

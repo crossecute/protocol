@@ -14,12 +14,13 @@ the seventh; what they mean for an operator is in the README.
 ## 1. Measurements before mainnet
 
 [`deploy/CHECKS.md`](../contracts/evm/deploy/CHECKS.md) holds the checks and their results
-(2026-10-07; §4's destination gas and §7's `layerzero-oft` checks, 2026-10-25).
+(2026-10-07; §4's mock EVM destination gas, 2026-11-08; its fork gas and §7's
+`layerzero-oft` checks, 2026-10-25; its EraVM gas, 2026-10-20).
 
 - **EraVM's pubdata cost is not measured.** The `DeliveryGas` defaults (1,000,000 for a
   bootstrap, 250,000 for a report) come from Forge's EVM, where a conduit creation costs
-  about 624,000 to 678,000. On a local EraVM node a bootstrap's execution needs about 385,000
-  to 389,000 ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)), but that node
+  about 442,000 to 497,000 with no calls. On a local EraVM node a bootstrap's execution needs
+  about 385,000 to 389,000 ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)), but that node
   publishes no pubdata. zkSync Sepolia can measure what pubdata adds, and whether it counts
   against the gas limit a provider calls the transceiver with. A report arriving at a zkSync
   home is not measured either.
@@ -226,3 +227,13 @@ is live: `deploy/providers/op-stack-l2-l2.toml` lists no chain. Before listing o
   retry, so this is the provider checklist's work
   ([spec §2](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)).
 
+
+## CCIP 2.0 production enablement
+
+Local option coverage, actual OffRamp/Router enforcement tests, and native compilation
+for [issue #150](https://github.com/crossecute/protocol/issues/150) are recorded in
+[the validation report](ccip-v2-validation.md). Live lane/version evidence, actual native
+VM deployment and delivery gas, and production executor/proof services remain tracked in
+[deployment issue #118](https://github.com/crossecute/protocol/issues/118). Follow
+[the options guide](ccip-v2.md) and
+[deployment checks](../contracts/evm/deploy/CHECKS.md#ccip-20-options) before enabling V3.

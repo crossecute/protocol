@@ -1,43 +1,62 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import {CcipPolicy} from "src/protocols/ccip/CcipPolicy.sol";
 import {ProviderReceiver} from "src/protocols/ProviderReceiver.sol";
-import {IAny2EVMMessageReceiver} from "@ccip/interfaces/IAny2EVMMessageReceiver.sol";
-import {Client} from "@ccip/libraries/Client.sol";
+import {CCIPReceiver} from "@chainlink/contracts-ccip/contracts/applications/CCIPReceiver.sol";
+import {RolesEnumerable} from "src/messaging/Roles.sol";
+import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 import {CcipMessage} from "src/protocols/ccip/CcipMessage.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
 /// @notice Per-user conduit on a non-home chain.
-/// @dev Implements `IAny2EVMMessageReceiver.ccipReceive` directly, gated `onlyRole(GATEWAY_ROLE)`,
-///      rather than inheriting Chainlink's `CCIPReceiver`, whose `onlyRouter` restates the role
-///      and which checks no sender.
-contract CcipReceiver is ProviderReceiver, IAny2EVMMessageReceiver {
-    /// @notice CCIP Router on this chain. Set on the implementation; safe because the
-    ///         implementation address lives in the proxy's ERC-1967 slot, not its
-    ///         initcode, so this never moves a derived conduit address.
-    address public immutable router;
+contract CcipReceiver is ProviderReceiver, CCIPReceiver, CcipPolicy {
+    constructor(address router_) CCIPReceiver(_checkedRouter(router_)) {}
 
-    constructor(address router_) {
+    function _checkedRouter(address router_) private pure returns (address) {
         if (router_ == address(0)) revert ProviderAddress.ZeroEndpoint();
-        router = router_;
+        return router_;
+    }
+
+    function router() public view returns (address) {
+        return getRouter();
     }
 
     function _providerGateway() internal view override returns (address) {
-        return router;
+        return getRouter();
     }
 
-    /// @dev CCIP's off-ramp asserts nothing about the source-chain sender, so `_onMessageFrom` is the
-    ///      only origin and sender check: no R3.3 exception.
-    function ccipReceive(Client.Any2EVMMessage calldata message) external onlyRole(GATEWAY_ROLE) {
-        _onMessageFrom(bytes32(uint256(message.sourceChainSelector)), CcipMessage.sender(message), message.data);
+    /// @dev CCIP authenticates the router; the protocol also checks its gateway role and
+    ///      the conduit's home and source transmitter before executing the payload.
+    function _ccipReceive(Client.Any2EVMMessage memory message) internal override onlyRole(GATEWAY_ROLE) {
+        _onMessageFromMemory(
+            bytes32(uint256(message.sourceChainSelector)), CcipMessage.sender(message.sender), message.data
+        );
     }
 
-    /// @notice Declares support for `IAny2EVMMessageReceiver` and `IERC165`.
-    /// @dev CCIP's off-ramp checks this before calling `ccipReceive`, and answering false makes
-    ///      it mark the message executed without ever delivering it.
-    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
-        return interfaceId == type(IAny2EVMMessageReceiver).interfaceId || interfaceId == type(IERC165).interfaceId
-            || super.supportsInterface(interfaceId);
+    /// @dev Delivery accepts only (homeOrigin, sourceTransmitter), so a policy under any other key
+    ///      would be stored but never read. A change arrives as a self-call delivered under the
+    ///      current policy, so a policy whose verifiers stop attesting also blocks its own reset.
+    function _authorizeCcipPolicyChange(uint64 source, address sender) internal view override {
+        if (!isAuthorizedCaller(msg.sender)) revert NotSourceTransmitter();
+        if (bytes32(uint256(source)) != homeOrigin || !isSourceTransmitter(sender)) revert InvalidCcipPolicy();
+    }
+
+    function getCCVsAndFinalityConfig(uint64 source, bytes calldata sender)
+        public
+        view
+        override(CCIPReceiver, CcipPolicy)
+        returns (
+            address[] memory requiredCCVs,
+            address[] memory optionalCCVs,
+            uint8 optionalThreshold,
+            bytes4 allowedFinalityConfig
+        )
+    {
+        return CcipPolicy.getCCVsAndFinalityConfig(source, sender);
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override(RolesEnumerable, CCIPReceiver) returns (bool) {
+        return CCIPReceiver.supportsInterface(interfaceId) || RolesEnumerable.supportsInterface(interfaceId);
     }
 }

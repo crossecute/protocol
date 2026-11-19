@@ -5,7 +5,8 @@ pragma solidity ^0.8.0;
 ///         it does on arrival.
 /// @dev Measured cold on Forge's EVM with every binding's fixture (deploy/CHECKS.md §4), and
 ///      held at least 10% above that by `ProviderDeliveryGasSpec`: a bootstrap that creates a
-///      conduit 624k to 678k, a report arriving home up to 128k on the bindings that carry one.
+///      conduit with no calls 442k to 497k, a report arriving home up to 123k on the bindings
+///      that carry one (2026-11-08).
 ///      A bootstrap on a reporting chain also pays for the report's send. On EraVM a
 ///      bootstrap's execution is about 385k to 389k; its pubdata is not measured. A gas
 ///      attribute replaces these with no floor: a delivery short of gas reverts and is retried
