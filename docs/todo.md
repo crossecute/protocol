@@ -88,8 +88,9 @@ the seventh; what they mean for an operator is in the README.
   and a chain added after the first deployment, whose files repeat what is already set. zkSync
   and Tron, and every lane to them, are left out of the payloads, and have deploy functions
   the tests use but no production script: their bytecode, with
-  `WormholeMessage` or `LzMessage` linked, their conduits with `SafeAuthority` and
-  `SignedTransmitterLib` linked, and their `TransceiverExtension` variant are built by
+  `WormholeMessage` or `LzMessage` linked, their conduits with `ReceiverAuthority`,
+  `AuthorityRecognition`, `AuthorityTransport` and `SignedTransmitterLib` linked, and their
+  `TransceiverExtension` variant are built by
   zksolc and TRON-solc, which these scripts do not drive. zksolc 1.5.18, with ZKsync's solc
   0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19).
   zksolc 1.5.15, with 0.8.28-1.0.1, compiles `ChainRegistry` (2026-10-20, #82), but not
@@ -244,4 +245,10 @@ The signature-enabled transmitter and receiver
 
 - **Signed receivers on diverging chains.** zkSync and Tron refuse a signed bootstrap; supporting
   them is outside #108's scope.
-- **Authority changes**: [#109](https://github.com/crossecute/protocol/issues/109).
+- **Signed OFT deployment validation.** Bootstrap, dispatch and authority relay are implemented;
+  each intended OFT lane still needs the [signed-route checks](../contracts/evm/deploy/CHECKS.md#signed-layerzero-oft-routes)
+  for zero-amount compose compatibility, exact gas/fees, payload limits and receiver authority pins.
+- **Authority execution tooling and operation.** The [#109 implementation](safe-authority-updates.md)
+  includes source activation/updates, receiver catch-up and offline evidence archives. SDK
+  execution, archive-service operation and live-provider validation remain in the
+  [verification plan](safe-authority-verification-review.md#implementation-coverage-and-remaining-work).

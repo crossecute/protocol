@@ -78,8 +78,8 @@ message can drive the conduit. A signed receiver executes only what its stored S
 graph signed, delivered by the provider or submitted directly by anyone, so once it exists a
 forging provider cannot drive it and a halt at home does not stop direct submission. That
 graph is the one the provider delivered at bootstrap, so the provider is trusted to pass the
-Safe's authority correctly then; owners confirm a receiver's `authorityRecords()` before
-relying on it. Transceiver
+Safe's authority correctly then; owners confirm a receiver's `selection()` and
+`graph(selection().authorityHash)` before relying on it. Transceiver
 governance crosses a bridge in either mode, so it still trusts the provider. No
 shared failure is what N independent admin accounts buy with N of everything else. The exposure is
 narrowed where it can be. A transceiver's one upgrade is the call that installs and initializes
@@ -408,8 +408,8 @@ What an operator or integrator has to know:
   configuration (or LayerZero Labs, on a pinned pathway), Chainlink, the Mailbox owner, and
   Wormhole's guardian governance. Nothing here checks a proof of the source chain's consensus.
   The OP Stack providers have no signer set; they trust the chains themselves. A signed
-  receiver checks the Safe's signatures itself, so for its messages that trust covers delivery,
-  not authorization.
+  receiver checks application and authority-update signatures itself against its selected
+  graph. Its initial graph and head still depend on authenticated bootstrap delivery.
 - **A CCIP receiving contract must keep answering `supportsInterface`.** If it stops answering
   true for `IAny2EVMMessageReceiver`, the off-ramp marks each message executed without ever
   calling `ccipReceive`. The message is lost silently rather than reverted.
@@ -439,9 +439,12 @@ What an operator or integrator has to know:
   or libraries, which nothing here detects; for a proxied OFT, its upgrade admin, who can
   change how `composeFrom` is encoded; LayerZero's endpoint; and the factory, logic and
   `Proxy`, all immutable at one address everywhere. It is meant for an OFT the conduit's
-  own team operates. A paused or broken OFT blocks the very payload that would repair it, and
-  since the OFT is fixed, the only way out is migrating the conduit, which needs a working
-  channel to hand its roles off.
+  own team operates. A plain conduit needs the OFT channel to execute repair or migration
+  calls. A signed receiver accepts valid message, leaf and authority submissions directly,
+  so an OFT outage does not stop those paths after bootstrap. Its initial authority still
+  relies on authenticated OFT delivery. Both modes use the same route-bound address;
+  signed bootstrap requires an activated source Safe and matching receiver authority pins
+  ([signed OFT transport](docs/safe-signed-dispatch.md#layerzero-oft-signed-transport)).
 - **A `layerzero-oft` conduit reaches only the chains it was created with.** They are bound
   into its address, so another chain means another conduit. It carries no tokens, and reaches
   no zkSync or Tron chain.

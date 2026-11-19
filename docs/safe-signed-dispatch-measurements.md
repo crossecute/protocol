@@ -5,6 +5,12 @@ Measured 2026-11-17 at code commit `a4dde1a039b5b8bb11ce802fae61381e70f28b2f`
 integration tests. These are execution-gas observations, not live provider fee quotes.
 No fork RPC was configured; no transaction was broadcast.
 
+These tables describe the named code commit. The receiver's selected-head/graph bootstrap
+and linked authority verification are specified in [safe-authority-updates.md](safe-authority-updates.md),
+with measurements in [updates.md](benchmarks/authority-109/updates.md). Current OFT runtime
+and complete bootstrap sizing are recorded under
+[signed OFT transport](safe-signed-dispatch.md#layerzero-oft-signed-transport).
+
 ## Production Paris receiver
 
 `contracts/evm/test/signed/SignedDispatchGas.t.sol` compiles the real Hyperlane receiver

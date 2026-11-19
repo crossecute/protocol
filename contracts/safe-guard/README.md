@@ -20,6 +20,7 @@ interfaces, types and verification libraries.
 | `test/TestTransmitter.sol` | The minimal consumer and the helper contracts the tests drive |
 | `test/Batch.sol` | Runs several calls in one transaction, so tests can observe transient state across executions |
 | `test/SourceAuthority*.sol` | Activation, ownership changes, selectAuthority, portable publication, protected calls and nested-Safe adoption against real Safe 1.5.0 proxies |
+| `test/SignedDispatchIntegration.t.sol`, `test/SignedOftIntegration.t.sol` | Real Safe/guard/conduit bootstrap and dispatch, direct/provider replay and authority updates over mock Hyperlane and OFT transport |
 | `test/*.t.sol` | `sendMessage` lifecycle, rerun for `bootstrap` in `Bootstrap.t.sol`, leaf publication and `registerRoot`, module restrictions, approval evidence, installation, hash parity with Safe, gas measurements |
 
 `ICrossecuteGuard`, `GuardDiscovery`, `SafeHashes` and `SafeBatchExecutor` import nothing from the policy engine and
