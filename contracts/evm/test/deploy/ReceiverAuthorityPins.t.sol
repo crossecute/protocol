@@ -10,9 +10,11 @@ import {LzDeploy} from "script/deploy/LzDeploy.sol";
 import {WormholeDeploy} from "script/deploy/WormholeDeploy.sol";
 import {OpStackDeploy} from "script/deploy/OpStackDeploy.sol";
 import {OpStackInteropDeploy} from "script/deploy/OpStackInteropDeploy.sol";
+import {LzOftDeploy} from "script/deploy/LzOftDeploy.sol";
+import {receiverAuthorityPins} from "script/deploy/TransceiverDeploy.sol";
 
 contract ReceiverAuthorityPinsTest is Test {
-    function deployReceivers() external returns (address[6] memory receivers) {
+    function deployReceivers() external returns (address[7] memory receivers) {
         address endpoint = address(0xBEEF);
         receivers = [
             CcipDeploy.receiverImplementation(endpoint),
@@ -20,36 +22,39 @@ contract ReceiverAuthorityPinsTest is Test {
             LzDeploy.receiverImplementation(endpoint),
             WormholeDeploy.receiverImplementation(WormholeDeploy.Endpoints(endpoint, endpoint)),
             OpStackDeploy.receiverImplementation(),
-            OpStackInteropDeploy.receiverImplementation()
+            OpStackInteropDeploy.receiverImplementation(),
+            LzOftDeploy.factory().receiverImplementation()
         ];
     }
 
     function test_allProvidersUseTheSameDeploymentPins() public {
-        for (uint256 enabled; enabled < 2; ++enabled) {
-            address guard = enabled == 0 ? address(0) : address(0x1234);
-            address multiSend = enabled == 0 ? address(0) : address(0x5678);
-            _setPins(guard, multiSend);
-            address[6] memory receivers = this.deployReceivers();
-            for (uint256 i; i < receivers.length; ++i) {
-                SignedReceiver receiver = SignedReceiver(payable(receivers[i]));
-                assertEq(receiver.SOURCE_AUTHORITY_GUARD(), guard);
-                assertEq(receiver.MULTISEND_CALL_ONLY(), multiSend);
+        (address guard, address multiSend) = receiverAuthorityPins();
+        address[7] memory receivers = this.deployReceivers();
+        for (uint256 i; i < receivers.length; ++i) {
+            SignedReceiver receiver = SignedReceiver(payable(receivers[i]));
+            assertEq(receiver.SOURCE_AUTHORITY_GUARD(), guard);
+            assertEq(receiver.MULTISEND_CALL_ONLY(), multiSend);
+        }
+    }
+
+    function validatePins(address guard, address multiSend) external pure returns (address, address) {
+        return receiverAuthorityPins(guard, multiSend);
+    }
+
+    function test_pinPairValidation() public {
+        for (uint256 combination; combination < 4; ++combination) {
+            address guard = combination & 1 == 0 ? address(0) : address(0x1234);
+            address multiSend = combination & 2 == 0 ? address(0) : address(0x5678);
+            if (combination == 1 || combination == 2) {
+                vm.expectRevert(
+                    abi.encodeWithSelector(DeployCheck.selector, "both receiver authority pins are set or unset")
+                );
+                this.validatePins(guard, multiSend);
+            } else {
+                (address actualGuard, address actualMultiSend) = this.validatePins(guard, multiSend);
+                assertEq(actualGuard, guard);
+                assertEq(actualMultiSend, multiSend);
             }
         }
-        _setPins(address(0), address(0));
-    }
-
-    function test_aPartialPinConfigurationFailsBeforeDeployment() public {
-        _setPins(address(0x1234), address(0));
-        vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, "both receiver authority pins are set or unset"));
-        this.deployReceivers();
-        _setPins(address(0), address(0));
-    }
-
-    function _setPins(address guard, address multiSend) private {
-        // forge-lint: disable-start(unsafe-cheatcode) fixture-only deployment environment, reset after each test
-        vm.setEnv("CROSSECUTE_AUTHORITY_GUARD", vm.toString(guard));
-        vm.setEnv("CROSSECUTE_MULTISEND_CALL_ONLY", vm.toString(multiSend));
-        // forge-lint: disable-end(unsafe-cheatcode)
     }
 }

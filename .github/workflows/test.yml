@@ -53,6 +53,12 @@ jobs:
 
       - run: forge test -vvv
 
+      - name: Check configured receiver authority pins
+        run: forge test --match-contract ReceiverAuthorityPinsTest -vvv
+        env:
+          CROSSECUTE_AUTHORITY_GUARD: "0x0000000000000000000000000000000000001234"
+          CROSSECUTE_MULTISEND_CALL_ONLY: "0x0000000000000000000000000000000000005678"
+
   # The Safe guard is a separate Cancun project; see contracts/safe-guard/README.md.
   safe-guard:
     runs-on: ubuntu-latest

@@ -15,7 +15,12 @@ import {VM, check, deployProxy, arachnidDeploy} from "script/deploy/ProxyDeploy.
 function receiverAuthorityPins() view returns (address guard, address multiSendCallOnly) {
     guard = VM.envOr("CROSSECUTE_AUTHORITY_GUARD", address(0));
     multiSendCallOnly = VM.envOr("CROSSECUTE_MULTISEND_CALL_ONLY", address(0));
+    return receiverAuthorityPins(guard, multiSendCallOnly);
+}
+
+function receiverAuthorityPins(address guard, address multiSendCallOnly) pure returns (address, address) {
     check((guard == address(0)) == (multiSendCallOnly == address(0)), "both receiver authority pins are set or unset");
+    return (guard, multiSendCallOnly);
 }
 
 /// @notice The extension every provider's transceiver implementation on this chain names, deployed
