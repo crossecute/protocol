@@ -62,6 +62,25 @@ contract ChainConfigTest is Test {
         return ChainConfig.providerId(dir, cs, provider, cs[0]);
     }
 
+    /// @dev `routeId` and `lzDvn` between the first two chains of `dir`, or by name.
+    function routeId(string memory dir, string memory provider, uint256 from, uint256 to)
+        external
+        view
+        returns (uint256)
+    {
+        ChainEntry[] memory cs = ChainConfig.chains(dir);
+        return ChainConfig.routeId(dir, cs, provider, cs[from], cs[to]);
+    }
+
+    function lzDvn(string memory dir, uint256 from, uint256 to) external view returns (address) {
+        ChainEntry[] memory cs = ChainConfig.chains(dir);
+        return ChainConfig.lzDvn(dir, cs, cs[from], cs[to]);
+    }
+
+    function _named(string memory name) internal view returns (ChainEntry memory) {
+        return ChainConfig.chainNamed(ChainConfig.chains(ChainConfig.defaultDir()), name);
+    }
+
     function _expect(string memory what) internal {
         vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, what));
     }
@@ -175,6 +194,76 @@ contract ChainConfigTest is Test {
     function test_aZeroProviderIdIsRefused() public {
         _expect("provider id is nonzero");
         this.providerId(_dir("bad-ids"), "zero-id");
+    }
+
+    /// @dev Chainlink carries no lane between Fraxtal and Arbitrum or Optimism, in either
+    ///      direction; every other pair of the four it reaches there is carried.
+    function test_ccipBlocksTheFraxtalPairsItDoesNotCarry() public view {
+        string memory dir = ChainConfig.defaultDir();
+        ChainEntry[] memory cs = ChainConfig.chains(dir);
+        ChainEntry memory fraxtal = _named("fraxtal");
+        string[2] memory blocked = ["arbitrum", "optimism"];
+        for (uint256 i; i < blocked.length; ++i) {
+            ChainEntry memory other = _named(blocked[i]);
+            assertEq(ChainConfig.routeId(dir, cs, "ccip", fraxtal, other), 0, "fraxtal to other");
+            assertEq(ChainConfig.routeId(dir, cs, "ccip", other, fraxtal), 0, "other to fraxtal");
+        }
+        string[2] memory carried = ["ethereum", "base"];
+        for (uint256 i; i < carried.length; ++i) {
+            ChainEntry memory other = _named(carried[i]);
+            assertEq(
+                ChainConfig.routeId(dir, cs, "ccip", fraxtal, other), ChainConfig.providerId(dir, cs, "ccip", other)
+            );
+            assertEq(
+                ChainConfig.routeId(dir, cs, "ccip", other, fraxtal), ChainConfig.providerId(dir, cs, "ccip", fraxtal)
+            );
+        }
+        assertEq(
+            ChainConfig.routeId(dir, cs, "layerzero", fraxtal, _named("arbitrum")), 30110, "other providers carry it"
+        );
+    }
+
+    function test_aBlockedPairIsDirectional() public view {
+        assertEq(this.routeId(_dir("bad-routes"), "a-to-b", 0, 1), 0);
+        assertEq(this.routeId(_dir("bad-routes"), "a-to-b", 1, 0), 1);
+    }
+
+    function test_aBlockedSenderWithoutAnIdIsRefused() public {
+        _expect("blocked senders have provider ids");
+        this.routeId(_dir("bad-routes"), "unknown-sender", 0, 1);
+    }
+
+    function test_aBlockedReceiverWithoutAnIdIsRefused() public {
+        _expect("blocked receivers have provider ids");
+        this.routeId(_dir("bad-routes"), "unknown-receiver", 0, 1);
+    }
+
+    function test_aChainBlockedFromItselfIsRefused() public {
+        _expect("a chain is not blocked from itself");
+        this.routeId(_dir("bad-routes"), "self", 0, 1);
+    }
+
+    /// @dev A pathway touching a pinned chain is pinned on both ends, each by its own chain's DVN.
+    function test_layerZeroPinsEveryPathwayTouchingFraxtal() public view {
+        string memory dir = ChainConfig.defaultDir();
+        ChainEntry[] memory cs = ChainConfig.chains(dir);
+        ChainEntry memory fraxtal = _named("fraxtal");
+        ChainEntry memory ethereum = _named("ethereum");
+        ChainEntry memory base = _named("base");
+        assertEq(ChainConfig.lzDvn(dir, cs, fraxtal, ethereum), 0xcCE466a522984415bC91338c232d98869193D46e);
+        assertEq(ChainConfig.lzDvn(dir, cs, ethereum, fraxtal), 0x589dEDbD617e0CBcB916A9223F4d1300c294236b);
+        assertEq(ChainConfig.lzDvn(dir, cs, base, fraxtal), 0x9e059a54699a285714207b43B055483E78FAac25);
+        assertEq(ChainConfig.lzDvn(dir, cs, ethereum, base), address(0), "an unpinned pathway follows the defaults");
+    }
+
+    function test_aPinnedChainThatIsNotConfiguredIsRefused() public {
+        _expect("pinned LayerZero chains are chains.toml names");
+        this.lzDvn(_dir("bad-pins-unknown"), 0, 1);
+    }
+
+    function test_aPinnedPathwayWhoseChainListsNoDvnIsRefused() public {
+        _expect("a chain on a pinned LayerZero pathway lists its DVN");
+        this.lzDvn(_dir("bad-pins-nodvn"), 0, 1);
     }
 }
 

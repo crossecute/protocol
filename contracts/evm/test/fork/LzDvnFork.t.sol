@@ -7,12 +7,22 @@ import {
     MessagingParams
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
+import {GovernancePlan} from "script/deploy/GovernancePlan.sol";
 import {createRpcFork} from "test/fork/ForkBlock.sol";
 
 /// @notice An OApp that is its own delegate, as every LayerZero contract here is.
 contract SelfDelegatedOApp {
+    mapping(uint32 => address) public dvnOf;
+
     function pinSendDvn(address endpoint, uint32 eid, address dvn) external {
         LzMessage.pinSendDvn(endpoint, eid, dvn);
+    }
+
+    /// @dev What a transceiver's `setDvn` does: pin both directions and record it.
+    function pinBoth(address endpoint, uint32 eid, address dvn) external {
+        dvnOf[eid] = dvn;
+        LzMessage.pinSendDvn(endpoint, eid, dvn);
+        LzMessage.pinReceiveDvn(endpoint, eid, dvn);
     }
 }
 
@@ -39,5 +49,53 @@ contract LzDvnForkTest is Test {
 
         oapp.pinSendDvn(address(ENDPOINT), ZKSYNC_EID, LZ_LABS_DVN);
         assertGt(ENDPOINT.quote(params, address(oapp)).nativeFee, 0);
+    }
+}
+
+/// @notice #94 against the real endpoints on Ethereum and Fraxtal: every pathway touching Fraxtal
+///         refuses every quote on the dead-DVN default, quotes once each end pins LayerZero Labs'
+///         DVN, and a transceiver's `setDvn` fits the gas the plan budgets for it. Skipped
+///         without `ETH_RPC_URL` and `FRAXTAL_RPC_URL`; reads only, so public RPCs are enough.
+contract LzFraxtalDvnForkTest is Test {
+    address constant ENDPOINT = 0x1a44076050125825900e736c501f859c50fE728c;
+    uint32 constant FRAXTAL_EID = 30255;
+    address constant ETHEREUM_DVN = 0x589dEDbD617e0CBcB916A9223F4d1300c294236b;
+    address constant FRAXTAL_DVN = 0xcCE466a522984415bC91338c232d98869193D46e;
+
+    function _params(uint32 eid) private pure returns (MessagingParams memory) {
+        return MessagingParams(eid, bytes32(uint256(1)), hex"00", LzMessage.options(new bytes[](0), 1_000_000), false);
+    }
+
+    function _fork(string memory rpcVariable, string memory blockVariable) private {
+        string memory rpc = vm.envOr(rpcVariable, string(""));
+        if (bytes(rpc).length == 0) vm.skip(true);
+        vm.selectFork(createRpcFork(vm, rpc, blockVariable));
+    }
+
+    function test_aPinnedDvnMakesEthereumToFraxtalQuotable() public {
+        _fork("ETH_RPC_URL", "ETH_FORK_BLOCK");
+        SelfDelegatedOApp oapp = new SelfDelegatedOApp();
+        vm.expectRevert();
+        ILayerZeroEndpointV2(ENDPOINT).quote(_params(FRAXTAL_EID), address(oapp));
+
+        uint256 before = gasleft();
+        oapp.pinBoth(ENDPOINT, FRAXTAL_EID, ETHEREUM_DVN);
+        assertLe((before - gasleft()) * 11 / 10, GovernancePlan.DVN_GAS, "the plan budgets a transceiver's setDvn");
+        assertGt(ILayerZeroEndpointV2(ENDPOINT).quote(_params(FRAXTAL_EID), address(oapp)).nativeFee, 0);
+    }
+
+    function test_aPinnedDvnMakesEveryPathwayFromFraxtalQuotable() public {
+        _fork("FRAXTAL_RPC_URL", "FRAXTAL_FORK_BLOCK");
+        uint32[4] memory eids = [uint32(30101), 30184, 30110, 30111];
+        for (uint256 i; i < eids.length; ++i) {
+            SelfDelegatedOApp oapp = new SelfDelegatedOApp();
+            vm.expectRevert();
+            ILayerZeroEndpointV2(ENDPOINT).quote(_params(eids[i]), address(oapp));
+
+            uint256 before = gasleft();
+            oapp.pinBoth(ENDPOINT, eids[i], FRAXTAL_DVN);
+            assertLe((before - gasleft()) * 11 / 10, GovernancePlan.DVN_GAS, "the plan budgets a transceiver's setDvn");
+            assertGt(ILayerZeroEndpointV2(ENDPOINT).quote(_params(eids[i]), address(oapp)).nativeFee, 0);
+        }
     }
 }

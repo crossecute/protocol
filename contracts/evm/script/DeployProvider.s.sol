@@ -115,8 +115,15 @@ abstract contract DeployProvider is Script {
     function _governorHomeId() internal view returns (uint256 id) {
         string memory dir = ChainConfig.defaultDir();
         ChainEntry memory home = _governance().home;
-        id = ChainConfig.providerId(dir, ChainConfig.chains(dir), _providerName(), home);
-        if (home.chainId != block.chainid) check(id != 0, "the provider reaches the governor's home");
+        ChainEntry[] memory cs = ChainConfig.chains(dir);
+        id = ChainConfig.providerId(dir, cs, _providerName(), home);
+        if (home.chainId != block.chainid) {
+            ChainEntry memory local = ChainConfig.chainWithId(cs, block.chainid);
+            check(
+                ChainConfig.routeId(dir, cs, _providerName(), local, home) != 0,
+                "the provider reaches the governor's home"
+            );
+        }
     }
 
     function _governance() internal view returns (Governance memory) {

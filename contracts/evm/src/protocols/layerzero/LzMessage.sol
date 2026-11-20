@@ -70,8 +70,10 @@ library LzMessage {
     /// @dev `CONFIG_TYPE_ULN` in LayerZero's `SendUln302` and `ReceiveUln302`.
     uint32 internal constant ULN_CONFIG_TYPE = 2;
 
-    /// @dev `UlnBase.NIL_DVN_COUNT`: no optional DVNs, rather than the default's.
+    /// @dev `UlnBase.NIL_DVN_COUNT`: no DVNs of that kind, rather than the default's.
     uint8 internal constant NIL_DVN_COUNT = type(uint8).max;
+
+    error TooManyDvns();
 
     /// @notice Verify what this OApp sends to `eid` with `dvn` alone, on today's default send
     ///         library, which it keeps.
@@ -80,10 +82,27 @@ library LzMessage {
     ///      fall back to the dead DVN. `confirmations` 0 keeps the pathway's default. The caller
     ///      must be its own delegate.
     function pinSendDvn(address endpoint, uint32 eid, address dvn) public {
+        address[] memory required = new address[](1);
+        required[0] = dvn;
+        setSendDvns(endpoint, eid, required, new address[](0), 0);
+    }
+
+    /// @notice Verify what this OApp sends to `eid` with `required` and `optional` DVNs, any
+    ///         `optionalThreshold` of the optional ones, replacing the pathway's default and any
+    ///         earlier set. An empty list means none, not the default's.
+    /// @dev Pins today's default send library, as `pinSendDvn` does. LayerZero checks the lists
+    ///      are sorted, unique and satisfiable.
+    function setSendDvns(
+        address endpoint,
+        uint32 eid,
+        address[] memory required,
+        address[] memory optional,
+        uint8 optionalThreshold
+    ) public {
         ILayerZeroEndpointV2 ep = ILayerZeroEndpointV2(endpoint);
         address lib = ep.defaultSendLibrary(eid);
         ep.setSendLibrary(address(this), eid, lib);
-        ep.setConfig(address(this), lib, _onlyDvn(eid, dvn));
+        ep.setConfig(address(this), lib, _dvnStack(eid, required, optional, optionalThreshold));
     }
 
     /// @notice `pinSendDvn` for what this OApp accepts from `eid`.
@@ -91,15 +110,26 @@ library LzMessage {
         ILayerZeroEndpointV2 ep = ILayerZeroEndpointV2(endpoint);
         address lib = ep.defaultReceiveLibrary(eid);
         ep.setReceiveLibrary(address(this), eid, lib, 0);
-        ep.setConfig(address(this), lib, _onlyDvn(eid, dvn));
-    }
-
-    function _onlyDvn(uint32 eid, address dvn) private pure returns (SetConfigParam[] memory params) {
         address[] memory required = new address[](1);
         required[0] = dvn;
+        ep.setConfig(address(this), lib, _dvnStack(eid, required, new address[](0), 0));
+    }
+
+    function _dvnStack(uint32 eid, address[] memory required, address[] memory optional, uint8 optionalThreshold)
+        private
+        pure
+        returns (SetConfigParam[] memory params)
+    {
+        if (required.length >= NIL_DVN_COUNT || optional.length >= NIL_DVN_COUNT) revert TooManyDvns();
+        // forge-lint: disable-start(unsafe-typecast) lengths are below NIL_DVN_COUNT
+        uint8 requiredCount = required.length == 0 ? NIL_DVN_COUNT : uint8(required.length);
+        uint8 optionalCount = optional.length == 0 ? NIL_DVN_COUNT : uint8(optional.length);
+        // forge-lint: disable-end(unsafe-typecast)
         params = new SetConfigParam[](1);
         params[0] = SetConfigParam(
-            eid, ULN_CONFIG_TYPE, abi.encode(UlnConfig(0, 1, NIL_DVN_COUNT, 0, required, new address[](0)))
+            eid,
+            ULN_CONFIG_TYPE,
+            abi.encode(UlnConfig(0, requiredCount, optionalCount, optionalThreshold, required, optional))
         );
     }
 

@@ -25,7 +25,8 @@ interface ITypeAndVersion {
 }
 
 /// @title CcipPreflight
-/// @notice Read-only check that a chain's CCIP lanes to and from every other parity chain run
+/// @notice Read-only check that a chain's CCIP lanes to and from every other parity chain, but the
+///         pairs `ccip.toml` blocks, run
 ///         the contract versions `providers/ccip.toml` lists, and quote with the options the
 ///         bindings send. Run it before the first CCIP transaction on a chain.
 /// @dev A router address, a selector, or a quote does not show a lane's version: a legacy lane
@@ -57,15 +58,17 @@ library CcipPreflight {
         for (uint256 i; i < cs.length; ++i) {
             ChainEntry memory peer = cs[i];
             if (peer.chainId == local.chainId || peer.derivation != Derivation.Parity) continue;
-            uint256 id = ChainConfig.providerId(dir, cs, "ccip", peer);
-            if (id == 0) continue;
             // forge-lint: disable-next-line(unsafe-typecast) ccip.toml's id_bits is 64
-            uint64 peerSelector = uint64(id);
-            string memory outbound = string.concat(local.name, " -> ", peer.name);
-            out = join(out, _onRamp(outbound, router, peerSelector, versions));
-            out = join(out, _quote(outbound, router, peerSelector));
-            string memory inbound = string.concat(peer.name, " -> ", local.name);
-            out = join(out, _offRampsFor(inbound, router, peerSelector, versions, listed, offRamps));
+            uint64 peerSelector = uint64(ChainConfig.providerId(dir, cs, "ccip", peer));
+            if (ChainConfig.routeId(dir, cs, "ccip", local, peer) != 0) {
+                string memory outbound = string.concat(local.name, " -> ", peer.name);
+                out = join(out, _onRamp(outbound, router, peerSelector, versions));
+                out = join(out, _quote(outbound, router, peerSelector));
+            }
+            if (ChainConfig.routeId(dir, cs, "ccip", peer, local) != 0) {
+                string memory inbound = string.concat(peer.name, " -> ", local.name);
+                out = join(out, _offRampsFor(inbound, router, peerSelector, versions, listed, offRamps));
+            }
         }
     }
 

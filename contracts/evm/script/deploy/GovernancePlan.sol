@@ -12,6 +12,7 @@ import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {LzTransceiverBase} from "src/protocols/layerzero/LzTransceiver.sol";
+import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {CcipTransceiverBase} from "src/protocols/ccip/CcipTransceiver.sol";
 import {HyperlaneTransceiverBase} from "src/protocols/hyperlane/HyperlaneTransceiver.sol";
@@ -48,6 +49,11 @@ struct Plan {
     /// `isOn` for each chain and provider, row-major by chain, computed once in `load`: reading
     /// the provider files for every pair on every call exhausts memory.
     bool[] deployed;
+    /// `ChainConfig.routeId` for each provider, local and remote chain, indexed
+    /// `(provider * chains + local) * chains + remote`, and `ChainConfig.lzDvn` for each pair
+    /// indexed `local * chains + remote`, both computed once in `load` for the same reason.
+    uint256[] routes;
+    address[] lzDvns;
 }
 
 /// @title GovernancePlan
@@ -70,6 +76,9 @@ library GovernancePlan {
     /// @dev Destination gas per configuration call, above what the message itself needs.
     ///      `GovernancePlanTest` holds every call's measured cost at least 10% below it.
     uint256 internal constant CALL_GAS = 100_000;
+    /// @dev Destination gas for a transceiver's `setDvn`, which sets a send and a receive library
+    ///      and config on the endpoint. `LzDvnFork` holds the real endpoint's cost below it.
+    uint256 internal constant DVN_GAS = 400_000;
     /// @dev Destination gas per entry of a timelock batch, which `scheduleBatch` hashes and logs.
     uint256 internal constant SCHEDULE_ENTRY_GAS = 25_000;
 
@@ -90,6 +99,7 @@ library GovernancePlan {
             // Its lanes need no id and are not built here; a listed chain must not be skipped.
             check(!OpStackInteropConfig.isMember(dir, p.all, p.all[i]), "op-stack-l2-l2 lanes are not scripted");
         }
+        _cacheRoutes(p);
         p.deployed = new bool[](p.chains.length * p.g.providers.length);
         for (uint256 i; i < p.chains.length; ++i) {
             for (uint256 j; j < p.g.providers.length; ++j) {
@@ -106,6 +116,36 @@ library GovernancePlan {
         }
     }
 
+    function _cacheRoutes(Plan memory p) private view {
+        uint256 n = p.chains.length;
+        p.routes = new uint256[](p.g.providers.length * n * n);
+        p.lzDvns = new address[](n * n);
+        for (uint256 i; i < n; ++i) {
+            for (uint256 k; k < n; ++k) {
+                if (i == k) continue;
+                for (uint256 j; j < p.g.providers.length; ++j) {
+                    string memory name = p.g.providers[j].name;
+                    if (_is(name, "op-stack-l1-l2") || _is(name, "op-stack-l2-l2")) continue;
+                    p.routes[(j * n + i) * n + k] = ChainConfig.routeId(p.dir, p.all, name, p.chains[i], p.chains[k]);
+                }
+                p.lzDvns[i * n + k] = ChainConfig.lzDvn(p.dir, p.all, p.chains[i], p.chains[k]);
+            }
+        }
+    }
+
+    /// @dev The index of `chain` in `p.chains`, or `type(uint256).max`.
+    function _chainIndex(Plan memory p, ChainEntry memory chain) private pure returns (uint256) {
+        for (uint256 i; i < p.chains.length; ++i) {
+            if (p.chains[i].chainId == chain.chainId) return i;
+        }
+        return type(uint256).max;
+    }
+
+    /// @notice LayerZero Labs' DVN on `local` for its pathway to `remote`, or zero.
+    function lzDvn(Plan memory p, ChainEntry memory local, ChainEntry memory remote) internal pure returns (address) {
+        return p.lzDvns[_chainIndex(p, local) * p.chains.length + _chainIndex(p, remote)];
+    }
+
     /* ================================ addresses =============================== */
 
     /// @notice `provider`'s transceiver, at its record's address on every parity chain.
@@ -116,6 +156,17 @@ library GovernancePlan {
     /// @notice The governor's transmitter at home under `provider`, and its receiver elsewhere.
     function governor(Plan memory p, string memory provider) internal pure returns (address) {
         return ChainDeploy.governorConduit(p.g, provider);
+    }
+
+    /// @notice The destination gas a configuration call needs above its message's own.
+    function callGas(Call memory c) internal pure returns (uint256) {
+        return bytes4(c.data) == LzTransceiverBase.setDvn.selector ? DVN_GAS : CALL_GAS;
+    }
+
+    function callsGas(Call[] memory calls) internal pure returns (uint256 gas) {
+        for (uint256 i; i < calls.length; ++i) {
+            gas += callGas(calls[i]);
+        }
     }
 
     /* ================================== lanes ================================= */
@@ -130,8 +181,12 @@ library GovernancePlan {
         if (local.chainId == remote.chainId) return 0;
         if (_is(provider, "op-stack-l1-l2")) return uint160(OpStackConfig.messenger(p.dir, p.all, local, remote));
         if (_is(provider, "op-stack-l2-l2")) return 0;
-        if (ChainConfig.providerId(p.dir, p.all, provider, local) == 0) return 0;
-        return ChainConfig.providerId(p.dir, p.all, provider, remote);
+        if (local.chainId == remote.chainId) return 0;
+        for (uint256 j; j < p.g.providers.length; ++j) {
+            if (!_is(p.g.providers[j].name, provider)) continue;
+            return p.routes[(j * p.chains.length + _chainIndex(p, local)) * p.chains.length + _chainIndex(p, remote)];
+        }
+        return ChainConfig.routeId(p.dir, p.all, provider, local, remote);
     }
 
     /// @notice Whether step 2 deployed `provider` on `chain`: off the home, only where it reaches
@@ -162,6 +217,11 @@ library GovernancePlan {
                 Call(t, 0, abi.encodeCall(TransceiverExtension.setRoute, (key, Erc7930.encodeEvmChain(remote.chainId))))
             );
             calls = _push(calls, Call(t, 0, _idSetter(provider, key, id)));
+            if (_is(provider, "layerzero")) {
+                address dvn = lzDvn(p, local, remote);
+                // forge-lint: disable-next-line(unsafe-typecast) layerzero.toml's id_bits is 32
+                if (dvn != address(0)) calls = _push(calls, Call(t, 0, _setDvn(uint32(id), dvn)));
+            }
         }
     }
 
@@ -176,6 +236,10 @@ library GovernancePlan {
             // forge-lint: disable-next-line(unsafe-typecast) layerzero.toml's id_bits is 32
             calls = _push(calls, Call(t, 0, abi.encodeCall(IOAppCore.setPeer, (uint32(eid), _word(t)))));
         }
+    }
+
+    function _setDvn(uint32 eid, address dvn) private pure returns (bytes memory) {
+        return abi.encodeCall(LzTransceiverBase.setDvn, (eid, dvn));
     }
 
     function _idSetter(string memory provider, bytes32 key, uint256 id) private pure returns (bytes memory) {
@@ -430,8 +494,8 @@ library GovernancePlan {
         }
     }
 
-    /// @dev For LayerZero, first the transmitter's own peer there, for the messages `connect`
-    ///      sends.
+    /// @dev For LayerZero, first the transmitter's own DVN where the pathway needs one, and its
+    ///      peer there, for the bootstrap and the messages `connect` sends.
     function _bootstrapTxs(Plan memory p, string memory name, ChainEntry memory x)
         private
         view
@@ -441,11 +505,21 @@ library GovernancePlan {
         if (id == 0) return txs;
         address conduit = governor(p, name);
         if (_is(name, "layerzero")) {
-            // forge-lint: disable-next-line(unsafe-typecast) layerzero.toml's id_bits is 32
+            address dvn = lzDvn(p, p.g.home, x);
+            // forge-lint: disable-start(unsafe-typecast) layerzero.toml's id_bits is 32
+            if (dvn != address(0)) {
+                address[] memory required = new address[](1);
+                required[0] = dvn;
+                txs = _push(
+                    txs,
+                    Tx(conduit, 0, abi.encodeCall(LzTransmitter.setDvn, (uint32(id), required, new address[](0), 0)))
+                );
+            }
             txs = _push(txs, Tx(conduit, 0, abi.encodeCall(IOAppCore.setPeer, (uint32(id), _word(conduit)))));
+            // forge-lint: disable-end(unsafe-typecast)
         }
         Call[] memory calls = laneCalls(p, name, x);
-        uint256 gas = DeliveryGas.BOOTSTRAP + calls.length * CALL_GAS;
+        uint256 gas = DeliveryGas.BOOTSTRAP + callsGas(calls);
         if (_is(name, p.g.proposers[0])) {
             calls = _push(calls, scheduleRegistry(p, x));
             gas += scheduleGas(p, x);
