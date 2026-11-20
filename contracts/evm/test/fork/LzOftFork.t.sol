@@ -56,7 +56,8 @@ contract PacketReader {
 }
 
 /// @notice frxUSD as Frax deploys it: a conduit homed on Fraxtal sends through the frxUSD
-///         lockbox there, to Ethereum (lockbox) and Arbitrum (OFT).
+///         lockbox there, to Ethereum (lockbox) and Arbitrum (OFT); homed on Ethereum, it sends
+///         to Fraxtal, the only one of these chains Ethereum's frxUSD peers.
 ///
 /// @dev Each send runs the real OFT and endpoint on its home fork, with the OFT's own enforced
 ///      options; each delivery runs the real OFT's `lzReceive`, as its endpoint would after its
@@ -80,10 +81,13 @@ abstract contract LzOftForkBase is Test {
     uint256 fraxtal;
     uint256 ethereum;
     uint256 arbitrum;
+    uint256 homeFork;
+    uint32 homeEid;
+    address homeOft;
     LzOftConduitFactory factory;
     LzOftTransmitter conduit;
 
-    /// @dev Leaves the Fraxtal fork selected.
+    /// @dev Leaves the Fraxtal fork selected, with Fraxtal as the home.
     function _forks() internal returns (bool) {
         string memory f = vm.envOr("FRAXTAL_RPC_URL", string(""));
         string memory e = vm.envOr("ETH_RPC_URL", string(""));
@@ -95,23 +99,37 @@ abstract contract LzOftForkBase is Test {
         // Frax's contracts use opcodes after `paris`, the version this repo compiles for so its
         // addresses match on every chain. Execution only: the bytecode deployed here is unchanged.
         vm.setEvmVersion("cancun");
-        vm.selectFork(fraxtal);
+        _homeOn(fraxtal, FRAXTAL_EID, FRAXTAL_OFT);
         reader = new PacketReader();
         vm.makePersistent(address(reader));
         return true;
     }
 
+    /// @dev Homes the conduit on `fork`'s chain, whose frxUSD OFT is `oft`, and selects it.
+    function _homeOn(uint256 fork, uint32 eid, address oft) internal {
+        (homeFork, homeEid, homeOft) = (fork, eid, oft);
+        vm.selectFork(fork);
+    }
+
+    /// @dev For a Fraxtal home: Ethereum and Arbitrum, the lockbox's peers.
     function _leaves() internal view returns (LzOftConduitFactory.Leaf[] memory) {
         LzOftDestination[] memory destinations = new LzOftDestination[](2);
         destinations[0] = LzOftDestination(1, ETH_EID);
         destinations[1] = LzOftDestination(42161, ARB_EID);
-        return LzOftDeploy.leaves(FRAXTAL_OFT, destinations);
+        return LzOftDeploy.leaves(homeOft, destinations);
     }
 
-    /// @dev On the Fraxtal fork, funded for every send's fee.
+    /// @dev For an Ethereum home: Fraxtal, the only peer Ethereum's frxUSD has among these chains.
+    function _fraxtalLeaves() internal view returns (LzOftConduitFactory.Leaf[] memory) {
+        LzOftDestination[] memory destinations = new LzOftDestination[](1);
+        destinations[0] = LzOftDestination(252, FRAXTAL_EID);
+        return LzOftDeploy.leaves(homeOft, destinations);
+    }
+
+    /// @dev On the home fork, funded for every send's fee.
     function _createConduit(LzOftConduitFactory.Leaf[] memory leaves) internal {
         factory = LzOftDeploy.factory(address(0x7EA5));
-        conduit = LzOftTransmitter(payable(factory.createTransmitter(SALT, FRAXTAL_OFT, leaves)));
+        conduit = LzOftTransmitter(payable(factory.createTransmitter(SALT, homeOft, leaves)));
         vm.deal(address(conduit), 100 ether);
     }
 
@@ -129,9 +147,7 @@ abstract contract LzOftForkBase is Test {
     function _lzReceive(address dstOft, uint64 nonce, bytes32 guid, bytes memory message) internal {
         vm.prank(ENDPOINT);
         ILayerZeroReceiver(dstOft)
-            .lzReceive(
-                Origin(FRAXTAL_EID, bytes32(uint256(uint160(FRAXTAL_OFT))), nonce), guid, message, address(this), ""
-            );
+            .lzReceive(Origin(homeEid, bytes32(uint256(uint160(homeOft))), nonce), guid, message, address(this), "");
     }
 
     /// @dev On the destination fork: the OFT's `lzReceive`, and the compose it queued.
@@ -165,7 +181,7 @@ contract LzOftForkTest is LzOftForkBase {
     }
 
     function _bootstrap(uint256 chainId, uint256 fork, address dstOft) internal {
-        vm.selectFork(fraxtal);
+        vm.selectFork(homeFork);
         Call[] memory calls = _commitCall(keccak256(abi.encode("bootstrap", chainId)));
         uint256 quote = conduit.quoteBootstrap(bootstrapPayload(chainId, calls), new bytes[](0));
         assertGt(quote, 0, "the lockbox's enforced options price a compose send");
@@ -183,9 +199,23 @@ contract LzOftForkTest is LzOftForkBase {
 
         LzOftReceiver r = LzOftReceiver(payable(address(conduit)));
         assertEq(r.sourceTransmitter(), address(conduit));
-        assertEq(r.homeOrigin(), bytes32(uint256(FRAXTAL_EID)));
+        assertEq(r.homeOrigin(), bytes32(uint256(homeEid)));
         assertEq(r.localOft(), dstOft);
         assertTrue(r.isCommitted(keccak256(abi.encode("bootstrap", chainId))), "ran the bootstrap call");
+    }
+
+    /// @dev Path A: a message from the home to the receiver the bootstrap created.
+    function _messageAfter(uint256 chainId, uint256 fork, address dstOft) internal {
+        vm.selectFork(homeFork);
+        bytes32 later = keccak256("path A");
+        bytes memory recipient = conduit.recipientOn(chainId);
+        bytes memory payload = conduit.payloadForCalls(_commitCall(later));
+        vm.recordLogs();
+        conduit.sendMessage(recipient, payload, new bytes[](0));
+        bytes memory packet = _sentPacket();
+        vm.selectFork(fork);
+        _land(dstOft, address(conduit), packet);
+        assertTrue(ReceiverBase(payable(address(conduit))).isCommitted(later), "Path A ran on the destination");
     }
 
     function test_frxUsdCarriesABootstrapToEachDestinationAndAMessageAfter() public {
@@ -207,17 +237,27 @@ contract LzOftForkTest is LzOftForkBase {
         _bootstrap(1, ethereum, ETH_OFT);
         _bootstrap(42161, arbitrum, ARB_OFT);
 
-        // Path A, to the receiver the Ethereum bootstrap created.
+        _messageAfter(1, ethereum, ETH_OFT);
+    }
+
+    /// @dev Fraxtal as a destination: the home is Ethereum, whose frxUSD peers Fraxtal's lockbox.
+    ///      The factory must land at one address on both chains, so this also checks Fraxtal's
+    ///      deterministic deployer.
+    function test_frxUsdCarriesABootstrapIntoFraxtalAndAMessageAfter() public {
+        if (!_forks()) vm.skip(true);
+
+        _homeOn(ethereum, ETH_EID, ETH_OFT);
+        LzOftConduitFactory.Leaf[] memory leaves = _fraxtalLeaves();
+        assertEq(leaves[0].oft, FRAXTAL_OFT, "Ethereum's frxUSD peers Fraxtal's lockbox");
+
         vm.selectFork(fraxtal);
-        bytes32 later = keccak256("path A");
-        bytes memory recipient = conduit.recipientOn(1);
-        bytes memory payload = conduit.payloadForCalls(_commitCall(later));
-        vm.recordLogs();
-        conduit.sendMessage(recipient, payload, new bytes[](0));
-        bytes memory packet = _sentPacket();
+        LzOftDeploy.checkOnDestination(leaves[0], ETH_EID, ETH_OFT);
+
         vm.selectFork(ethereum);
-        _land(ETH_OFT, address(conduit), packet);
-        assertTrue(ReceiverBase(payable(address(conduit))).isCommitted(later), "Path A ran on Ethereum");
+        _createConduit(leaves);
+
+        _bootstrap(252, fraxtal, FRAXTAL_OFT);
+        _messageAfter(252, fraxtal, FRAXTAL_OFT);
     }
 }
 
@@ -236,8 +276,8 @@ contract LzOftForkDeliveryGasTest is LzOftForkBase, DeliveryGasMeter {
     bytes32 guid;
 
     function _deliveries(uint256 chainId, uint256 fork, address oft, uint32 eid, string memory chain) internal {
-        vm.selectFork(fraxtal);
-        uint256 enforced = reader.lzReceiveGas(IEnforcedOptions(FRAXTAL_OFT).enforcedOptions(eid, SEND_AND_CALL));
+        vm.selectFork(homeFork);
+        uint256 enforced = reader.lzReceiveGas(IEnforcedOptions(homeOft).enforcedOptions(eid, SEND_AND_CALL));
         vm.recordLogs();
         conduit.bootstrap(bootstrapPayload(chainId, new Call[](0)), new bytes[](0));
         bytes memory packet = _sentPacket();
@@ -247,7 +287,7 @@ contract LzOftForkDeliveryGasTest is LzOftForkBase, DeliveryGasMeter {
         _deliver(oft, packet, address(factory), enforced, DeliveryGas.BOOTSTRAP, string.concat(chain, ", bootstrap"));
         assertGt(address(conduit).code.length, 0, "the receiver exists");
 
-        vm.selectFork(fraxtal);
+        vm.selectFork(homeFork);
         bytes memory payload = conduit.payloadForCalls(new Call[](0));
         bytes memory recipient = conduit.recipientOn(chainId);
         vm.recordLogs();
@@ -287,6 +327,16 @@ contract LzOftForkDeliveryGasTest is LzOftForkBase, DeliveryGasMeter {
         _createConduit(_leaves());
         _deliveries(1, ethereum, ETH_OFT, ETH_EID, "ethereum");
         _deliveries(42161, arbitrum, ARB_OFT, ARB_EID, "arbitrum");
+    }
+
+    /// @dev Fraxtal as a destination, homed on Ethereum: lzCompose into the factory and the
+    ///      receiver, and the lockbox's `lzReceive`, on Fraxtal's own EVM.
+    function test_frxUsdDeliveriesIntoFraxtalFitTheirGas() public {
+        vm.makePersistent(noOp);
+        if (!_forks()) vm.skip(true);
+        _homeOn(ethereum, ETH_EID, ETH_OFT);
+        _createConduit(_fraxtalLeaves());
+        _deliveries(252, fraxtal, FRAXTAL_OFT, FRAXTAL_EID, "fraxtal");
     }
 
     /// @dev External so the meter can cap the gas the delivery runs with.

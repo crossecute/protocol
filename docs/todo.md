@@ -50,8 +50,10 @@ the seventh; what they mean for an operator is in the README.
   every one is pinned ([CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination),
   #94), and a conduit's owner must call `LzTransmitter.setDvn` before its first quote over plain
   LayerZero there. CCIP carries Fraxtal only to and from Ethereum and Base (`[blocked]` in
-  `ccip.toml`), so Fraxtal to Arbitrum or Optimism has LayerZero and Hyperlane alone. Destination
-  gas on Fraxtal's own EVM is not measured, and `layerzero-oft` has not been deployed there
+  `ccip.toml`), so Fraxtal to Arbitrum or Optimism has LayerZero and Hyperlane alone.
+  `layerzero-oft` delivery into Fraxtal fits its gas on a fork
+  ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)); the transceiver providers'
+  delivery gas on Fraxtal is not measured, and `layerzero-oft` has not been deployed there
   outside the fork test.
 
 - **LayerZero's zkSync side is unverified.** Its pathways default to the dead DVN, so both

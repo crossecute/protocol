@@ -229,27 +229,30 @@ the receiver's frame; the OFT's own lzReceive gas is the operator's enforced opt
 
 | Delivery, `layerzero-oft` | Gas |
 | --- | --- |
-| Bootstrap to the factory, 1 destination, no calls | 469,125 |
-| Bootstrap to the factory, 8 destinations, one call | 476,545 |
-| Payload to an existing receiver, no calls | 31,844 |
+| Bootstrap to the factory, 1 destination, no calls | 469,662 |
+| Bootstrap to the factory, 8 destinations, one call | 477,211 |
+| Payload to an existing receiver, no calls | 34,357 |
 
-Measured 2026-11-08 against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
-(`test/fork/LzOftFork.t.sol`) measures the same way through frxUSD, homed on Fraxtal, on a fork
-of each destination: lzCompose through the real `EndpointV2` into the factory or the receiver,
-and the real OFT's `lzReceive` frame against the lzReceive gas the Fraxtal lockbox enforces for
-a send with a compose message (250,000 to both):
+Measured 2026-11-20 against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
+(`test/fork/LzOftFork.t.sol`) measures the same way through frxUSD on a fork of each destination:
+homed on Fraxtal, to Ethereum and Arbitrum; homed on Ethereum, to Fraxtal, the only one of these
+chains Ethereum's frxUSD peers. It runs lzCompose through the real `EndpointV2` into the factory
+or the receiver, and the real OFT's `lzReceive` frame against the lzReceive gas the home's frxUSD
+enforces for a send with a compose message (250,000 to all three):
 
-| Delivery through frxUSD, from Fraxtal, no calls | Ethereum | Arbitrum |
-| --- | --- | --- |
-| Bootstrap, lzCompose into the factory, 2 destinations | 469,736 | 469,821 |
-| Bootstrap, the OFT's `lzReceive` | 105,814 | 85,357 |
-| Payload, lzCompose into the receiver | 39,773 | 39,716 |
-| Payload, the OFT's `lzReceive` | 97,337 | 76,878 |
+| Delivery through frxUSD, no calls | Ethereum (from Fraxtal) | Arbitrum (from Fraxtal) | Fraxtal (from Ethereum) |
+| --- | --- | --- | --- |
+| Bootstrap, lzCompose into the factory | 470,273 | 470,348 | 469,963 |
+| Bootstrap, the OFT's `lzReceive` | 107,863 | 90,832 | 109,471 |
+| Payload, lzCompose into the receiver | 42,246 | 42,274 | 42,256 |
+| Payload, the OFT's `lzReceive` | 99,372 | 82,342 | 101,993 |
 
-Measured 2026-11-09 through public RPCs, on the code the mock rows were measured on. A payload
-costs about 7,900 more than against the mocks and a bootstrap about 600 to 700 more; each stays
-well under its default. The `lzReceive` figure leaves out the endpoint's clearing of the
-verified payload around it.
+Measured 2026-11-20 through public RPCs at the blocks in "Fraxtal as an OFT destination" below, on the code the
+mock rows were measured on. A payload costs about 7,900 more than against the mocks and a
+bootstrap 300 to 700 more; each stays well under its default. The `lzReceive` figure leaves out
+the endpoint's clearing of the verified payload around it. The Fraxtal column is Forge executing
+Fraxtal's state under `cancun` rules, not Fraxtal's own client; Fraxtal is an OP Stack chain with
+Ethereum's gas schedule, but no run on its own node is recorded.
 
 Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a bootstrap,
 250,000 for a report, 200,000 for a payload (#52). CCIP, LayerZero, and Hyperlane quote
@@ -429,11 +432,13 @@ every Fraxtal pathway (#94).
 | §3 Wormhole | not reached: the SDK's `Chains.sol` has no Fraxtal |
 | §5 Hyperlane | default ISM `0x71a55E…298F` is the 2-of-2 aggregation of a `NULL` module and a per-origin route to a 1-of-2 Merkle-root and message-id multisig; thresholds into Fraxtal are 6 of 9 from Ethereum and 3 of 5 from Base, Arbitrum and Optimism; Ethereum's default ISM takes Fraxtal at 3 of 4 |
 | §5 LayerZero | the default send ULN of all 8 pathways requires only `0x…dEaD`, with 5 to 20 confirmations; LayerZero Labs' DVN on Fraxtal is `0xcce466a522984415bc91338c232d98869193d46e` (metadata API) |
+| §4 `layerzero-oft` gas | into Fraxtal through frxUSD from Ethereum: lzCompose 469,963 (bootstrap) and 42,256 (payload) against defaults of 1,000,000 and 200,000; the lockbox's `lzReceive` 109,471 and 101,993 against 250,000 enforced (below) |
 | §6 OP Stack | Fraxtal's `L2CrossDomainMessenger.OTHER_MESSENGER()` is `0x126bcc31Bc076B3d515f60FBC81FddE0B0d542Ed`, whose `OTHER_MESSENGER()` on Ethereum is `0x4200…0007` |
+| §7 `layerzero-oft` | a conduit homed on Ethereum bootstraps into Fraxtal's frxUSD lockbox and sends a message after; the factory lands at one address on both chains (below) |
 
-`PreflightCcip.s.sol` passes for every carried pair of the five chains. Not run: §4 destination gas
-on Fraxtal's own EVM (the gas table is Forge's), and a LayerZero quote from a pinned conduit, which
-needs a deployed transmitter.
+`PreflightCcip.s.sol` passes for every carried pair of the five chains. Not run: the transceiver
+providers' (LayerZero, Hyperlane, OP Stack) delivery gas on Fraxtal, whose gas table is Forge's
+against mocks, and a LayerZero quote from a pinned conduit, which needs a deployed transmitter.
 
 ## What these checks do not cover
 
@@ -493,6 +498,29 @@ forge test --match-contract '^(LzDvnForkTest|LzOftForkTest|LzOftForkDeliveryGasT
   destinations. Bootstrap compose used 470,273 gas on Ethereum and 470,348 on Arbitrum.
 
 These OFT regressions simulate provider delivery of plain bootstrap and payload messages.
+
+### Fraxtal as an OFT destination
+
+On 2026-11-20, `LzOftForkTest` and `LzOftForkDeliveryGasTest` passed with Fraxtal as a
+destination: the conduit homed on Ethereum, through Ethereum's frxUSD
+(`0x566a6442A5A6e9895B9dCA97cC7879D632c6e4B0`, which peers Fraxtal's lockbox but not Arbitrum's
+OFT). The run used Forge 1.8.1 and the protocol code of `8b7c570` plus the test change. The
+bootstrap and the message after it ran on forks of both chains, with the factory at one address
+on each, so Fraxtal's deterministic deployer holds for it too. Delivery gas is in §4.
+
+| Network | Block | Block hash |
+| --- | ---: | --- |
+| Ethereum | 26,458,714 | `0x3eb68b00f48a61cd64d0e11e6b1d0c1e18805d9b376c6fa70cd3aa03bd3777b8` |
+| Fraxtal | 44,198,047 | `0x045e5b2728072c6823a6d545bf52c1cc747a6b4016381626311389257e706ab8` |
+| Arbitrum One | 526,037,294 | `0x6464dfa11fc92945cbed4c56038dda469ae9ae4619d012aa0c5cde1be4fe167e` |
+
+```sh
+ETH_RPC_URL=https://ethereum-rpc.publicnode.com \
+FRAXTAL_RPC_URL=https://fraxtal-rpc.publicnode.com \
+ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc \
+ETH_FORK_BLOCK=26458714 FRAXTAL_FORK_BLOCK=44198047 ARBITRUM_FORK_BLOCK=526037294 \
+forge test --match-contract '^(LzOftForkTest|LzOftForkDeliveryGasTest)$' -vv
+```
 
 ### Signed LayerZero OFT routes
 
