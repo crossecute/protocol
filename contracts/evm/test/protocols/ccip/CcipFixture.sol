@@ -6,7 +6,8 @@ import {GasAttribute} from "script/deploy/GasAttribute.sol";
 import {IAny2EVMMessageReceiver} from "@chainlink/contracts-ccip/contracts/interfaces/IAny2EVMMessageReceiver.sol";
 import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 
-import {CcipZkSyncTransceiver} from "src/protocols/ccip/CcipDivergentTransceiver.sol";
+import {CcipZkSyncTransceiver, CcipTronTransceiver} from "src/protocols/ccip/CcipDivergentTransceiver.sol";
+import {TronTransceiverExtension} from "src/messaging/transceiver/DivergentTransceiver.sol";
 import {
     TransceiverDeployment,
     transceiverExtension,
@@ -55,6 +56,15 @@ function ccipMessage(uint64 selector, bytes32 sender, bytes memory data) pure re
         data: data,
         destTokenAmounts: new Client.EVMTokenAmount[](0)
     });
+}
+
+/// @notice Exposes the report seam.
+contract CcipTronHarness is CcipTronTransceiver {
+    constructor(address gateway) CcipTronTransceiver(gateway, address(new TronTransceiverExtension())) {}
+
+    function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external {
+        _reportReceiver(home, owner, salt, receiver);
+    }
 }
 
 /// @notice Exposes the report seam.

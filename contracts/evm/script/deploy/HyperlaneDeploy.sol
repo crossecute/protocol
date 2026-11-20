@@ -2,7 +2,10 @@
 pragma solidity ^0.8.20;
 
 import {HyperlaneTransceiver} from "src/protocols/hyperlane/HyperlaneTransceiver.sol";
-import {HyperlaneZkSyncTransceiver} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
+import {
+    HyperlaneZkSyncTransceiver,
+    HyperlaneTronTransceiver
+} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
 import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
 import {HyperlaneTransmitter} from "src/protocols/hyperlane/HyperlaneTransmitter.sol";
 import {
@@ -39,6 +42,19 @@ library HyperlaneDeploy {
         returns (address t)
     {
         t = deployTransceiverProxy(d, abi.encodeCall(HyperlaneTransceiver.initialize, (d.config, homeDomain)), mailbox);
+        checkGovernorHomeId(t, d.config, homeDomain);
+    }
+
+    /// @param conduitBytecodeHash TRON-solc's Proxy initcode hash.
+    function tronTransceiver(
+        TransceiverDeployment memory d,
+        address mailbox,
+        uint32 homeDomain,
+        bytes32 conduitBytecodeHash
+    ) internal returns (address t) {
+        t = deployTransceiverProxy(
+            d, abi.encodeCall(HyperlaneTronTransceiver.initialize, (d.config, homeDomain, conduitBytecodeHash)), mailbox
+        );
         checkGovernorHomeId(t, d.config, homeDomain);
     }
 

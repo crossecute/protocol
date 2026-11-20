@@ -85,13 +85,11 @@ the seventh; what they mean for an operator is in the README.
   are scripted for them, the N × N tables as payloads from `contracts/evm/deploy/`. Not
   scripted: `op-stack-l2-l2`'s lanes, which the payload script refuses to skip once a chain is
   listed; registry plugins, which no parity chain needs (a commitment scheme only previews);
-  and a chain added after the first deployment, whose files repeat what is already set. zkSync
-  and Tron, and every lane to them, are left out of the payloads, and have deploy functions
-  the tests use but no production script: their bytecode, with
-  `CcipMessage`, `WormholeMessage` or `LzMessage` linked where applicable, their conduits with `ReceiverAuthority`,
-  `AuthorityRecognition`, `AuthorityTransport` and `SignedTransmitterLib` linked, and their
-  `TransceiverExtension` variant are built by
-  zksolc and TRON-solc, which these scripts do not drive. zksolc 1.5.18, with ZKsync's solc
+  and a chain added after the first deployment, whose files repeat what is already set. The
+  payloads omit zkSync, Tron, and every lane to them. The shared provider tests deploy
+  CCIP, Hyperlane, and LayerZero transceiver proxies for both variants on Forge's EVM.
+  Native builds use zksolc and TRON-solc for the transceivers, conduits, and matching
+  `TransceiverExtension` variants, with any required libraries linked. zksolc 1.5.18, with ZKsync's solc
   0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19).
   zksolc 1.5.15, with 0.8.28-1.0.1, compiles `ChainRegistry` (2026-10-20, #82), but not
   `VmDeriver`, whose Bitcoin schemes use `ripemd160`. CI runs neither.

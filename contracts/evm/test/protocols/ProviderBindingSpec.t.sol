@@ -933,57 +933,73 @@ interface IReportHarness {
     function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external;
 }
 
-/// @title ProviderZkSyncSpec
-/// @notice A zkSync transceiver always diverges, so it reports each receiver it creates to the
-///         conduit's home. The report is sent inside a delivery, at `msg.value == 0`, so it is
-///         paid from the float, and any overpayment must return to the float, not the relayer.
-abstract contract ProviderZkSyncSpec is ProviderGasFixture {
+/// @notice zkSync and Tron report each receiver they create to the conduit's home.
+/// @dev Forge exercises the report at zero call value through a harness because native
+///      conduit creation uses a different address derivation on each VM.
+abstract contract ProviderDivergentSpec is ProviderGasFixture {
     address internal constant HOME_TRANSCEIVER = address(0xC0DE);
+    uint256 private constant GOVERNOR_HOME_ID = 7;
+    bytes32 internal constant CONDUIT_BYTECODE_HASH = keccak256("native Proxy initcode");
 
-    address internal zk;
+    address internal divergent;
 
-    /// @notice A new implementation of the zkSync transceiver, wrapped so `reportPublic` reaches
-    ///         `_reportReceiver`.
-    function _zkSyncImplementation() internal virtual returns (address);
+    function _divergentImplementation() internal virtual returns (address);
 
-    /// @notice Deploy `d` as the zkSync transceiver through the provider's deploy script.
-    function _deployZkSync(TransceiverDeployment memory d, bytes32 conduitBytecodeHash)
-        internal
-        virtual
-        returns (address);
+    function _deployDivergent(TransceiverDeployment memory d, uint256 homeId) internal virtual returns (address);
 
     /// @notice Assert the provider's mock recorded the last report addressed to
-    ///         `HOME_TRANSCEIVER` on `REMOTE_CHAIN_ID`, refunding any excess to `zk`.
+    ///         `HOME_TRANSCEIVER` on `REMOTE_CHAIN_ID`, with the float as the refund recipient where supported.
     function _assertReportSent() internal view virtual;
 
+    function _usesGatewayRole() internal pure virtual returns (bool) {
+        return true;
+    }
+
     function setUp() public virtual {
-        zk = _deployZkSync(_deployment(_zkSyncImplementation(), _config()), keccak256("zksolc"));
+        divergent = _deployDivergent(_deployment(_divergentImplementation(), _config()), GOVERNOR_HOME_ID);
+    }
+
+    function _wireReportHome() private {
         ChainRegistry registry = new ChainRegistry(address(this), unseeded());
         bytes32 provider = registry.addMessageProvider("under-test");
         bytes32 home = registry.addChainKey(Erc7930.encodeEvmChain(REMOTE_CHAIN_ID), Provenance.Unique);
-        _listAsDeployed(registry, provider, zk, home);
+        _listAsDeployed(registry, provider, divergent, home);
 
-        TransceiverBase t = TransceiverBase(payable(zk));
-        vm.startPrank(t.owner());
-        ext(address(t)).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
-        ext(address(t)).setRoute(home, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
-        ext(address(t)).setCounterpart(home, Erc7930.encodeEvm(REMOTE_CHAIN_ID, HOME_TRANSCEIVER));
+        vm.startPrank(TransceiverBase(payable(divergent)).owner());
+        ext(divergent).setRouting(IChainRegistryRefs(address(registry)), provider, Provenance.Unique);
+        ext(divergent).setRoute(home, Erc7930.encodeEvmChain(REMOTE_CHAIN_ID));
+        ext(divergent).setCounterpart(home, Erc7930.encodeEvm(REMOTE_CHAIN_ID, HOME_TRANSCEIVER));
         vm.stopPrank();
-        _configureRemote(zk, HOME_TRANSCEIVER);
+        _configureRemote(divergent, HOME_TRANSCEIVER);
     }
 
     function test_itAlwaysDiverges() public view {
-        assertTrue(ext(address(TransceiverBase(payable(zk)))).addressesDiverge());
+        assertTrue(ext(divergent).addressesDiverge());
+    }
+
+    function test_theGatewayRoleMatchesTheProviderWithNoneListed() public view {
+        assertEq(IAccessControl(divergent).hasRole(GATEWAY_ROLE, _gateway()), _usesGatewayRole());
+    }
+
+    function test_theGovernorHomeIdIsNamedAtInitialization() public view {
+        bytes32 home = ChainKey.forEvm(1);
+        assertEq(IProviderIdTable(divergent).providerIdFor(home), GOVERNOR_HOME_ID);
+        assertEq(TransceiverBase(payable(divergent)).routeFor(home), Erc7930.encodeEvmChain(1));
+    }
+
+    function _sendReportFromFloat() internal {
+        _wireReportHome();
+        vm.prank(makeAddr("relayer"));
+        IReportHarness(divergent)
+            .reportPublic(ChainKey.forEvm(REMOTE_CHAIN_ID), address(0xA11CE), bytes32(0), address(0x2C));
     }
 
     function test_aReportSpendsFromTheFloat() public {
         _setProviderFee(0.01 ether);
-        vm.deal(zk, 1 ether);
+        vm.deal(divergent, 1 ether);
+        _sendReportFromFloat();
 
-        vm.prank(makeAddr("relayer"));
-        IReportHarness(zk).reportPublic(ChainKey.forEvm(REMOTE_CHAIN_ID), address(0xA11CE), bytes32(0), address(0x2C));
-
-        assertEq(zk.balance, 1 ether - _expectedQuoteFor(0.01 ether), "the quoted fee, paid from the float");
+        assertEq(divergent.balance, 1 ether - _expectedQuoteFor(0.01 ether), "the quoted fee, paid from the float");
         assertEq(_lastGasLimit(), DeliveryGas.REPORT, "the float pays for the report's fixed gas only");
         _assertReportSent();
     }

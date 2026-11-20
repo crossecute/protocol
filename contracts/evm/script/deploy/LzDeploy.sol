@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {TransceiverBase, TransceiverConfig} from "src/messaging/transceiver/TransceiverBase.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
-import {LzZkSyncTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
+import {LzZkSyncTransceiver, LzTronTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
 import {LzReceiver} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzTransmitter} from "src/protocols/layerzero/LzTransmitter.sol";
 import {check} from "script/deploy/ProxyDeploy.sol";
@@ -41,6 +41,21 @@ library LzDeploy {
     function transceiver(TransceiverDeployment memory d, uint32 homeEid, address homeDvn) internal returns (address t) {
         t = deployTransceiverProxy(
             d, abi.encodeCall(LzTransceiver.initialize, (d.config, homeEid, homeDvn)), address(0)
+        );
+        _checkHome(t, d.config, homeEid, homeDvn);
+    }
+
+    /// @param conduitBytecodeHash TRON-solc's Proxy initcode hash.
+    function tronTransceiver(
+        TransceiverDeployment memory d,
+        uint32 homeEid,
+        address homeDvn,
+        bytes32 conduitBytecodeHash
+    ) internal returns (address t) {
+        t = deployTransceiverProxy(
+            d,
+            abi.encodeCall(LzTronTransceiver.initialize, (d.config, homeEid, homeDvn, conduitBytecodeHash)),
+            address(0)
         );
         _checkHome(t, d.config, homeEid, homeDvn);
     }

@@ -128,8 +128,9 @@ on the chain and it has one address on every parity chain.
 LayerZero takes `LZ_GOVERNOR_HOME_DVN`, unset unless the governor home's pathway defaults to the
 dead DVN; it is then this chain's LayerZero Labs DVN ([CHECKS §5](CHECKS.md#5-verification-on-the-destination)).
 
-zkSync and Tron have deploy functions, which the tests use, but no production script: their
-bytecode, and step 1's `ChainRegistry` there, comes from zksolc and TRON-solc.
+The CCIP, Hyperlane, and LayerZero provider tests deploy zkSync and Tron transceiver proxies
+on Forge's EVM. Native deployments require artifacts from zksolc or TRON-solc, including the
+`ChainRegistry` from step 1. The production scripts do not drive those native builds.
 
 `op-stack-l2-l2` deploys only to a chain its configuration lists, with a governor's home on an
 L2 it lists too, and only where the `L2ToL2CrossDomainMessenger` predeploy has code. Where the

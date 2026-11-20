@@ -15,12 +15,12 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 
 import {toBytes32, ext} from "test/Harness.sol";
 import {
-    ProviderZkSyncSpec,
+    ProviderDivergentSpec,
     ProviderInboundSpec,
     ProviderGovernorHomeSpec,
     ProviderDeliveryGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
-import {LzFixture, LzZkSyncHarness} from "test/protocols/layerzero/LzFixture.sol";
+import {LzFixture, LzTronHarness, LzZkSyncHarness} from "test/protocols/layerzero/LzFixture.sol";
 import {LzTransceiver, LzTransceiverBase} from "src/protocols/layerzero/LzTransceiver.sol";
 import {LzMessage, UlnConfig} from "src/protocols/layerzero/LzMessage.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -160,23 +160,36 @@ contract LzDvnTest is LzFixture {
 
 /// @notice A report is sent at `msg.value == 0` from the float, which OApp's `_lzSend` would
 ///         refuse with `NotEnoughNative`; `LzMessage.send` pays the endpoint directly (#55).
-contract LzZkSyncTransceiverTest is ProviderZkSyncSpec, LzFixture {
-    function _zkSyncImplementation() internal override returns (address) {
-        return address(new LzZkSyncHarness(address(endpoint)));
-    }
-
-    function _deployZkSync(TransceiverDeployment memory d, bytes32 conduitBytecodeHash)
-        internal
-        override
-        returns (address)
-    {
-        return LzDeploy.zkSyncTransceiver(d, 0, address(0), conduitBytecodeHash);
-    }
-
+abstract contract LzDivergentTransceiverSpec is ProviderDivergentSpec, LzFixture {
     function _assertReportSent() internal view override {
         MockLzEndpoint.Sent memory s = endpoint.sent(0);
         assertEq(s.dstEid, BASE_EID, "to the conduit's home");
-        assertEq(s.refundAddress, zk, "an overpayment returns to the float, not the relayer");
+        assertEq(s.receiver, toBytes32(HOME_TRANSCEIVER), "to its transceiver there");
+        assertEq(s.refundAddress, divergent, "an overpayment returns to the float");
+    }
+
+    function _usesGatewayRole() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract LzZkSyncTransceiverTest is LzDivergentTransceiverSpec {
+    function _divergentImplementation() internal override returns (address) {
+        return address(new LzZkSyncHarness(address(endpoint)));
+    }
+
+    function _deployDivergent(TransceiverDeployment memory d, uint256 homeId) internal override returns (address) {
+        return LzDeploy.zkSyncTransceiver(d, uint32(homeId), address(0), CONDUIT_BYTECODE_HASH);
+    }
+}
+
+contract LzTronTransceiverTest is LzDivergentTransceiverSpec {
+    function _divergentImplementation() internal override returns (address) {
+        return address(new LzTronHarness(address(endpoint)));
+    }
+
+    function _deployDivergent(TransceiverDeployment memory d, uint256 homeId) internal override returns (address) {
+        return LzDeploy.tronTransceiver(d, uint32(homeId), address(0), CONDUIT_BYTECODE_HASH);
     }
 }
 

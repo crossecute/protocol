@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {CcipTransceiver} from "src/protocols/ccip/CcipTransceiver.sol";
-import {CcipZkSyncTransceiver} from "src/protocols/ccip/CcipDivergentTransceiver.sol";
+import {CcipZkSyncTransceiver, CcipTronTransceiver} from "src/protocols/ccip/CcipDivergentTransceiver.sol";
 import {CcipReceiver} from "src/protocols/ccip/CcipReceiver.sol";
 import {CcipTransmitter} from "src/protocols/ccip/CcipTransmitter.sol";
 import {
@@ -39,6 +39,19 @@ library CcipDeploy {
         returns (address t)
     {
         t = deployTransceiverProxy(d, abi.encodeCall(CcipTransceiver.initialize, (d.config, homeSelector)), router);
+        checkGovernorHomeId(t, d.config, homeSelector);
+    }
+
+    /// @param conduitBytecodeHash TRON-solc's Proxy initcode hash.
+    function tronTransceiver(
+        TransceiverDeployment memory d,
+        address router,
+        uint64 homeSelector,
+        bytes32 conduitBytecodeHash
+    ) internal returns (address t) {
+        t = deployTransceiverProxy(
+            d, abi.encodeCall(CcipTronTransceiver.initialize, (d.config, homeSelector, conduitBytecodeHash)), router
+        );
         checkGovernorHomeId(t, d.config, homeSelector);
     }
 

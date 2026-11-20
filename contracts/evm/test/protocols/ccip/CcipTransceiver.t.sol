@@ -7,12 +7,12 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IAny2EVMMessageReceiver} from "@chainlink/contracts-ccip/contracts/interfaces/IAny2EVMMessageReceiver.sol";
 
 import {
-    ProviderZkSyncSpec,
+    ProviderDivergentSpec,
     ProviderGatewayRoleSpec,
     ProviderGovernorHomeSpec,
     ProviderDeliveryGasSpec
 } from "test/protocols/ProviderBindingSpec.t.sol";
-import {CcipFixture, CcipZkSyncHarness} from "test/protocols/ccip/CcipFixture.sol";
+import {CcipFixture, CcipTronHarness, CcipZkSyncHarness} from "test/protocols/ccip/CcipFixture.sol";
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
 
 contract CcipTransceiverInboundTest is ProviderGatewayRoleSpec, CcipFixture {
@@ -25,19 +25,7 @@ contract CcipTransceiverInboundTest is ProviderGatewayRoleSpec, CcipFixture {
     }
 }
 
-contract CcipZkSyncTransceiverTest is ProviderZkSyncSpec, CcipFixture {
-    function _zkSyncImplementation() internal override returns (address) {
-        return address(new CcipZkSyncHarness(address(router)));
-    }
-
-    function _deployZkSync(TransceiverDeployment memory d, bytes32 conduitBytecodeHash)
-        internal
-        override
-        returns (address)
-    {
-        return CcipDeploy.zkSyncTransceiver(d, address(router), 0, conduitBytecodeHash);
-    }
-
+abstract contract CcipDivergentTransceiverSpec is ProviderDivergentSpec, CcipFixture {
     function _assertReportSent() internal view override {
         MockCcipRouter.Sent memory s = router.sent(0);
         assertEq(s.destChainSelector, BASE_SELECTOR, "to the conduit's home");
@@ -45,7 +33,27 @@ contract CcipZkSyncTransceiverTest is ProviderZkSyncSpec, CcipFixture {
     }
 
     function test_itAnswersSupportsInterface() public view {
-        assertTrue(IERC165(zk).supportsInterface(type(IAny2EVMMessageReceiver).interfaceId));
+        assertTrue(IERC165(divergent).supportsInterface(type(IAny2EVMMessageReceiver).interfaceId));
+    }
+}
+
+contract CcipZkSyncTransceiverTest is CcipDivergentTransceiverSpec {
+    function _divergentImplementation() internal override returns (address) {
+        return address(new CcipZkSyncHarness(address(router)));
+    }
+
+    function _deployDivergent(TransceiverDeployment memory d, uint256 homeId) internal override returns (address) {
+        return CcipDeploy.zkSyncTransceiver(d, address(router), uint64(homeId), CONDUIT_BYTECODE_HASH);
+    }
+}
+
+contract CcipTronTransceiverTest is CcipDivergentTransceiverSpec {
+    function _divergentImplementation() internal override returns (address) {
+        return address(new CcipTronHarness(address(router)));
+    }
+
+    function _deployDivergent(TransceiverDeployment memory d, uint256 homeId) internal override returns (address) {
+        return CcipDeploy.tronTransceiver(d, address(router), uint64(homeId), CONDUIT_BYTECODE_HASH);
     }
 }
 
