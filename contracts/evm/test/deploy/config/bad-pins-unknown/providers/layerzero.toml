@@ -1,0 +1,6 @@
+id_bits = 32
+pinned = ["z"]
+
+[ids]
+a = 1
+b = 2

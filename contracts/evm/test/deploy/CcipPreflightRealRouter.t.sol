@@ -31,11 +31,11 @@ contract CcipPreflightRealRouterTest is CcipOffRampFixture {
         for (uint256 i; i < all.length; ++i) {
             cs.push(all[i]);
         }
-        // Base's lane is the fixture's: the real OffRamp. Arbitrum and Optimism get ramps that only report versions.
-        IRealRouter.Ramp[] memory onRamps = new IRealRouter.Ramp[](3);
-        IRealRouter.Ramp[] memory offRamps = new IRealRouter.Ramp[](2);
+        // Base's lane is the fixture's: the real OffRamp. the others get ramps that only report versions.
+        IRealRouter.Ramp[] memory onRamps = new IRealRouter.Ramp[](4);
+        IRealRouter.Ramp[] memory offRamps = new IRealRouter.Ramp[](3);
         onRamps[0] = IRealRouter.Ramp(SOURCE, address(new PricingOnRamp("OnRamp 2.0.0")));
-        string[2] memory others = ["arbitrum", "optimism"];
+        string[3] memory others = ["arbitrum", "optimism", "fraxtal"];
         for (uint256 i; i < others.length; ++i) {
             // forge-lint: disable-next-line(unsafe-typecast) ccip.toml's id_bits is 64
             uint64 selector = uint64(ChainConfig.providerId(dir, cs, "ccip", ChainConfig.chainNamed(cs, others[i])));

@@ -28,6 +28,10 @@ derivation = "parity"
 chain_id = 10
 derivation = "parity"
 
+[chains.fraxtal]
+chain_id = 252
+derivation = "parity"
+
 [chains.zksync]
 chain_id = 324
 derivation = "zksync"

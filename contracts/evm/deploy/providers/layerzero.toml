@@ -1,7 +1,13 @@
 # LayerZero V2 endpoint ids (eids), keyed by chain name in ../chains.toml. A chain the provider
 # does not reach has no entry.
 # Source: https://metadata.layerzero-api.com/v1/metadata/deployments, `version: 2` mainnet
-# deployments, 2026-10-06.
+# deployments, 2026-10-06; fraxtal 2026-11-20.
+
+# Chains every one of whose LayerZero pathways defaults to LayerZero's dead DVN, which refuses
+# every message (#51, #94; CHECKS.md §5). Every pathway touching one is pinned to LayerZero
+# Labs' DVN alone, on both ends: by each transceiver (`setDvn`), by the governor's transmitter at
+# home (`LzTransmitter.setDvn`), and by each receiver for its home, from its transceiver.
+pinned = ["zksync", "fraxtal"]
 
 id_bits = 32
 
@@ -10,4 +16,15 @@ ethereum = 30101
 base = 30184
 arbitrum = 30110
 optimism = 30111
+fraxtal = 30255
 zksync = 30165
+
+# LayerZero Labs' messaging DVN on each chain, the one a pinned pathway is verified by there, not
+# the lzRead DVN. Source: https://metadata.layerzero-api.com/v1/metadata/dvns, 2026-11-20.
+[dvns]
+ethereum = "0x589dEDbD617e0CBcB916A9223F4d1300c294236b"
+base = "0x9e059a54699a285714207b43b055483e78faac25"
+arbitrum = "0x2f55c492897526677c5b68fb199ea31e2c126416"
+optimism = "0x6a02d83e8d433304bba74ef1c427913958187142"
+zksync = "0x620a9df73d2f1015ea75aea1067227f9013f5c51"
+fraxtal = "0xcce466a522984415bc91338c232d98869193d46e"

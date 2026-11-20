@@ -10,4 +10,5 @@ ethereum = 1
 base = 8453
 arbitrum = 42161
 optimism = 10
+fraxtal = 252
 zksync = 324

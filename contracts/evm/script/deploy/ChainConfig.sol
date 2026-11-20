@@ -56,17 +56,84 @@ library ChainConfig {
 
     /// @notice `provider`'s id for `c`, or zero where the provider does not reach it.
     /// @dev Checks the whole file each time: every key names a configured chain, and every id
-    ///      is nonzero, unique, and fits the provider's width.
+    ///      is nonzero, unique, and fits the provider's `id_bits`.
     function providerId(string memory dir, ChainEntry[] memory cs, string memory provider, ChainEntry memory c)
         internal
         view
-        returns (uint256 id)
+        returns (uint256)
     {
-        string memory toml = read(string.concat(dir, "/providers/", provider, ".toml"));
+        (string[] memory names, uint256[] memory ids) = _providerIds(read(_providerFile(dir, provider)), cs);
+        return _idNamed(names, ids, c.name);
+    }
+
+    /// @notice `provider`'s id for `remote` as `local`'s transceiver names it, or zero where it
+    ///         does not carry `local` to `remote`: either chain has no id, or the file's
+    ///         `[blocked]` table lists `remote` under `local`.
+    /// @dev `[blocked]` is directional, keyed by sender, and checked as the ids are.
+    function routeId(
+        string memory dir,
+        ChainEntry[] memory cs,
+        string memory provider,
+        ChainEntry memory local,
+        ChainEntry memory remote
+    ) internal view returns (uint256) {
+        string memory toml = read(_providerFile(dir, provider));
+        (string[] memory names, uint256[] memory ids) = _providerIds(toml, cs);
+        uint256 localId = _idNamed(names, ids, local.name);
+        uint256 remoteId = _idNamed(names, ids, remote.name);
+        if (localId == 0 || remoteId == 0 || local.chainId == remote.chainId) return 0;
+        if (!VM.keyExistsToml(toml, ".blocked")) return remoteId;
+        string[] memory senders = VM.parseTomlKeys(toml, ".blocked");
+        for (uint256 i; i < senders.length; ++i) {
+            check(_idNamed(names, ids, senders[i]) != 0, "blocked senders have provider ids");
+            string[] memory receivers = VM.parseTomlStringArray(toml, string.concat(".blocked.", senders[i]));
+            for (uint256 j; j < receivers.length; ++j) {
+                check(_idNamed(names, ids, receivers[j]) != 0, "blocked receivers have provider ids");
+                check(!_same(senders[i], receivers[j]), "a chain is not blocked from itself");
+                if (_same(senders[i], local.name) && _same(receivers[j], remote.name)) return 0;
+            }
+        }
+        return remoteId;
+    }
+
+    /// @notice LayerZero Labs' DVN on `local` for its pathway to `remote`, or zero where
+    ///         LayerZero's defaults verify it. A pathway is pinned where either end is listed in
+    ///         `layerzero.toml`'s `pinned`, whose every pathway defaults to the dead DVN.
+    /// @dev Checks each pinned name is a configured chain, and that `local` has a DVN listed.
+    function lzDvn(string memory dir, ChainEntry[] memory cs, ChainEntry memory local, ChainEntry memory remote)
+        internal
+        view
+        returns (address)
+    {
+        string memory toml = read(_providerFile(dir, "layerzero"));
+        if (!VM.keyExistsToml(toml, ".pinned")) return address(0);
+        string[] memory pinned = VM.parseTomlStringArray(toml, ".pinned");
+        bool pin;
+        for (uint256 i; i < pinned.length; ++i) {
+            check(hasChainNamed(cs, pinned[i]), "pinned LayerZero chains are chains.toml names");
+            if (_same(pinned[i], local.name) || _same(pinned[i], remote.name)) pin = true;
+        }
+        if (!pin) return address(0);
+        string memory key = string.concat(".dvns.", local.name);
+        check(VM.keyExistsToml(toml, key), "a chain on a pinned LayerZero pathway lists its DVN");
+        address dvn = VM.parseTomlAddress(toml, key);
+        check(dvn != address(0), "a listed LayerZero DVN is nonzero");
+        return dvn;
+    }
+
+    function _providerFile(string memory dir, string memory provider) private pure returns (string memory) {
+        return string.concat(dir, "/providers/", provider, ".toml");
+    }
+
+    function _providerIds(string memory toml, ChainEntry[] memory cs)
+        private
+        view
+        returns (string[] memory names, uint256[] memory ids)
+    {
         uint256 bits = VM.parseTomlUint(toml, ".id_bits");
         check(bits != 0 && bits <= 256, "id_bits is a width");
-        string[] memory names = VM.parseTomlKeys(toml, ".ids");
-        uint256[] memory ids = new uint256[](names.length);
+        names = VM.parseTomlKeys(toml, ".ids");
+        ids = new uint256[](names.length);
         for (uint256 i; i < names.length; ++i) {
             check(hasChainNamed(cs, names[i]), "provider ids are keyed by chains.toml names");
             ids[i] = VM.parseTomlUint(toml, string.concat(".ids.", names[i]));
@@ -75,8 +142,18 @@ library ChainConfig {
             for (uint256 j; j < i; ++j) {
                 check(ids[j] != ids[i], "provider id is unique");
             }
-            if (keccak256(bytes(names[i])) == keccak256(bytes(c.name))) id = ids[i];
         }
+    }
+
+    function _idNamed(string[] memory names, uint256[] memory ids, string memory name) private pure returns (uint256) {
+        for (uint256 i; i < names.length; ++i) {
+            if (_same(names[i], name)) return ids[i];
+        }
+        return 0;
+    }
+
+    function _same(string memory a, string memory b) private pure returns (bool) {
+        return keccak256(bytes(a)) == keccak256(bytes(b));
     }
 
     /// @notice The grade `registryChain`'s registry gives `graded`: `Predetermined` when

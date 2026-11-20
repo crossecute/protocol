@@ -14,6 +14,9 @@ fs_permissions = [
     { access = "read-write", path = "./out/governance" },
     { access = "read-write", path = "./out/rotation" },
 ]
+# GovernancePlanTest runs every chain's full configuration in one test; its cost grows with the
+# square of the chain count and exceeded the 2^30 default at five chains.
+gas_limit = 4294967296
 solc_version = "0.8.28"
 # Pinned to paris, not shanghai: PUSH0 is absent on zkSync, Tron, and several L2s.
 # The whole CREATE2 story depends on identical initcode producing identical addresses

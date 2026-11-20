@@ -8,8 +8,8 @@ import {ChainConfig, ChainEntry} from "script/deploy/ChainConfig.sol";
 import {MockCcipRamp, MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
 import {installCcipLanes} from "test/deploy/CcipLanes.sol";
 
-/// @notice `CcipPreflight` on Base, a parity chain whose peers in `deploy/` are Ethereum,
-///         Arbitrum and Optimism (zkSync is not a parity chain).
+/// @notice `CcipPreflight` on Base, a parity chain whose peers in `deploy/` are Ethereum, Arbitrum,
+///         Optimism and Fraxtal (zkSync is not a parity chain).
 contract CcipPreflightTest is Test {
     uint256 internal constant BASE = 8453;
     MockCcipRouter internal router;
@@ -144,6 +144,21 @@ contract CcipPreflightTest is Test {
         string memory found = CcipPreflight.problems(dir, cs, ChainConfig.chainWithId(cs, 10), address(router));
         assertTrue(_mentions(found, "optimism -> base: getFee"));
         assertFalse(_mentions(found, "optimism -> ethereum"));
+    }
+
+    /// @dev Chainlink carries no lane between Fraxtal and Arbitrum, so `ccip.toml` blocks the pair
+    ///      and neither end is checked for it.
+    function test_aBlockedPairIsNotChecked() public {
+        vm.chainId(42161);
+        installCcipLanes(router, "2.0.0");
+        router.setUnsupported(_selector("fraxtal"), true);
+        router.addOffRamp(_selector("fraxtal"), address(new MockCcipRamp("EVM2EVMOffRamp 1.5.0")));
+        assertEq(CcipPreflight.problems(dir, cs, ChainConfig.chainWithId(cs, 42161), address(router)), "");
+    }
+
+    function test_aCarriedPairWithFraxtalIsChecked() public {
+        router.setUnsupported(_selector("fraxtal"), true);
+        assertTrue(_mentions(_problems(), "base -> fraxtal: getFee"));
     }
 
     function test_requireRevertsWithEveryProblem() public {

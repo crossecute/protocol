@@ -15,6 +15,9 @@ import {Plan, Tx, PendingPair, GovernancePlan} from "script/deploy/GovernancePla
 import {GovernancePayloads} from "script/GovernancePayloads.s.sol";
 import {DeployProvider} from "script/DeployProvider.s.sol";
 import {testGovernanceFile, skipUnderCoverage} from "test/deploy/TestGovernance.sol";
+import {LzTransceiverBase} from "src/protocols/layerzero/LzTransceiver.sol";
+import {LzMessage, UlnConfig} from "src/protocols/layerzero/LzMessage.sol";
+import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {installCcipLanes} from "test/deploy/CcipLanes.sol";
 import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
 import {
@@ -114,7 +117,9 @@ contract GovernancePlanTest is Test {
         for (uint256 i; i < calls.length; ++i) {
             uint256 used = _call(conduit, calls[i].target, calls[i].value, calls[i].data);
             bool isSchedule = calls[i].target == address(ChainDeploy.predict(p.g).timelock);
-            assertLe(used * 11 / 10, isSchedule ? scheduleBudget : GovernancePlan.CALL_GAS, "a call fits its budget");
+            assertLe(
+                used * 11 / 10, isSchedule ? scheduleBudget : GovernancePlan.callGas(calls[i]), "a call fits its budget"
+            );
         }
     }
 
@@ -138,6 +143,7 @@ contract GovernancePlanTest is Test {
         }
         _submit(p.g.owner, GovernancePlan.bootstrap(p));
         _assertConfigured(p, c, p.g.home, true);
+        _assertGovernorPins(p);
         for (uint256 i; i < p.chains.length; ++i) {
             if (p.chains[i].chainId == p.g.home.chainId) continue;
             for (uint256 j; j < p.g.providers.length; ++j) {
@@ -156,42 +162,71 @@ contract GovernancePlanTest is Test {
         assertEq(c.registry.currentDeployer(), address(0x4E77), "the home rotated");
     }
 
+    /// @dev The governor's transmitter sends to each pinned chain over that chain's pinned DVN.
+    function _assertGovernorPins(Plan memory p) internal view {
+        MockLzEndpoint endpoint = MockLzEndpoint(address(0xE0001));
+        address conduit = GovernancePlan.governor(p, "layerzero");
+        uint256 pinned;
+        for (uint256 i; i < p.chains.length; ++i) {
+            address dvn = GovernancePlan.lzDvn(p, p.g.home, p.chains[i]);
+            uint256 eid = GovernancePlan.idFor(p, "layerzero", p.g.home, p.chains[i]);
+            if (dvn == address(0) || eid == 0) continue;
+            ++pinned;
+            address[] memory required = new address[](1);
+            required[0] = dvn;
+            assertEq(
+                // forge-lint: disable-next-line(unsafe-typecast) layerzero.toml's id_bits is 32
+                endpoint.configOf(conduit, endpoint.SEND_LIBRARY(), uint32(eid), LzMessage.ULN_CONFIG_TYPE),
+                abi.encode(UlnConfig(0, 1, LzMessage.NIL_DVN_COUNT, 0, required, new address[](0))),
+                "the governor's transmitter pins its DVN"
+            );
+        }
+        assertGt(pinned, 0, "the production configuration pins a pathway from home");
+    }
+
     /* ============================== every other chain =========================== */
 
+    /// @dev Each chain runs in its own call, so its allocations are freed: one frame holding all
+    ///      of them exhausts the test's memory budget as chains are added.
     function test_everyOtherChainIsConfiguredByItsBootstrapAndConnect() public {
         skipUnderCoverage();
+        Plan memory p = _plan();
+        uint256 clean = vm.snapshotState();
+        for (uint256 i; i < p.chains.length; ++i) {
+            if (p.chains[i].chainId == p.g.home.chainId) continue;
+            vm.revertToState(clean);
+            this.checkChain(i);
+        }
+    }
+
+    function checkChain(uint256 i) external {
         Plan memory p = _plan();
         Tx[] memory bootstraps = GovernancePlan.bootstrap(p);
         Tx[] memory connects = GovernancePlan.connect(p);
         Tx[] memory rotations = GovernancePlan.rotateRemote(p, address(0x4E77), new PendingPair[](0));
-        uint256 clean = vm.snapshotState();
-        for (uint256 i; i < p.chains.length; ++i) {
-            ChainEntry memory x = p.chains[i];
-            if (x.chainId == p.g.home.chainId) continue;
-            vm.revertToState(clean);
-            ChainContracts memory c = _deployChain(p, x);
+        ChainEntry memory x = p.chains[i];
+        ChainContracts memory c = _deployChain(p, x);
 
-            for (uint256 j; j < bootstraps.length; ++j) {
-                if (bytes4(bootstraps[j].data) != TransmitterBase.bootstrap.selector) continue;
-                (bytes memory payload,) = abi.decode(_args(bootstraps[j].data), (bytes, bytes[]));
-                (bytes memory identifier, bytes memory body) = abi.decode(payload, (bytes, bytes));
-                if (ChainKey.fromIdentifier(identifier) == ChainKey.forEvm(x.chainId)) {
-                    _arrive(p, x, bootstraps[j].to, abi.decode(body, (Call[])));
-                }
+        for (uint256 j; j < bootstraps.length; ++j) {
+            if (bytes4(bootstraps[j].data) != TransmitterBase.bootstrap.selector) continue;
+            (bytes memory payload,) = abi.decode(_args(bootstraps[j].data), (bytes, bytes[]));
+            (bytes memory identifier, bytes memory body) = abi.decode(payload, (bytes, bytes));
+            if (ChainKey.fromIdentifier(identifier) == ChainKey.forEvm(x.chainId)) {
+                _arrive(p, x, bootstraps[j].to, abi.decode(body, (Call[])));
             }
-            Tx memory execute = GovernancePlan.executeRegistry(p, x);
-            vm.warp(block.timestamp + p.g.timelockDelay);
-            _call(address(0xA11CE), execute.to, 0, execute.data);
-            for (uint256 j; j < connects.length; ++j) {
-                (bytes memory recipient, bytes memory payload,) =
-                    abi.decode(_args(connects[j].data), (bytes, bytes, bytes[]));
-                if (ChainKey.fromIdentifier(recipient) == ChainKey.forEvm(x.chainId)) {
-                    _arrive(p, x, connects[j].to, abi.decode(payload, (Call[])));
-                }
-            }
-            _assertConfigured(p, c, x, true);
-            _assertRotates(p, x, c, rotations);
         }
+        Tx memory execute = GovernancePlan.executeRegistry(p, x);
+        vm.warp(block.timestamp + p.g.timelockDelay);
+        _call(address(0xA11CE), execute.to, 0, execute.data);
+        for (uint256 j; j < connects.length; ++j) {
+            (bytes memory recipient, bytes memory payload,) =
+                abi.decode(_args(connects[j].data), (bytes, bytes, bytes[]));
+            if (ChainKey.fromIdentifier(recipient) == ChainKey.forEvm(x.chainId)) {
+                _arrive(p, x, connects[j].to, abi.decode(payload, (Call[])));
+            }
+        }
+        _assertConfigured(p, c, x, true);
+        _assertRotates(p, x, c, rotations);
     }
 
     /// @dev The rotation, delivered as the first proposer's receiver on `x` gets it from the home,
@@ -232,9 +267,20 @@ contract GovernancePlanTest is Test {
             assertEq(c.registry.localTransceiver(keccak256(bytes(name))), t, "local transceiver");
             for (uint256 i; i < p.chains.length; ++i) {
                 uint256 id = GovernancePlan.idFor(p, name, local, p.chains[i]);
-                if (id == 0) continue;
                 bytes32 key = ChainKey.forEvm(p.chains[i].chainId);
+                if (id == 0) {
+                    assertFalse(OutboundBase(t).hasRoute(key), "no route where the provider does not carry the pair");
+                    continue;
+                }
                 assertTrue(OutboundBase(t).hasRoute(key), "route");
+                if (keccak256(bytes(name)) == keccak256("layerzero")) {
+                    // forge-lint: disable-next-line(unsafe-typecast) layerzero.toml's id_bits is 32
+                    assertEq(
+                        LzTransceiverBase(payable(t)).dvnOf(uint32(id)),
+                        GovernancePlan.lzDvn(p, local, p.chains[i]),
+                        "the DVN pinned for a pinned pathway"
+                    );
+                }
                 assertEq(IProviderIdTable(t).providerIdFor(key), id, "provider id");
                 if (peers && keccak256(bytes(name)) == keccak256("layerzero")) {
                     assertEq(IOAppCore(t).peers(uint32(id)), bytes32(uint256(uint160(t))), "peer");
