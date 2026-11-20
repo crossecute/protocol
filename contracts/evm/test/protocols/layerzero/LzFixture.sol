@@ -14,7 +14,8 @@ import {LzDeploy} from "script/deploy/LzDeploy.sol";
 import {TransceiverBase} from "src/messaging/transceiver/TransceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {LzTransceiver} from "src/protocols/layerzero/LzTransceiver.sol";
-import {LzZkSyncTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
+import {LzZkSyncTransceiver, LzTronTransceiver} from "src/protocols/layerzero/LzDivergentTransceiver.sol";
+import {TronTransceiverExtension} from "src/messaging/transceiver/DivergentTransceiver.sol";
 import {LzReceiver, ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
 
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
@@ -53,6 +54,15 @@ contract LzTransceiverHarness is LzTransceiver {
     function _handleInbound(bytes32 origin, bytes calldata message) internal override {
         emit InboundHandled(origin);
         super._handleInbound(origin, message);
+    }
+}
+
+/// @notice Exposes the report seam.
+contract LzTronHarness is LzTronTransceiver {
+    constructor(address gateway) LzTronTransceiver(gateway, address(new TronTransceiverExtension())) {}
+
+    function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external {
+        _reportReceiver(home, owner, salt, receiver);
     }
 }
 

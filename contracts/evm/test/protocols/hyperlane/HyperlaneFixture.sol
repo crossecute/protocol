@@ -5,7 +5,11 @@ import {HyperlaneReceiver} from "src/protocols/hyperlane/HyperlaneReceiver.sol";
 import {GasAttribute} from "script/deploy/GasAttribute.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 
-import {HyperlaneZkSyncTransceiver} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
+import {
+    HyperlaneZkSyncTransceiver,
+    HyperlaneTronTransceiver
+} from "src/protocols/hyperlane/HyperlaneDivergentTransceiver.sol";
+import {TronTransceiverExtension} from "src/messaging/transceiver/DivergentTransceiver.sol";
 import {
     TransceiverDeployment,
     transceiverExtension,
@@ -43,6 +47,15 @@ contract HyperlaneTransceiverHarness is HyperlaneTransceiver {
     function _handleInbound(bytes32 origin, bytes calldata message) internal override {
         emit InboundHandled(origin);
         super._handleInbound(origin, message);
+    }
+}
+
+/// @notice Exposes the report seam.
+contract HyperlaneTronHarness is HyperlaneTronTransceiver {
+    constructor(address gateway) HyperlaneTronTransceiver(gateway, address(new TronTransceiverExtension())) {}
+
+    function reportPublic(bytes32 home, address owner, bytes32 salt, address receiver) external {
+        _reportReceiver(home, owner, salt, receiver);
     }
 }
 

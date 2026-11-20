@@ -925,7 +925,7 @@ to those, rather than flags:
 | `ProviderInboundSpec` | all six | C4, C6, C7, C24 (transceiver), C33; only the provider delivers |
 | `ProviderGatewayRoleSpec` | CCIP, Hyperlane, Wormhole, `op-stack-l2-l2` (LayerZero's OApp and `op-stack-l1-l2`'s messenger table check the caller themselves) | The transceiver's initializer grants the provider `GATEWAY_ROLE` |
 | `ProviderGovernorHomeSpec` | the five transceivers with an id table | The governor home's id and route are set at initialization (#28) |
-| `ProviderZkSyncSpec` | the three zkSync transceivers (Wormhole reaches no zkSync or Tron chain) | A receiver report is paid from the float, never the relayer, at `DeliveryGas.REPORT`, and any excess returns to the float |
+| `ProviderDivergentSpec` | CCIP, Hyperlane, and LayerZero zkSync and Tron transceivers on Forge's EVM | The initializer assigns the governor home's id and route and applies the provider's gateway role policy. Addresses diverge. Receiver reports spend from the float at `DeliveryGas.REPORT`, with the float named as the refund recipient for Hyperlane and LayerZero. |
 
 Protocol-level properties no binding can change are covered once, by the core tests named
 below. The column says where each line is held.
