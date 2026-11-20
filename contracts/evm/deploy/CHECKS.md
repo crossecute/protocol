@@ -437,7 +437,7 @@ ETH_RPC_URL=https://ethereum-rpc.publicnode.com \
 FRAXTAL_RPC_URL=https://fraxtal-rpc.publicnode.com \
 ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc \
 ETH_FORK_BLOCK=26452787 FRAXTAL_FORK_BLOCK=44161882 ARBITRUM_FORK_BLOCK=525772439 \
-forge test --match-path 'test/fork/*.t.sol' -vv
+forge test --match-contract '^(LzDvnForkTest|LzOftForkTest|LzOftForkDeliveryGasTest)$' -vv
 ```
 
 - `LzDvnForkTest` confirmed Ethereum's zkSync quote reverted with the default DVN
@@ -452,13 +452,47 @@ Signed OFT lane validation remains a deployment gate.
 
 ### Signed LayerZero OFT routes
 
+On 2026-11-19 Pacific time, `LzOftSignedForkTest` passed for the frxUSD lockbox
+on Fraxtal as home and the frxUSD peers on Ethereum and Arbitrum One as destinations.
+The run used Forge 1.8.1, solc 0.8.28, and protocol code from
+`25b436e619c87c4ce9e14ab7b56061c01ae6296b`.
+
+| Network | Block | Block hash |
+| --- | ---: | --- |
+| Ethereum | 26,452,948 | `0xd2ad49c4ced7f212002688cbca10650a69182d9c3a5409c3f982473db4e4253d` |
+| Fraxtal | 44,163,272 | `0xa54723a2be56691d03752f4d335645eb676b494675c28984ba4885bb06bc0de6` |
+| Arbitrum One | 525,780,069 | `0x7586c9921ff9e854a93d35602c9258b3b733e8b768283be83c1ea03b1ccd9dd4` |
+
+Run from `contracts/evm` with RPCs that serve state at these heights.
+
+```sh
+ETH_RPC_URL=https://ethereum-rpc.publicnode.com \
+FRAXTAL_RPC_URL=https://fraxtal-rpc.publicnode.com \
+ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc \
+ETH_FORK_BLOCK=26452948 FRAXTAL_FORK_BLOCK=44163272 ARBITRUM_FORK_BLOCK=525780069 \
+forge test --match-contract LzOftSignedForkTest -vv
+```
+
+| Destination | Signed bootstrap quote paid (wei) | Standalone signed message quote paid (wei) |
+| --- | ---: | ---: |
+| Ethereum | 11,244,113,148,395,502,652 | 10,977,624,258,985,439,048 |
+| Arbitrum One | 17,061,238,848,128,624,735 | 18,593,363,804,397,285,854 |
+
+Both lanes emitted a zero-token packet of 1,657 bytes for bootstrap and 1,593 bytes
+for the standalone message, including the packet header. The real destination
+endpoint composed within the signed option budgets of 1,500,000 and 600,000 gas,
+respectively. Each receiver installed the selected authority and executed the setup
+and message calls. Direct resubmission of the delivered message used the same replay
+state. The fixture stages source evidence with Safe and guard stubs, verifies real
+2-of-2 EOA signatures at the receiver, and simulates DVN and executor delivery.
+
 Before enabling signed OFT routes, run the #118 deployment validation against each intended
 OFT pair. Verify zero-amount sends and compose support, peers and endpoint/eid configuration,
 complete signed-bootstrap and message wire sizes, byte-sensitive quote/send fee parity and
 refund recipients. Simulate the complete factory/receiver compose entry point with the actual
-authority graph and application calls, and provide explicit compose gas attributes. The
-local OFT tests use mock transport and do not certify live gas, fees, payload caps or OFT
-compatibility. Confirm all copies of the factory, its logic and linked libraries use the same
+authority graph and application calls, and provide explicit compose gas attributes. The fork
+results apply to the pinned blocks, two-owner graph, and calls in the fixture. Confirm all
+copies of the factory, its logic and linked libraries use the same
 release build and deterministic addresses, including the receiver authority pins, by running
 every chain's deploy with the release's `CROSSECUTE_OFT_FACTORY`. Plain and
 signed modes use the same route-bound salt and six-argument factory prediction.
