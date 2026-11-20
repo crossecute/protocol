@@ -85,6 +85,8 @@ are pinned by `contracts/evm/foundry.lock`; the warning does not affect the buil
 
 ## Gas
 
+### Signature staging and cleanup
+
 `test/SendMessageGas.t.sol` measures what staging and clearing the record of one `sendMessage` adds
 to an owner transaction, against the same Safe and policy under an unmodified `SafePolicyGuard`. The
 signatures are two EOA signatures (130 bytes) plus a policy extension of the given size:
@@ -107,8 +109,67 @@ hashes it for the execution lock and staged record. With the same two signatures
 | 102,400 | 64,973 gas |
 
 A `bootstrap` takes the same staging and cleanup path. There is no byte cap, so the submitter pays this cost and a blob too large for the block
-limit cannot be executed. Child approval caching is measured in
-[`docs/benchmarks/safe-approval-evidence-sizing.md`](../../docs/benchmarks/safe-approval-evidence-sizing.md).
+limit cannot be executed.
+
+### Child approval evidence sizing
+
+The sizing fixture from [issue #107](https://github.com/crossecute/protocol/issues/107)
+uses a 2-of-2 parent Safe with a 10-of-13 child and a 5-of-7 child. Each child
+approves with exactly its threshold of EOA signatures. See the
+[guard design](../../docs/safe/safe-guard-design.md#persistent-child-approval-evidence)
+for how the guard records and retrieves child approvals.
+
+[`ApprovalGas.t.sol`](test/ApprovalGas.t.sol) runs each child's `signMessage` transaction
+under `CrossecuteGuard` and under an unmodified `SafePolicyGuard` with the same policy.
+The difference measures the cost of caching the approval.
+
+#### Approval calldata
+
+Safe 1.5.0 asks a contract owner to validate `abi.encode(parentTxHash)`, 32 bytes. The child
+approves it with a direct delegatecall to `SignMessageLib.signMessage(bytes)`, whose calldata is
+100 bytes: selector, offset, length and one padded word.
+
+The parent then carries an empty payload for each child: two 65-byte contract-signature headers
+and two zero length words, 194 bytes. The child evidence travels next to that blob, not inside it.
+
+#### Storage and gas costs
+
+`CrossecuteGuard` stores each approval as a `SignedSafeTx` struct, a `SafeTx` followed by the
+signatures, in persistent storage. It writes these slots:
+
+| Slots | Field |
+| ---: | --- |
+| 1 | `to` |
+| 1 | `value` |
+| 5 | `data`: one length slot and four data slots for 100 bytes |
+| 1 | `operation` |
+| 4 | `baseGas`, `gasToken`, `refundReceiver`, `nonce` |
+| 1 + ⌈n / 32⌉ | `signatures`, n bytes |
+
+The struct also has `safeTxGas` and `gasPrice` slots. The guard never writes them, since the
+inherited policy check requires both to be zero, so they always read as zero.
+
+| | 10-of-13 child | 5-of-7 child | Total |
+| --- | ---: | ---: | ---: |
+| Owner signatures | 650 bytes | 325 bytes | 975 bytes |
+| Slots written | 34 | 24 | 58 |
+| `getApproval` return, ABI-encoded | 1,280 bytes | 960 bytes | 2,240 bytes |
+| Measured cache cost | 687,294 gas | 465,531 gas | 1,152,825 gas |
+| At 1 gwei and $2,000/ETH | $1.37 | $0.93 | $2.31 |
+
+The measured cost includes the storage writes, message hashing and the per-Safe execution
+lock, including its Safe transaction hash and nonce read. It is close to the slot arithmetic:
+under the EIP-2929 schedule a fresh nonzero slot costs 22,100 gas and a zero written over zero costs 2,200,
+and in this shape `value` and the three payment fields are zero. A replacement for the same child
+and message writes over existing slots and costs less. These measurements use no policy
+extension. Approvals with an extension additionally read the Safe's threshold and check each
+required signature's bounds before stripping it. The stored and returned formats are unchanged.
+
+Reading a record back with `getApproval` loads every slot of the struct, the two unwritten ones
+included: 62 slots for both records, about 130,200 gas onchain at 2,100 per cold slot. An offchain
+`eth_call` costs the caller nothing.
+
+### Leaf publication
 
 `test/LeafPublicationGas.t.sol` measures `publishLeaves` execution for 448-byte execution leaves.
 The figures exclude the transaction's intrinsic and calldata cost, which grows by 512 bytes of

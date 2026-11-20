@@ -21,7 +21,7 @@
 ## Benchmarks
 
 - [Safe-signed dispatch measurements](benchmarks/safe-signed-dispatch-measurements.md) records verification gas, runtime sizes, and reproduction steps.
-- [Child approval evidence sizing](benchmarks/safe-approval-evidence-sizing.md) covers the cost of storing approvals in the guard.
+- [Child approval evidence sizing](../contracts/safe-guard/README.md#child-approval-evidence-sizing) covers the cost of storing approvals in the guard.
 - [Safe authority benchmark](benchmarks/authority-109/README.md) records signature verification gas and wire sizes. [Authority update measurements](benchmarks/authority-109/updates.md) covers the implemented update paths.
 
 ## Planning

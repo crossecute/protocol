@@ -309,8 +309,8 @@ cannot stand in for the empty child payload. A child signature set may contain a
 entries (`v = 1`) that a receiver cannot verify offchain, so the transmitter and receiver
 reject them at every level (#108).
 
-[`safe-approval-evidence-sizing.md`](../benchmarks/safe-approval-evidence-sizing.md) works through the size
-and storage cost of this evidence for one nested Safe shape.
+The [child approval benchmark](../../contracts/safe-guard/README.md#child-approval-evidence-sizing)
+measures the size and storage cost of this evidence for one nested Safe shape.
 
 ## Installation
 

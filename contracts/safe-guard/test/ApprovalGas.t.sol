@@ -8,9 +8,9 @@ import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
 
-/// @dev Measures what caching one approval adds to the child's `signMessage` execution, for the
-///      two child shapes in docs/benchmarks/safe-approval-evidence-sizing.md. The baseline is the same Safe
-///      and policy under an unmodified SafePolicyGuard.
+/// @dev Measures the cache cost for the two fixtures in the
+///      [child approval benchmark](../README.md#child-approval-evidence-sizing).
+///      The baseline is the same Safe and policy under an unmodified SafePolicyGuard.
 contract ApprovalGasTest is GuardTestBase {
     function test_gas_approvalCache_10of13() public {
         _measure(13, 10);

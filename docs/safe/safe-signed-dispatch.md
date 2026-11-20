@@ -445,7 +445,7 @@ Cases:
 - **Q6.10** Size the full encoded provider payload, including the signed authorization,
   any leaf and proof, and the nested evidence with its lookup keys and array framing.
   Quote and send with the same encoded bytes, destination and provider attributes. Pay
-  the provider the fee returned by the quote for that send. The [guard measurements](../benchmarks/safe-approval-evidence-sizing.md)
+  the provider the fee returned by the quote for that send. The [guard measurements](../../contracts/safe-guard/README.md#child-approval-evidence-sizing)
   cover guard return data.
 
 ### Q7. Resource limits
