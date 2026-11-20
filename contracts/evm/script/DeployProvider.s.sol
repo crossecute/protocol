@@ -37,9 +37,13 @@ abstract contract DeployProvider is Script {
 
     function _deploy(TransceiverDeployment memory d) internal virtual returns (address transceiver);
 
+    /// @dev Read-only checks of the provider's live state, run before anything is broadcast.
+    function _preflight() internal view virtual {}
+
     function run() external returns (address transceiver) {
         Governance memory g = _governance();
         GovernanceConfig.requireSet(g);
+        _preflight();
         vm.startBroadcast();
         (, address deployer,) = vm.readCallers();
         (address receiverImpl, address transmitterImpl, address transceiverImpl) = _implementations();

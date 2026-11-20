@@ -15,6 +15,8 @@ import {Plan, Tx, PendingPair, GovernancePlan} from "script/deploy/GovernancePla
 import {GovernancePayloads} from "script/GovernancePayloads.s.sol";
 import {DeployProvider} from "script/DeployProvider.s.sol";
 import {testGovernanceFile, skipUnderCoverage} from "test/deploy/TestGovernance.sol";
+import {installCcipLanes} from "test/deploy/CcipLanes.sol";
+import {MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
 import {
     TestDeployLz,
     TestDeployCcip,
@@ -65,6 +67,7 @@ contract GovernancePlanTest is Test {
         c = ChainDeploy.deploy(p.g);
         deployCodeTo("MockLzEndpoint.sol:MockLzEndpoint", address(0xE0001));
         deployCodeTo("MockCcipRouter.sol:MockCcipRouter", address(0xE0002));
+        installCcipLanes(MockCcipRouter(address(0xE0002)), "2.0.0");
         deployCodeTo("MockHyperlaneMailbox.sol:MockHyperlaneMailbox", address(0xE0003));
         uint16 wormholeChain = uint16(ChainConfig.providerId(p.dir, p.all, "wormhole", chain));
         deployCodeTo("MockWormholeCore.sol:MockWormholeCore", abi.encode(wormholeChain), address(0xE0004));

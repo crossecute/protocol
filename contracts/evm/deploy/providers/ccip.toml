@@ -5,6 +5,11 @@
 
 id_bits = 64
 
+# The OnRamp and OffRamp versions a lane may run, as `typeAndVersion()` reports them after
+# "OnRamp " and "OffRamp ". CCIP 1.5 reports "EVM2EVMOnRamp 1.5.0" and 1.6 "OnRamp 1.6.x", so
+# a legacy lane never matches. `CcipPreflight` reads this before any CCIP deployment.
+versions = ["2.0.0"]
+
 [ids]
 ethereum = "5009297550715157269"
 base = "15971525489660198786"
