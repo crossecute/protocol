@@ -46,14 +46,13 @@ the seventh; what they mean for an operator is in the README.
 
 ## 2. Chain checks before mainnet
 
-- **Fraxtal is not configured, so `layerzero-oft` cannot deploy there.** `DeployLzOft.s.sol`
-  and `LzOftLeaves.s.sol` read `deploy/chains.toml` and `providers/layerzero.toml`, which do not
-  list Fraxtal, the home `test/fork/LzOftFork.t.sol` uses for frxUSD. frxUSD passes every other
-  check in [CHECKS §7](../contracts/evm/deploy/CHECKS.md#7-layerzero-oft). Adding Fraxtal follows
-  [`deploy/README.md`](../contracts/evm/deploy/README.md) and is blocked by #94: every
-  LayerZero pathway touching Fraxtal defaults to the dead DVN, which the plain LayerZero binding
-  would have to pin, and CCIP, the governance's second proposer, reaches Fraxtal only from
-  Ethereum and Base.
+- **Fraxtal is configured but not deployed.** Its LayerZero pathways default to the dead DVN, so
+  every one is pinned ([CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination),
+  #94), and a conduit's owner must call `LzTransmitter.setDvn` before its first quote over plain
+  LayerZero there. CCIP carries Fraxtal only to and from Ethereum and Base (`[blocked]` in
+  `ccip.toml`), so Fraxtal to Arbitrum or Optimism has LayerZero and Hyperlane alone. Destination
+  gas on Fraxtal's own EVM is not measured, and `layerzero-oft` has not been deployed there
+  outside the fork test.
 
 - **LayerZero's zkSync side is unverified.** Its pathways default to the dead DVN, so both
   ends pin LayerZero Labs' DVN (#51, [CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination)).

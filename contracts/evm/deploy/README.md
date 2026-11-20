@@ -52,9 +52,16 @@ endpoint addresses, which the deploy scripts take from the environment.
   chain. `op-stack-l2-l2` has no ids; add the chain to its `chains` list once interop is live
   on it.
 
+  A provider that reaches the chain but not every pair lists the pairs it does not carry under
+  `[blocked]`, keyed by the sending chain, as `ccip.toml` does for Fraxtal and Arbitrum or
+  Optimism; the plan and the CCIP preflight skip them. `layerzero.toml` lists a chain whose
+  pathways all default to the dead DVN under `pinned`, and every chain's LayerZero Labs messaging
+  DVN under `[dvns]`.
+
 Then run `forge test`. `test/deploy/ChainConfig.t.sol` reads both and refuses a duplicate
 chain id, an unknown derivation, a provider key that is not a configured chain, and an id that
-is zero, repeated, or wider than the provider's `id_bits`. Deployments run the same checks.
+is zero, repeated, or wider than the provider's `id_bits`, and a `[blocked]` or `pinned` name that
+is not configured. Deployments run the same checks.
 
 Never change a deployed chain's ids. Transceivers hold them write-once.
 
@@ -125,8 +132,9 @@ Every transceiver implementation names the chain's `TransceiverExtension` (#70),
 `script/deploy/` deploys on first use through Arachnid's factory, so one serves every provider
 on the chain and it has one address on every parity chain.
 
-LayerZero takes `LZ_GOVERNOR_HOME_DVN`, unset unless the governor home's pathway defaults to the
-dead DVN; it is then this chain's LayerZero Labs DVN ([CHECKS §5](CHECKS.md#5-verification-on-the-destination)).
+LayerZero's DVN for the governor home's pathway comes from `providers/layerzero.toml`: set only
+where either end is in `pinned`, whose pathways default to the dead DVN, and then this chain's
+LayerZero Labs DVN from `[dvns]` ([CHECKS §5](CHECKS.md#5-verification-on-the-destination)).
 
 CCIP takes `CCIP_ROUTER`. Before it broadcasts anything, `DeployCcip` runs `CcipPreflight` on this
 chain: for every other parity chain CCIP reaches, the router must resolve the outbound OnRamp

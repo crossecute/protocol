@@ -672,8 +672,11 @@ executes runs as itself.
 A transceiver is its own delegate the same way, and that delegate cannot move: LayerZero's
 `setDelegate` is refused (`DelegateIsFixed`), so its endpoint config changes only through
 `setDvn`, write-once per eid, or at birth for the governor home's pathway. A receiver it creates
-inherits the DVN pinned for its home's eid. A transmitter's owner may name itself delegate
-through OApp's `setDelegate`, which is the owner's own authority over its own sends (#51).
+inherits the DVN pinned for its home's eid. A transmitter's owner sets the DVN stack its sends
+use with `setDvn(eid, required, optional, optionalThreshold)`, which replaces the pathway's
+default and any earlier call and leaves the conduit its own delegate; nothing constrains the
+stack. The owner may also name itself delegate through OApp's `setDelegate`, which is its own
+authority over its own sends (#51, #94).
 
 **R6.5** A binding SHOULD conduit for the per-conduit provider cost and state it.
 LayerZero's `__OAppCore_init` calls `endpoint.setDelegate`, so every conduit creation

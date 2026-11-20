@@ -396,9 +396,10 @@ What an operator or integrator has to know:
 - **Provider-side security configuration is mostly the provider's default.** No contract here
   sets a LayerZero library configuration or a Hyperlane `interchainSecurityModule()`, so the
   Mailbox owner's replaceable `defaultIsm` and LayerZero's default configuration decide what
-  counts as a verified message. The one exception is a LayerZero pathway whose default is the
-  dead DVN, such as every pathway touching zkSync: its transceiver pins LayerZero Labs' DVN
-  with `setDvn`, write-once per eid, and a receiver it creates inherits that pin (#51).
+  counts as a verified message. The exception is a LayerZero pathway whose default is the dead
+  DVN, such as every pathway touching zkSync or Fraxtal: its transceiver pins LayerZero Labs' DVN
+  with `setDvn`, write-once per eid, and a receiver it creates inherits that pin. A conduit's
+  owner sets the DVN stack its own sends use with `LzTransmitter.setDvn`, and may change it (#51, #94).
 - **Attestation-based providers prove who signed, not what happened.** LayerZero, CCIP,
   Hyperlane and Wormhole accept a message because parties outside the source chain attest to
   it: LayerZero's DVNs, Chainlink's node operators, the validators behind the Mailbox's ISM,
