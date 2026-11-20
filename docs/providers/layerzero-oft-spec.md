@@ -14,9 +14,8 @@ It is not a provider in `provider-spec.md`'s sense. It has no transceiver, so §
 R7.3 to R7.6, §6 and the transceiver specs of §8 do not apply to it, and it has no registry
 route, provenance bar, protocol bootstrap surcharge, receiver report or governor. Bootstrap
 still pays the home OFT's quoted transport fee. The rest of that file's
-rules on conduits hold here as they do for every binding. What the conduit
-trusts instead is in the README's
-[message providers](../../README.md#message-providers) section.
+rules on conduits hold here as they do for every binding. The
+[operator guide](../operator-guide.md#message-providers) describes the binding's trust assumptions.
 
 Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 
