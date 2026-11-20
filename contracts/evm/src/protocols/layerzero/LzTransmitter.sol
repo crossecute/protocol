@@ -47,6 +47,20 @@ contract LzTransmitter is SignedTransmitter, OAppSenderUpgradeable, LzWriteOnceP
         super.renounceOwnership();
     }
 
+    event DvnsSet(uint32 indexed eid, address[] required, address[] optional, uint8 optionalThreshold);
+
+    /// @notice Verify what this conduit sends to `eid` with the owner's DVN stack, on today's
+    ///         default send library. Replaces the pathway's default and any earlier call.
+    /// @dev The owner chooses the stack; nothing here or on the transceiver constrains it. Needed
+    ///      where the default is LayerZero's dead DVN (#94). The conduit is its own delegate.
+    function setDvn(uint32 eid, address[] calldata required, address[] calldata optional, uint8 optionalThreshold)
+        external
+        onlyOwner
+    {
+        LzMessage.setSendDvns(address(endpoint), eid, required, optional, optionalThreshold);
+        emit DvnsSet(eid, required, optional, optionalThreshold);
+    }
+
     /// @dev Resolves the inheritance diamond; the body is `LzWriteOncePeer`'s.
     function setPeer(uint32 eid, bytes32 peer) public override(OAppCoreUpgradeable, LzWriteOncePeer) {
         super.setPeer(eid, peer);

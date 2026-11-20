@@ -7,6 +7,7 @@ import {
     MessagingReceipt
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
+import {UlnConfig} from "src/protocols/layerzero/LzMessage.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 
 /// @notice Minimal endpoint surface the bindings actually call: `quote`, `send`,
@@ -112,8 +113,12 @@ contract MockLzEndpoint {
 
     mapping(address => mapping(uint32 => address)) public sendLibraryOf;
     mapping(address => mapping(uint32 => address)) public receiveLibraryOf;
-    /// oapp => library => eid => config type => the bytes last set.
+    /// oapp => library => eid => config type => the bytes last set. A ULN config is kept as the
+    /// struct EndpointV2's libraries keep, so setting one costs what it costs there.
     mapping(address => mapping(address => mapping(uint32 => mapping(uint32 => bytes)))) internal _configs;
+    mapping(address => mapping(address => mapping(uint32 => UlnConfig))) internal _ulnConfigs;
+
+    uint32 internal constant ULN_CONFIG_TYPE = 2;
 
     /// @dev EndpointV2's `LZ_Unauthorized`.
     error Unauthorized();
@@ -143,7 +148,11 @@ contract MockLzEndpoint {
     function setConfig(address oapp, address lib, SetConfigParam[] calldata params) external {
         _authorize(oapp);
         for (uint256 i; i < params.length; ++i) {
-            _configs[oapp][lib][params[i].eid][params[i].configType] = params[i].config;
+            if (params[i].configType == ULN_CONFIG_TYPE) {
+                _ulnConfigs[oapp][lib][params[i].eid] = abi.decode(params[i].config, (UlnConfig));
+            } else {
+                _configs[oapp][lib][params[i].eid][params[i].configType] = params[i].config;
+            }
         }
     }
 
@@ -152,6 +161,7 @@ contract MockLzEndpoint {
         view
         returns (bytes memory)
     {
+        if (configType == ULN_CONFIG_TYPE) return abi.encode(_ulnConfigs[oapp][lib][remoteEid]);
         return _configs[oapp][lib][remoteEid][configType];
     }
 

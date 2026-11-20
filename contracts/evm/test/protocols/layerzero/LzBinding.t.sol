@@ -7,7 +7,7 @@ import {Proxy, IProxy} from "src/conduit/Proxy.sol";
 import {Call} from "src/messaging/Call.sol";
 import {LzReceiver, ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
 import {LzHomePeer} from "src/protocols/layerzero/LzHomePeer.sol";
-import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
+import {LzMessage, UlnConfig} from "src/protocols/layerzero/LzMessage.sol";
 import {LzWriteOncePeer} from "src/protocols/layerzero/LzWriteOncePeer.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -31,6 +31,13 @@ import {LzFixture} from "test/protocols/layerzero/LzFixture.sol";
 
 /// @notice LayerZero delivers to the eid's peer, never to the recipient's address, so the
 ///         destination check is the eid alone.
+/// @dev Any ULN config: the mock endpoint keeps one as the struct a library keeps.
+function someUlnConfig() pure returns (bytes memory) {
+    address[] memory required = new address[](1);
+    required[0] = address(0xC0FFEE);
+    return abi.encode(UlnConfig(0, 1, LzMessage.NIL_DVN_COUNT, 0, required, new address[](0)));
+}
+
 contract LzTransceiverSendTest is
     ProviderIdTableSpec,
     ProviderPayloadPricedSpec,
@@ -127,7 +134,7 @@ contract LzReceiveTest is ProviderWideSenderSpec, ProviderSignedLockSpec, LzFixe
     function test_onlyAPayloadReconfiguresTheReceiver() public {
         address lib = endpoint.RECEIVE_LIBRARY();
         SetConfigParam[] memory params = new SetConfigParam[](1);
-        params[0] = SetConfigParam(BASE_EID, LzMessage.ULN_CONFIG_TYPE, hex"c0ffee");
+        params[0] = SetConfigParam(BASE_EID, LzMessage.ULN_CONFIG_TYPE, someUlnConfig());
 
         vm.expectRevert(MockLzEndpoint.Unauthorized.selector);
         endpoint.setConfig(receiver, lib, params);
@@ -135,7 +142,7 @@ contract LzReceiveTest is ProviderWideSenderSpec, ProviderSignedLockSpec, LzFixe
         Call[] memory calls = new Call[](1);
         calls[0] = Call(address(endpoint), 0, abi.encodeCall(MockLzEndpoint.setConfig, (receiver, lib, params)));
         _deliver(receiver, BASE_EID, toBytes32(SOURCE_TRANSMITTER), Payload.encodeCalls(calls));
-        assertEq(endpoint.configOf(receiver, lib, BASE_EID, LzMessage.ULN_CONFIG_TYPE), hex"c0ffee");
+        assertEq(endpoint.configOf(receiver, lib, BASE_EID, LzMessage.ULN_CONFIG_TYPE), someUlnConfig());
     }
 
     /// @dev OApp's own peer check, which compares all 32 bytes, refuses it first.
@@ -170,12 +177,62 @@ contract LzTransmitterSendTest is ProviderTransmitterSendSpec, LzFixture {
         _peerWithItsReceiver(conduit_, owner);
     }
 
+    function _stack(address a, address b) private pure returns (address[] memory list) {
+        list = new address[](2);
+        list[0] = a;
+        list[1] = b;
+    }
+
+    /// @dev #94: the owner sets the conduit's DVN stack in one call, which keeps the conduit its
+    ///      own delegate and pins the default send library.
+    function test_theOwnerSetsItsDvnStack() public {
+        address[] memory required = _stack(address(0xD1), address(0xD2));
+        address[] memory optional = new address[](1);
+        optional[0] = address(0xD3);
+        vm.expectEmit(true, false, false, true, conduit);
+        emit LzTransmitter.DvnsSet(BASE_EID, required, optional, 1);
+        vm.prank(CONDUIT_OWNER);
+        LzTransmitter(conduit).setDvn(BASE_EID, required, optional, 1);
+
+        assertEq(endpoint.sendLibraryOf(conduit, BASE_EID), endpoint.SEND_LIBRARY());
+        assertEq(
+            endpoint.configOf(conduit, endpoint.SEND_LIBRARY(), BASE_EID, LzMessage.ULN_CONFIG_TYPE),
+            abi.encode(UlnConfig(0, 2, 1, 1, required, optional))
+        );
+        assertEq(endpoint.delegateOf(conduit), conduit, "the conduit stays its own delegate");
+    }
+
+    function test_theOwnerReplacesItsStackAndEmptyMeansNone() public {
+        vm.startPrank(CONDUIT_OWNER);
+        LzTransmitter(conduit).setDvn(BASE_EID, _stack(address(0xD1), address(0xD2)), new address[](0), 0);
+        address[] memory one = new address[](1);
+        one[0] = address(0xD4);
+        LzTransmitter(conduit).setDvn(BASE_EID, one, new address[](0), 0);
+        vm.stopPrank();
+        assertEq(
+            endpoint.configOf(conduit, endpoint.SEND_LIBRARY(), BASE_EID, LzMessage.ULN_CONFIG_TYPE),
+            abi.encode(UlnConfig(0, 1, LzMessage.NIL_DVN_COUNT, 0, one, new address[](0)))
+        );
+    }
+
+    function test_onlyTheOwnerSetsTheStack() public {
+        vm.prank(address(0xBAD));
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(0xBAD)));
+        LzTransmitter(conduit).setDvn(BASE_EID, _stack(address(0xD1), address(0xD2)), new address[](0), 0);
+    }
+
+    function test_aStackTooLongToCountIsRefused() public {
+        vm.prank(CONDUIT_OWNER);
+        vm.expectRevert(LzMessage.TooManyDvns.selector);
+        LzTransmitter(conduit).setDvn(BASE_EID, new address[](255), new address[](0), 0);
+    }
+
     /// @dev #51: the owner reconfigures the conduit's sends, such as toward zkSync whose default
     ///      DVN refuses every message, by naming itself delegate through OApp's `setDelegate`.
     function test_theOwnerCanReconfigureTheConduit() public {
         address lib = endpoint.SEND_LIBRARY();
         SetConfigParam[] memory params = new SetConfigParam[](1);
-        params[0] = SetConfigParam(BASE_EID, LzMessage.ULN_CONFIG_TYPE, hex"c0ffee");
+        params[0] = SetConfigParam(BASE_EID, LzMessage.ULN_CONFIG_TYPE, someUlnConfig());
 
         vm.prank(address(0xBAD));
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, address(0xBAD)));
@@ -185,6 +242,6 @@ contract LzTransmitterSendTest is ProviderTransmitterSendSpec, LzFixture {
         LzTransmitter(conduit).setDelegate(CONDUIT_OWNER);
         endpoint.setConfig(conduit, lib, params);
         vm.stopPrank();
-        assertEq(endpoint.configOf(conduit, lib, BASE_EID, LzMessage.ULN_CONFIG_TYPE), hex"c0ffee");
+        assertEq(endpoint.configOf(conduit, lib, BASE_EID, LzMessage.ULN_CONFIG_TYPE), someUlnConfig());
     }
 }
