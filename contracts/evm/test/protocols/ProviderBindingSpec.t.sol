@@ -296,10 +296,9 @@ abstract contract ProviderIdTableSpec is ProviderSendSpec, ProviderIdFixture {
     }
 }
 
-/// @title ProviderTransmitterSendSpec
-/// @notice A conduit's own send (path A) through the binding's transmitter, paid from the
-///         conduit's balance whatever `msg.value` is (R7.1), at the payload default gas.
-abstract contract ProviderTransmitterFixture is ProviderFixture {
+/// @title ProviderConduitSetup
+/// @notice A deployed transceiver with a funded conduit, bootstrapped to the remote chain.
+abstract contract ProviderConduitSetup is ProviderFixture {
     address internal constant CONDUIT_OWNER = address(0xA11CE);
     address payable internal conduit;
 
@@ -329,7 +328,10 @@ abstract contract ProviderTransmitterFixture is ProviderFixture {
         TransmitterBase(conduit).bootstrap(bootstrapPayload(REMOTE_CHAIN_ID, new Call[](0)), _attributes());
         assertEq(c.treasury.balance, treasuryBalance, "bootstrap has no routine outbound fee");
     }
+}
 
+/// @notice Fee settlement through the conduit's quote and send.
+abstract contract ProviderTransmitterFixture is ProviderConduitSetup {
     function test_quoteBreakdownMatchesPayments() public {
         _assertFeeSettlement(0.001 ether);
     }
@@ -359,6 +361,9 @@ abstract contract ProviderTransmitterFixture is ProviderFixture {
     }
 }
 
+/// @title ProviderTransmitterSendSpec
+/// @notice A conduit's own send (path A) through the binding's transmitter, paid from the
+///         conduit's balance whatever `msg.value` is (R7.1), at the payload default gas.
 abstract contract ProviderTransmitterSendSpec is ProviderTransmitterFixture, ProviderGasFixture {
     function test_aFundedConduitSendsWithNoValueAttached() public {
         Call[] memory calls = new Call[](1);

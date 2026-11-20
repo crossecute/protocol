@@ -82,6 +82,11 @@ abstract contract LzFixture is ProviderGasFixture {
 
     MockLzEndpoint internal endpoint = new MockLzEndpoint();
 
+    /// @dev The remote chain's eid; a fixture on a fork overrides it with the pathway under test.
+    function _remoteEid() internal pure virtual returns (uint32) {
+        return BASE_EID;
+    }
+
     function _transceiverImplementation() internal override returns (address) {
         return address(new LzTransceiverHarness(address(endpoint)));
     }
@@ -113,7 +118,7 @@ abstract contract LzFixture is ProviderGasFixture {
         override
         returns (bytes memory)
     {
-        return abi.encodeCall(ILzReceiverInit.initialize, (sourceTransmitter, calls, BASE_EID, address(0)));
+        return abi.encodeCall(ILzReceiverInit.initialize, (sourceTransmitter, calls, _remoteEid(), address(0)));
     }
 
     function _attributes() internal pure override returns (bytes[] memory) {
@@ -125,7 +130,7 @@ abstract contract LzFixture is ProviderGasFixture {
     }
 
     function _remoteProviderId() internal pure override returns (uint256) {
-        return BASE_EID;
+        return _remoteEid();
     }
 
     function _setProviderId(address t, bytes32 chainKey, uint256 providerId) internal override {
@@ -138,7 +143,7 @@ abstract contract LzFixture is ProviderGasFixture {
     ///         receiver, at the conduit's address.
     function _peerWithItsReceiver(address conduit_, address owner) internal {
         vm.prank(owner);
-        LzTransmitter(payable(conduit_)).setPeer(BASE_EID, toBytes32(conduit_));
+        LzTransmitter(payable(conduit_)).setPeer(_remoteEid(), toBytes32(conduit_));
     }
 
     function _configureRemote(address t, address counterpart) internal override {
@@ -154,7 +159,7 @@ abstract contract LzFixture is ProviderGasFixture {
             vm.stopPrank();
         }
         vm.prank(tb.owner());
-        LzTransceiver(payable(t)).setPeer(BASE_EID, toBytes32(counterpart));
+        LzTransceiver(payable(t)).setPeer(_remoteEid(), toBytes32(counterpart));
     }
 
     function _deliver(address to, uint256 originId, bytes32 sender, bytes memory message) internal override {
@@ -167,7 +172,7 @@ abstract contract LzFixture is ProviderGasFixture {
 
     function _deliverBypassingGateway(address to, bytes32 sender, bytes memory message) internal override {
         ILayerZeroReceiver(to)
-            .lzReceive(Origin({srcEid: BASE_EID, sender: sender, nonce: 1}), bytes32(0), message, address(0), "");
+            .lzReceive(Origin({srcEid: _remoteEid(), sender: sender, nonce: 1}), bytes32(0), message, address(0), "");
     }
 
     function _setProviderFee(uint256 fee) internal override {
