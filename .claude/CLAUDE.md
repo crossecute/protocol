@@ -80,7 +80,7 @@ Tests follow the same rule. A property every binding must satisfy goes in
 It is reasonably possible unless one of these holds:
 
 - it would change `Proxy`'s initcode or add storage to a base's sequential layout
-  (R8.1, R8.2 in `docs/provider-spec.md`);
+  (R8.1, R8.2 in `docs/providers/provider-spec.md`);
 - the "shared" code would need a flag or branch per caller to preserve each caller's
   behavior, which is two functions pretending to be one;
 - it adds a `virtual` hook with a single implementer and no second one in sight.
@@ -101,7 +101,7 @@ and the results last recorded. Which parts apply depends on what is being added.
   record the results with the date. Where a provider's check fails, leave the chain out of
   that provider's `providers/<p>.toml` and open an issue for the failure. Do not
   configure around it, since ids and routes are write-once.
-- **A new provider.** Start from `docs/provider-spec.md`: §2 is the go or no-go checklist
+- **A new provider.** Start from `docs/providers/provider-spec.md`: §2 is the go or no-go checklist
   and §10 the binding checklist. The binding goes under `src/protocols/<p>/`, its fixture
   under `test/protocols/<p>/` (every shared spec runs against it), its deploy library in
   `script/deploy/<P>Deploy.sol`, and its script in `script/Deploy<P>.s.sol`. Add

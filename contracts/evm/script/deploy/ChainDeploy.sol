@@ -100,7 +100,7 @@ library GovernanceConfig {
 }
 
 /// @title ChainDeploy
-/// @notice Step 1 of `docs/provider-spec.md` §6 on a parity chain: the timelock, then the registry
+/// @notice Step 1 of `docs/providers/provider-spec.md` §6 on a parity chain: the timelock, then the registry
 ///         and treasury it owns, each through Arachnid's factory with arguments taken only from
 ///         `deploy/`, so each sits at one address on every parity chain.
 library ChainDeploy {
@@ -175,7 +175,7 @@ library ChainDeploy {
         checkChain(g, c);
     }
 
-    /// @notice The design `docs/provider-spec.md` §6 step 1 states, read back from chain.
+    /// @notice The design `docs/providers/provider-spec.md` §6 step 1 states, read back from chain.
     /// @dev Only the timelock itself may hold its admin role. Roles cannot be enumerated, so
     ///      that rests on the constructor arguments, which `predict` fixes: a timelock at the
     ///      predicted address was built with no admin.

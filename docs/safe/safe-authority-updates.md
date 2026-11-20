@@ -3,9 +3,9 @@
 Design and implementation for [#109](https://github.com/crossecute/protocol/issues/109).
 Extends [signed dispatch](safe-signed-dispatch.md) and the
 [Safe guard](safe-guard-design.md). This file owns architecture and normative behavior;
-[verification](safe-authority-verification-review.md) owns implementation gates/tests,
-[review findings](planning/safe-authority-review-109.md) own security disposition, and
-[benchmarks](benchmarks/authority-109/README.md) own measurements/reproduction.
+[verification](../planning/safe-authority-verification-review.md) owns implementation gates/tests,
+[review findings](../planning/safe-authority-review-109.md) own security disposition, and
+[benchmarks](../benchmarks/authority-109/README.md) own measurements/reproduction.
 
 **Status:** the source guard implements activation, ownership changes, selectAuthority and
 the protected-call rules, tested against real Safe 1.5.0 proxies. The receiver authority
@@ -14,9 +14,9 @@ source-call recognition is one library shared by both. Signed receivers seed the
 from bootstrap, accept direct linked updates and verify application dispatch against the
 selected graph. Quote and bootstrap check the supplied witness against the source guard.
 Provider authority relay/quote adapters and exact authenticated provider retries are implemented.
-Offline [archive and retrieval tooling](../tools/authority-archive/README.md) preserves graph witnesses and exact submissions.
+Offline [archive and retrieval tooling](../../tools/authority-archive/README.md) preserves graph witnesses and exact submissions.
 SDK execution tooling, archive-service operation and deployment validation remain. No deployment is claimed. The
-[verification plan](safe-authority-verification-review.md#implementation-coverage-and-remaining-work)
+[verification plan](../planning/safe-authority-verification-review.md#implementation-coverage-and-remaining-work)
 lists what remains.
 
 ## Receiver authority, seeded by bootstrap
@@ -166,7 +166,7 @@ an executed ownership change or selection, alongside `AuthorityUpdateExecuted`.
 using the staged portable signatures and nested approvals, never the source execution
 signature set. `publishedAuthority(sourceSafe, updateHead)` retains its keccak256 hash.
 Activation publishes no relayable submission. Publication and all its writes revert if
-source execution fails. The [archive utility](../tools/authority-archive/README.md) imports
+source execution fails. The [archive utility](../../tools/authority-archive/README.md) imports
 full graphs and exact submissions against source hashes, retrieves selected witnesses and
 ordered catch-up chains, and rejects missing or corrupt evidence. Activation graphs must
 be preserved from staging calldata or a bootstrap, since activation publishes no full
@@ -369,7 +369,7 @@ signatures. Updates therefore execute as multicall([stageUpdate, execTransaction
 through any multicall contract. The variable-size currentGraph is source-only calldata:
 it authenticates the old owners and child positions without persistent source records.
 It is not included in receiver update or application wire messages. The current
-[measurements](benchmarks/authority-109/updates.md) report its source calldata cost.
+[measurements](../benchmarks/authority-109/updates.md) report its source calldata cost.
 The multicall is not pinned: skipped or wrong staging only makes
 the guard revert, and transient data ends with the transaction. A plain
 execTransaction, as the Safe UI sends it, reverts for lack of staged data; owners can

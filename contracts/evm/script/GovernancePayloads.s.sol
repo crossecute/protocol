@@ -6,7 +6,7 @@ import {PayloadWriter} from "script/deploy/PayloadWriter.sol";
 import {Plan, GovernancePlan} from "script/deploy/GovernancePlan.sol";
 
 /// @title GovernancePayloads
-/// @notice Writes steps 3 to 6 of `docs/provider-spec.md` §6 to `out/governance/` as Safe
+/// @notice Writes steps 3 to 6 of `docs/providers/provider-spec.md` §6 to `out/governance/` as Safe
 ///         Transaction Builder batches, numbered in the order they are submitted:
 ///
 ///         1. `1-prepare-home.json`, by the governor's owner on the home;

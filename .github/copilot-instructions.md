@@ -9,7 +9,7 @@ Cross-chain conduit contracts under `contracts/evm/`. A conduit's address is der
 `Proxy`'s initcode and must be identical on every chain. Messages move between chains
 through provider bindings (LayerZero, CCIP, Hyperlane, Wormhole, OP Stack) under
 `src/protocols/`. Most configuration is write-once and the transceivers cannot be upgraded,
-so a bug that ships cannot be patched in place. `docs/provider-spec.md` is the normative
+so a bug that ships cannot be patched in place. `docs/providers/provider-spec.md` is the normative
 spec; rules are cited as R1.1 to R9.3, prohibitions as §7, and compliance tests as C1 to C32.
 
 Every PR here gets a human review. Base the verdict on what you found: without a Medium or
@@ -80,8 +80,8 @@ compare the rest against it.
 
 ## After `src/`, if budget remains
 
-- If the code and `docs/provider-spec.md` disagree, report it and say which one you think is
-  wrong and why. Same for `docs/message-flow.md` and `docs/encoding.md`.
+- If the code and `docs/providers/provider-spec.md` disagree, report it and say which one you think is
+  wrong and why. Same for `docs/architecture/message-flow.md` and `docs/architecture/encoding.md`.
 - Check that the PR description's claims match the diff: "no behavior change", "mechanical",
   which files or bindings are covered, which tests were added, and any counts it states.
 
