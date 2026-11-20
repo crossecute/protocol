@@ -162,6 +162,26 @@ cast call $HYPERLANE_MAILBOX "quoteDispatch(uint32,bytes32,bytes,bytes)(uint256)
   0x0001<uint256 msgValue><uint256 gasLimit><address refund> --rpc-url $RPC
 ```
 
+A CCIP quote does not show the lane's version: a legacy lane can quote, or can require
+`allowOutOfOrderExecution = true` and reject the bindings' default. `CcipPreflight`
+(`script/deploy/CcipPreflight.sol`) therefore resolves each lane through the router
+(`getOnRamp(selector)` for sends, `getOffRamps()` for deliveries) and compares each ramp's
+`typeAndVersion()` with `OnRamp <v>` or `OffRamp <v>` for each `v` in `providers/ccip.toml`'s
+`versions`, then quotes with the exact default options at both default gas values. A source with
+several registered OffRamps passes only if every one is supported. `DeployCcip` runs it for the
+chain being deployed; `script/PreflightCcip.s.sol` runs it on every parity chain, so each direction
+is checked at both ends:
+
+```sh
+for c in ETHEREUM BASE ARBITRUM OPTIMISM; do export RPC_URL_$c=... CCIP_ROUTER_$c=...; done
+forge script script/PreflightCcip.s.sol
+```
+
+The `versions` list and the ramp type strings are unchecked against live ramps; confirm them on a
+router before the first run, and record the addresses, versions, block numbers and date here. The
+pinned CCIP 2.0.0 OffRamp reports `OffRamp 2.0.0`
+(`test/deploy/CcipPreflightRealRouter.t.sol` reads it through the pinned Router).
+
 A Hyperlane quote of 0 is a missing lane, and the binding refuses it (`NoHyperlaneRoute`). The Mailbox's default hook is a fallback-routing
 hook; a domain with no route falls back to the Merkle tree hook alone, which charges nothing
 and pays no relayer, so the dispatch would succeed and never be delivered. The IGP itself

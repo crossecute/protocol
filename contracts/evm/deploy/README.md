@@ -128,6 +128,17 @@ on the chain and it has one address on every parity chain.
 LayerZero takes `LZ_GOVERNOR_HOME_DVN`, unset unless the governor home's pathway defaults to the
 dead DVN; it is then this chain's LayerZero Labs DVN ([CHECKS §5](CHECKS.md#5-verification-on-the-destination)).
 
+CCIP takes `CCIP_ROUTER`. Before it broadcasts anything, `DeployCcip` runs `CcipPreflight` on this
+chain: for every other parity chain CCIP reaches, the router must resolve the outbound OnRamp
+and every inbound OffRamp to a version in `providers/ccip.toml`'s `versions`, and a fee quote
+with the options the bindings send (default bootstrap and payload gas) must succeed. A legacy
+lane, a missing or unreadable ramp, or a reverting quote aborts with the chains, router, ramp
+addresses, observed versions and expected versions. Before deploying anywhere, run
+`forge script script/PreflightCcip.s.sol` with `RPC_URL_<NAME>` and `CCIP_ROUTER_<NAME>` for each
+parity chain (`<NAME>` is the `chains.toml` name in capitals): it checks both ends of every
+directional route and reports every failure together. A failing direction blocks the topology until
+the scope is decided; it is not left out.
+
 The CCIP, Hyperlane, and LayerZero provider tests deploy zkSync and Tron transceiver proxies
 on Forge's EVM. Native deployments require artifacts from zksolc or TRON-solc, including the
 `ChainRegistry` from step 1. The production scripts do not drive those native builds.
