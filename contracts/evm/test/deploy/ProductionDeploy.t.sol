@@ -18,6 +18,10 @@ import {DeployOpStackInterop} from "script/DeployOpStackInterop.s.sol";
 import {ext} from "test/Harness.sol";
 import {Governance, ChainContracts, ChainDeploy} from "script/deploy/ChainDeploy.sol";
 import {testGovernanceFile, testGovernance, skipUnderCoverage} from "test/deploy/TestGovernance.sol";
+import {CcipPreflight} from "script/deploy/CcipPreflight.sol";
+import {ChainConfig, ChainEntry} from "script/deploy/ChainConfig.sol";
+import {installCcipLanes} from "test/deploy/CcipLanes.sol";
+import {MockCcipRamp, MockCcipRouter} from "test/protocols/ccip/MockCcipRouter.sol";
 
 /// @notice What every production-script test shares: the environment, a chain
 ///         `deploy/chains.toml` configures, and step 1's contracts from the test governance file.
@@ -135,7 +139,27 @@ contract DeployCcipTest is ProductionDeploySpec {
 
     function _setUpProvider() internal override {
         deployCodeTo("MockCcipRouter.sol:MockCcipRouter", address(0xE0002));
+        installCcipLanes(MockCcipRouter(address(0xE0002)), "2.0.0");
         _setEnv("CCIP_ROUTER", vm.toString(address(0xE0002)));
+    }
+
+    /// @dev Step 1 is deployed, so only the preflight can stop this run.
+    function test_aLegacyLaneIsRefusedBeforeAnythingIsDeployed() public {
+        _deployStep1();
+        MockCcipRouter router = MockCcipRouter(address(0xE0002));
+        router.setLane(
+            5_009_297_550_715_157_269,
+            address(new MockCcipRamp("EVM2EVMOnRamp 1.5.0")),
+            address(new MockCcipRamp("EVM2EVMOffRamp 1.5.0"))
+        );
+        string memory dir = ChainConfig.defaultDir();
+        ChainEntry[] memory cs = ChainConfig.chains(dir);
+        string memory found =
+            CcipPreflight.problems(dir, cs, ChainConfig.chainWithId(cs, LOCAL_CHAIN_ID), address(router));
+        assertTrue(bytes(found).length != 0);
+        DeployProvider script = _script();
+        vm.expectRevert(abi.encodeWithSelector(DeployCheck.selector, string.concat("CCIP preflight failed:\n", found)));
+        script.run();
     }
 }
 
