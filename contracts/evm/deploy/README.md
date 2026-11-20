@@ -1,7 +1,7 @@
 # Adding a chain
 
 What it takes to bring a new EVM chain into the protocol, in order. A chain that is not EVM
-also needs a chain type first; see "Adding a chain type" in the [root README](../../../README.md).
+also needs a [chain type](../../../docs/operator-guide.md#adding-a-chain-type) first.
 
 Most of what is set below is write-once on chain: a chain's grade in each registry, each
 transceiver's route, provider id, and counterpart for it, and LayerZero's peers. A wrong value
