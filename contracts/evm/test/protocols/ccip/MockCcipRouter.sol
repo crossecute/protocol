@@ -41,9 +41,15 @@ contract MockCcipRouter {
     bool public requireOutOfOrder;
     error ExtraArgsOutOfOrderExecutionMustBeTrue();
 
-    /// @notice Register `onRamp` for sends to `selector` and, in addition, `offRamp` for deliveries from it.
+    /// @notice Make `onRamp` the one for sends to `selector` and `offRamp` the only one for
+    ///         deliveries from it.
     function setLane(uint64 selector, address onRamp, address offRamp) external {
         getOnRamp[selector] = onRamp;
+        for (uint256 i = _offRamps.length; i > 0; --i) {
+            if (_offRamps[i - 1].sourceChainSelector != selector) continue;
+            _offRamps[i - 1] = _offRamps[_offRamps.length - 1];
+            _offRamps.pop();
+        }
         _offRamps.push(OffRamp(selector, offRamp));
     }
 

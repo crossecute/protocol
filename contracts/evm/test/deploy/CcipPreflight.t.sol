@@ -71,11 +71,20 @@ contract CcipPreflightTest is Test {
         assertFalse(_mentions(found, "base -> arbitrum"));
     }
 
-    /// @dev Which OffRamp executes a delivery is the source's choice, so a legacy one beside a
-    ///      supported one is still a legacy route.
-    function test_aLegacyOffRampBesideASupportedOneIsReported() public {
-        router.addOffRamp(_selector("optimism"), address(new MockCcipRamp("OffRamp 1.5.0")));
-        assertTrue(_mentions(_problems(), "optimism -> base"));
+    /// @dev Live routers keep every superseded OffRamp registered beside the current one.
+    function test_aSupersededOffRampBesideASupportedOneIsAccepted() public {
+        router.addOffRamp(_selector("optimism"), address(new MockCcipRamp("EVM2EVMOffRamp 1.5.0")));
+        router.addOffRamp(_selector("optimism"), address(new MockCcipRamp("OffRamp 1.6.0")));
+        assertEq(_problems(), "");
+    }
+
+    function test_onlyLegacyOffRampsAreAllReported() public {
+        router.clearOffRamps();
+        router.addOffRamp(_selector("optimism"), address(new MockCcipRamp("EVM2EVMOffRamp 1.5.0")));
+        router.addOffRamp(_selector("optimism"), address(new MockCcipRamp("OffRamp 1.6.0")));
+        string memory found = _problems();
+        assertTrue(_mentions(found, "reports 'EVM2EVMOffRamp 1.5.0'"));
+        assertTrue(_mentions(found, "reports 'OffRamp 1.6.0'"));
     }
 
     function test_aLaneWithoutRampsIsReported() public {

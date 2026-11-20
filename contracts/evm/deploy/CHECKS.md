@@ -167,8 +167,9 @@ A CCIP quote does not show the lane's version: a legacy lane can quote, or can r
 (`script/deploy/CcipPreflight.sol`) therefore resolves each lane through the router
 (`getOnRamp(selector)` for sends, `getOffRamps()` for deliveries) and compares each ramp's
 `typeAndVersion()` with `OnRamp <v>` or `OffRamp <v>` for each `v` in `providers/ccip.toml`'s
-`versions`, then quotes with the exact default options at both default gas values. A source with
-several registered OffRamps passes only if every one is supported. `DeployCcip` runs it for the
+`versions`, then quotes with the exact default options at both default gas values. Routers keep
+superseded OffRamps registered, so a source needs one supported OffRamp, and the source's OnRamp
+version, checked on the source chain, decides which executes. `DeployCcip` runs it for the
 chain being deployed; `script/PreflightCcip.s.sol` runs it on every parity chain, so each direction
 is checked at both ends:
 
@@ -177,10 +178,18 @@ for c in ETHEREUM BASE ARBITRUM OPTIMISM; do export RPC_URL_$c=... CCIP_ROUTER_$
 forge script script/PreflightCcip.s.sol
 ```
 
-The `versions` list and the ramp type strings are unchecked against live ramps; confirm them on a
-router before the first run, and record the addresses, versions, block numbers and date here. The
-pinned CCIP 2.0.0 OffRamp reports `OffRamp 2.0.0`
-(`test/deploy/CcipPreflightRealRouter.t.sol` reads it through the pinned Router).
+Result, 2026-11-20, over public RPCs at about blocks 26,457,692 (ethereum), 60,020,248 (base),
+525,990,558 (arbitrum) and 159,797,824 (optimism): `script/PreflightCcip.s.sol` passed for all 12
+directions among the four chains, with the routers in the table above. Each router reports
+`Router 1.2.0`. Each chain's OnRamp reports `OnRamp 2.0.0` for every other chain (ethereum
+`0xc3423F3FB30857D9C14717b119884b1B63d250b7`, base `0xF75bf16b03aaE98677926F0987F195A2153996B9`,
+arbitrum `0x7B73923E101950eFe098C2Eca74C8320b2813f48`, optimism
+`0xcBfaAbCb95358817d2FE859f1ca223Cf83FaE199`). Each source also has `OffRamp 2.0.0` registered
+alongside `EVM2EVMOffRamp 1.2.0` and `1.5.0` and `OffRamp 1.6.0`, which stay registered. The
+default-option quotes succeed at both gas values on all 12. A check that required every registered
+OffRamp to be supported failed all 12, which is why one supported OffRamp is the rule. This
+covers the four launch-set chains other than Fraxtal, which is not configured. The OffRamp
+version string is also pinned by `test/deploy/CcipPreflightRealRouter.t.sol`.
 
 A Hyperlane quote of 0 is a missing lane, and the binding refuses it (`NoHyperlaneRoute`). The Mailbox's default hook is a fallback-routing
 hook; a domain with no route falls back to the Merkle tree hook alone, which charges nothing

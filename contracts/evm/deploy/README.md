@@ -130,7 +130,7 @@ dead DVN; it is then this chain's LayerZero Labs DVN ([CHECKS §5](CHECKS.md#5-v
 
 CCIP takes `CCIP_ROUTER`. Before it broadcasts anything, `DeployCcip` runs `CcipPreflight` on this
 chain: for every other parity chain CCIP reaches, the router must resolve the outbound OnRamp
-and every inbound OffRamp to a version in `providers/ccip.toml`'s `versions`, and a fee quote
+and an inbound OffRamp to a version in `providers/ccip.toml`'s `versions`, and a fee quote
 with the options the bindings send (default bootstrap and payload gas) must succeed. A legacy
 lane, a missing or unreadable ramp, or a reverting quote aborts with the chains, router, ramp
 addresses, observed versions and expected versions. Before deploying anywhere, run

@@ -31,10 +31,11 @@ interface ITypeAndVersion {
 /// @dev A router address, a selector, or a quote does not show a lane's version: a legacy lane
 ///      can still quote. Each lane is therefore resolved to its OnRamp (outbound) and OffRamps
 ///      (inbound) through the router, and the ramps' `typeAndVersion` is compared with
-///      `"<OnRamp|OffRamp> <version>"` for each listed version. An inbound source with several
-///      registered OffRamps must have every one supported, since which one executes is the
-///      source's choice. Each check sees one chain's router, so a route is verified end to end
-///      only by running the check on both of its chains (`PreflightCcip.s.sol` does).
+///      `"<OnRamp|OffRamp> <version>"` for each listed version. Routers keep superseded OffRamps
+///      registered, so an inbound source needs one supported OffRamp, and the source's OnRamp
+///      version decides which executes. Each check sees one chain's router, so a route is
+///      verified end to end only by running the check on both of its chains
+///      (`PreflightCcip.s.sol` does).
 library CcipPreflight {
     /// @dev An arbitrary non-system address: CCIP refuses a receiver in its reserved ranges.
     address internal constant QUOTE_RECEIVER = address(uint160(uint256(keccak256("crossecute.ccip.preflight"))));
@@ -115,7 +116,9 @@ library CcipPreflight {
         for (uint256 i; i < offRamps.length; ++i) {
             if (offRamps[i].sourceChainSelector != source) continue;
             found = true;
-            out = join(out, _ramp(route, "OffRamp", router, offRamps[i].offRamp, versions));
+            string memory problem = _ramp(route, "OffRamp", router, offRamps[i].offRamp, versions);
+            if (bytes(problem).length == 0) return "";
+            out = join(out, problem);
         }
         if (!found) out = string.concat(route, ": router ", VM.toString(router), " has no OffRamp for the source");
     }
