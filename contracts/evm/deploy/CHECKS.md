@@ -34,6 +34,7 @@ and are recorded only here. Each was read from the source named and then confirm
 | arbitrum | 30110 | `0x1a44076050125825900e736c501f859c50fE728c` |
 | optimism | 30111 | `0x1a44076050125825900e736c501f859c50fE728c` |
 | zksync | 30165 | `0xd07C30aF3Ff30D96BDc9c6044958230Eb797DDBF` |
+| fraxtal | 30255 | `0x1a44076050125825900e736c501f859c50fE728c` |
 
 **CCIP.** Source: `smartcontractkit/documentation`,
 `src/config/data/ccip/v1_2_0/mainnet/chains.json`.
@@ -45,6 +46,7 @@ and are recorded only here. Each was read from the source named and then confirm
 | arbitrum | 4949039107694359620 | `0x141fa059441E0ca23ce184B6A78bafD2A517DdE8` |
 | optimism | 3734403246176062136 | `0x3206695CaE29952f4b0c22a169725a865bc8Ce0f` |
 | zksync | 1562403441176082196 | `0x748Fd769d81F5D94752bf8B0875E9301d0ba71bB` |
+| fraxtal | 1462016016387883143 | `0x4bdF20477744Ec5F9DE738b5cC9ACd01763905ee` |
 
 **Hyperlane.** Source: `hyperlane-xyz/hyperlane-registry`, `chains/<name>/addresses.yaml`.
 The default ISM is read from the Mailbox, not the registry, which lists a different one for
@@ -57,6 +59,7 @@ zkSync.
 | arbitrum | 42161 | `0x979Ca5202784112f4738403dBec5D0F3B9daabB9` | `0x9E1cB2258BaCBb5fe36CCcC5b5F9a7fD8dEC2051` |
 | optimism | 10 | `0xd4C1905BB1D26BC93DAC913e13CaCC278CdCC80D` | `0x5EBdc44365FEb72ab99FE76Bdd0c47D0bd674c21` |
 | zksync | 324 | `0x6bD0A2214797Bc81e0b006F7B74d6221BcD8cb6E` | `0xf55CB3c8C4b20276AF9F979B0D94Bd7ae5487fa2` |
+| fraxtal | 252 | `0x2f9DB5616fa3fAd1aB06cB2C906830BA63d135e3` | `0x71a55E56c0bB394Fee2B73A494Dfac387fBc298F` |
 
 **Wormhole.** Source: `wormhole-foundation/wormhole-solidity-sdk`,
 `src/testing/ChainConsts.sol` (a36ed90c). Each Executor answered its own chain id from
@@ -396,6 +399,28 @@ Results for frxUSD, 2026-10-25 (Fraxtal over `https://rpc.frax.com`):
 `chains.toml` (#94), so `DeployLzOft.s.sol` and `LzOftLeaves.s.sol` refuse it, and only the
 fork test has deployed the factory there. Every OApp owner is a 171-byte contract; who signs
 for it was not checked.
+
+## Fraxtal (2026-11-20)
+
+Chain id 252, `https://rpc.frax.com`, read at block 44,191,952. Not yet in `chains.toml`: two
+providers fail for some pairs, and the governance proposers (LayerZero and CCIP) must reach every
+parity chain, so adding it as configured would put known-broken lanes into every plan. The
+decision on per-pair lanes or on the proposers is in #94.
+
+| Check | Result |
+| --- | --- |
+| §1 Arachnid's factory | same code hash as Ethereum (`0x2fa86add…e4989`); `ProxyDeployer`'s address is empty: parity |
+| §2 EIP-152 | correct BLAKE2b-256 of `"abc"` |
+| §3 LayerZero | all 8 quotes between Fraxtal and Ethereum, Base, Arbitrum and Optimism revert; §5 shows why |
+| §3 CCIP | Fraxtal reaches only Ethereum and Base, in both directions (OnRamp `OnRamp 2.0.0`, `OffRamp 2.0.0` registered); `isChainSupported` is false and `getFee` reverts `UnsupportedDestinationChain` for Arbitrum and Optimism both ways; quotes pass at 1,000,000 and 200,000 gas on the four lanes that exist |
+| §3 Hyperlane | all 8 directions quote at 50,000 and 1,000,000 gas |
+| §3 Wormhole | not reached: the SDK's `Chains.sol` has no Fraxtal |
+| §5 Hyperlane | default ISM `0x71a55E…298F` is the 2-of-2 aggregation of a `NULL` module and a per-origin route to a 1-of-2 Merkle-root and message-id multisig; thresholds into Fraxtal are 6 of 9 from Ethereum and 3 of 5 from Base, Arbitrum and Optimism; Ethereum's default ISM takes Fraxtal at 3 of 4 |
+| §5 LayerZero | the default send ULN of all 8 pathways requires only `0x…dEaD`, with 5 to 20 confirmations; LayerZero Labs' DVN on Fraxtal is `0xcce466a522984415bc91338c232d98869193d46e` (metadata API) |
+| §6 OP Stack | Fraxtal's `L2CrossDomainMessenger.OTHER_MESSENGER()` is `0x126bcc31Bc076B3d515f60FBC81FddE0B0d542Ed`, whose `OTHER_MESSENGER()` on Ethereum is `0x4200…0007` |
+
+Not run: §4 destination gas on Fraxtal's own EVM (the gas table is Forge's), and a LayerZero
+quote with the DVN pinned, which needs #94.
 
 ## What these checks do not cover
 
