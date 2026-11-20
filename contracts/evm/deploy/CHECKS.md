@@ -313,8 +313,10 @@ so both ends pin LayerZero Labs' DVN alone (#51, #94). The pinned chains and eac
 - each receiver, at creation, for its home's eid, from its transceiver;
 - each transmitter that sends over a pinned pathway, by its owner, with
   `LzTransmitter.setDvn(eid, required, optional, optionalThreshold)`. The owner chooses the
-  stack and may change it, so a conduit that has not called it quotes nothing there. The plan
-  sets LayerZero Labs' DVN on the governor's transmitter before it bootstraps a pinned chain.
+  stack and may change it, so a conduit that has not called it quotes no message there. A
+  conduit's bootstrap is its transceiver's send and needs only the transceiver's pin. The plan
+  sets LayerZero Labs' DVN on the governor's transmitter before the messages `connect` sends to a
+  pinned chain.
 
 LayerZero Labs' messaging DVN on each chain (metadata API, 2026-11-20; not the lzRead one):
 
@@ -438,7 +440,7 @@ every Fraxtal pathway (#94).
 
 `PreflightCcip.s.sol` passes for every carried pair of the five chains. Not run: the transceiver
 providers' (LayerZero, Hyperlane, OP Stack) delivery gas on Fraxtal, whose gas table is Forge's
-against mocks, and a LayerZero quote from a pinned conduit, which needs a deployed transmitter.
+against mocks.
 
 ## What these checks do not cover
 
@@ -498,6 +500,26 @@ forge test --match-contract '^(LzDvnForkTest|LzOftForkTest|LzOftForkDeliveryGasT
   destinations. Bootstrap compose used 470,273 gas on Ethereum and 470,348 on Arbitrum.
 
 These OFT regressions simulate provider delivery of plain bootstrap and payload messages.
+
+### A plain LayerZero conduit toward Fraxtal on Ethereum's real endpoint
+
+On 2026-11-20, `LzConduitDvnForkTest` (`test/fork/LzConduitDvnFork.t.sol`) deployed the real
+`LzTransceiver` and `LzTransmitter` on a fork of Ethereum and sent to Fraxtal through the real
+endpoint, with Ethereum block 26,458,885 (`0x2b756d8dbe5739843874a1e8ca708860b2a410e5e08f742b51256a60c7552264`).
+It showed who sends what:
+
+- The conduit's bootstrap is the transceiver's send. It quoted `0x…dEaD::getFee` and reverted until
+  the transceiver's `setDvn` (governance's pin) was in place, after which it quoted and went out
+  without the conduit setting anything.
+- A message after the bootstrap is the conduit's own send. It reverted on the same dead DVN until
+  the conduit's owner called `LzTransmitter.setDvn`, after which it quoted and the real endpoint
+  emitted `PacketSent`. A second conduit of the same transceiver, bootstrapped the same way,
+  still could not quote a message: the pin is per conduit.
+
+```sh
+ETH_RPC_URL=https://ethereum-rpc.publicnode.com ETH_FORK_BLOCK=26458885 \
+forge test --match-contract LzConduitDvnForkTest -vv
+```
 
 ### Fraxtal as an OFT destination
 
