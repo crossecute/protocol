@@ -11,7 +11,7 @@ The transceiver owner calls `setCcipV3Lane(destinationSelector, enabled, evidenc
 The selector must already be registered with `setSelector`. Enabling requires a nonzero
 hash of the operator's recorded deployment/version checks. This hash records an
 attestation; the contract cannot verify the document or discover lane versions on-chain.
-Follow [the deployment checks](../contracts/evm/deploy/CHECKS.md#ccip-20-options) first.
+Follow [the deployment checks](../../contracts/evm/deploy/CHECKS.md#ccip-20-options) first.
 No configured lane is asserted to support V3 by this change.
 
 `ccipV3LaneEnabled(selector)` is false until configured. Both transceiver and transmitter

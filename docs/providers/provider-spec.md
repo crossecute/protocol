@@ -4,8 +4,8 @@ What a message provider binding must implement to be a fully supported transport
 protocol, and what the provider protocol itself must be capable of before a binding is
 worth writing.
 
-[`message-flow.md`](message-flow.md) describes the two paths and
-[`encoding.md`](encoding.md) the payload formats. This file is the contract between those
+[`message-flow.md`](../architecture/message-flow.md) describes the two paths and
+[`encoding.md`](../architecture/encoding.md) the payload formats. This file is the contract between those
 designs and a transport: everything a binding MUST satisfy, everything it MUST NOT do, and
 the fixed set of tests that decide whether it did.
 
@@ -87,7 +87,7 @@ conduit up on however good the transport is.
 | **P2** | Any contract may be its own endpoint, permissionlessly | Path A is conduit to conduit. If receiving requires provider governance to whitelist an address, every user's conduit needs an approval and the protocol does not work. |
 | **P3** | Deliver to an address the sender chose, not one the provider assigns | The conduit address is fixed by CREATE2 before the conduit exists. A provider that mints or assigns the destination address breaks address parity, which is the whole product. |
 | **P4** | Report the source chain and source address to the receiving contract | `_onInbound(route, sender, message)` cannot authenticate without both. A provider that reports only "some peer" is not authenticable at our layer. |
-| **P5** | Unordered delivery | Ordered lanes turn one permanently-failing message into a halt on that lane. See [Failure handling](message-flow.md#failure-handling). |
+| **P5** | Unordered delivery | Ordered lanes turn one permanently-failing message into a halt on that lane. See [Failure handling](../architecture/message-flow.md#failure-handling). |
 | **P6** | Permissionless retry of a failed message | Execution runs inside the delivery callback, so a revert must be a retry and not a loss. |
 | **P7** | **Exactly-once execution of a message that succeeded** | Path A runs a call array on arrival with no commitment, no nonce, and no id of its own, so a second delivery would run the payload a second time. Nothing in this repo prevents that, and the transport is the only layer that can. It composes with P6 rather than fighting it: mark consumed, then call the receiver with a plain external call, so a success is terminal and a revert rolls the mark back. See [R3.5](#r3-receive) and [the research half](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#1-what-each-transport-guarantees-about-replay). |
 | **P8** | Fee payable at source in native currency, from `msg.value` | Signers transact only at home. A provider requiring a fee token per chain reintroduces the funding matrix the protocol exists to remove. |
@@ -95,7 +95,7 @@ conduit up on however good the transport is.
 | **P10** | No deployment-time registration that changes an address | Anything requiring the conduit to be deployed by a provider factory, or to hold a provider-issued id in its initcode, moves the address and breaks parity. Implementation-level immutables are fine: they never reach `Proxy`'s initcode. |
 | **P11** | Send from inside a delivery callback, funded from contract balance | A diverging transceiver's receiver report is sent from inside the bootstrap callback where `msg.value` is zero. Fallback: the report is sent in a separate transaction by a relayer, which weakens the bootstrap to two steps. |
 | **P12** | Per-message destination gas or execution options | Carried as ERC-7786 `attributes`. Fallback: the binding hard-codes a default and payloads above it fail on arrival. |
-| **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](todo.md#4-post-launch-non-evm-destinations) stays blocked on a second provider. |
+| **P13** | Support for the target chain set, including the non-EVM ones in scope | A provider that reaches only EVM chains is usable, but the Move, Solana, and Starknet work in [`todo.md`](../todo.md#4-post-launch-non-evm-destinations) stays blocked on a second provider. |
 | **P14** | An upgradeable-safe SDK: namespaced storage, no constructor-only state on the proxy | Conduits are proxies and transceivers are proxies. An SDK that stores in sequential slots forces a layout freeze on every contract it mixes into. |
 | **P15** | **Every destination chain permits contract creation by an arbitrary `tx.origin`** | Not a property of the provider but of the chain, and it is P2 one layer down. A conduit is created inside the inbound delivery callback, so the origin is the provider's relayer, not us and not the owner. A chain that gates creation on an allowlist therefore makes bootstrap work only for allowlisted relayers and takes [P6](#2-provider-prerequisites-the-go-or-no-go-checklist)'s permissionless retry with it. Path A is unaffected, since a send creates nothing. Verified live on two LayerZero destinations, DFK Chain and Dexalot, where the provider's own executor key holds no deploy role and bootstrap therefore cannot happen at all: see [the research half](https://github.com/crossecute/research/blob/main/protocol/provider-research.md#chain-level-deployment-permissioning-which-breaks-bootstrap-and-not-sends). Check it per destination by reading the allowlist for the relayer's signing key, not for any contract. |
 
@@ -127,7 +127,7 @@ A binding is a handful of files under `src/protocols/<provider>/`, plus
 | File | Extends | Role |
 | --- | --- | --- |
 | `<P>Message.sol` | library | The shared send, quote, and attribute code, called by the transmitter and the transceiver. Public, and so linked, where inlining it would put a transceiver over EIP-170 (`WormholeMessage`, `LzMessage`). |
-| `<P>Transmitter.sol` | `SignedTransmitter` (`OwnableTransmitter`, which is `TransmitterBase` + `OwnableUpgradeable`, plus Safe-signed mode) | The per-user conduit at home. Sends on path A. Plain or signed, as the transceiver chose at creation ([`safe-signed-dispatch.md`](safe-signed-dispatch.md#implementation)). |
+| `<P>Transmitter.sol` | `SignedTransmitter` (`OwnableTransmitter`, which is `TransmitterBase` + `OwnableUpgradeable`, plus Safe-signed mode) | The per-user conduit at home. Sends on path A. Plain or signed, as the transceiver chose at creation ([`safe-signed-dispatch.md`](../safe/safe-signed-dispatch.md#implementation)). |
 | `<P>Receiver.sol` | `ProviderReceiver`, or `SignedReceiver` where setup goes beyond the gateway grant; both reach `ReceiverBase` through `SignedReceiver` | The per-user conduit on every other chain. Receives on path A. `ProviderReceiver` supplies `initialize`, which grants `GATEWAY_ROLE` to `_providerGateway()` and then runs `__ReceiverBase_init`; LayerZero and `op-stack-l1-l2` declare their own initializer instead, since they set a peer or take the gateway as an argument. |
 | `<P>Transceiver.sol` | `ProviderTransceiver` (`TransceiverBase` + `ProviderChainId`) | Both ends of path B: sends bootstraps and reports, receives both. The provider's wiring is an abstract `<P>TransceiverBase` in the same file, which the plain `<P>Transceiver` and the zkSync/Tron variants share. `ProviderTransceiver` only where a provider-native chain id survives; for `op-stack-l1-l2` the id is the address of the messenger that reaches the chain; `op-stack-l2-l2` names a chain by its chain id, which the recipient carries, so it extends `TransceiverBase` directly, as does a gateway binding under ERC-7786. See [§9](#9-worked-skeleton-an-erc-7786-gateway-binding). Each constructor takes the chain's `TransceiverExtension` and passes it to `TransceiverBase`, which runs every selector it does not declare there (#70). |
 | `<P>DivergentTransceiver.sol` | `ZkSyncTransceiver` or `TronTransceiver`, beside `<P>TransceiverBase` | The same transceiver on zkSync or Tron, which derive conduit addresses their own way. Each override only names both bases. Its implementation names `ZkSyncTransceiverExtension` or `TronTransceiverExtension`, which derive alike. |
@@ -733,7 +733,7 @@ float. A transceiver that runs dry fails every bootstrap on its chain at the ret
 the failure is invisible from home until someone finds the conduit unreachable there. The
 bootstrap stays retryable at the provider, and where the provider forwards a retry's
 `msg.value` (Hyperlane, LayerZero) the retry can bring its own report's cost
-([path B](message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)).
+([path B](../architecture/message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)).
 
 **R7.6 The float pays only for a completed report, at the report's fixed gas, after a
 bootstrap that paid a fee.** A report's gas is `DeliveryGas.REPORT`, which no attribute
@@ -856,11 +856,11 @@ Steps 3 to 6 are scripted for the parity chains: `script/GovernancePayloads.s.so
 from `deploy/` alone, with every address predicted, and writes them as Safe Transaction Builder
 batches for the governor's owner, with the timelock executions anyone may submit, in the order
 above. No parity chain reports, so step 7 funds nothing among them. zkSync and Tron, and every
-lane to them, are not scripted ([todo §3](todo.md#3-infrastructure)).
+lane to them, are not scripted ([todo §3](../todo.md#3-infrastructure)).
 
 **Rotating the deployer.** If the deployer's key is compromised, the protocol keeps running
 and adds chains under a new one; the procedure is in
-[`deploy/README.md`](../contracts/evm/deploy/README.md#rotating-the-deployer), with
+[`deploy/README.md`](../../contracts/evm/deploy/README.md#rotating-the-deployer), with
 `script/RotateDeployer.s.sol` writing the payloads for the parity chains. The registry holds
 one slot per (provider, chain), a 20-byte deployer and a status, written once when the
 provider is added on the chain: about 22,100 gas at the timelock, and 32 bytes of state per
@@ -916,7 +916,7 @@ to those, rather than flags:
 | `ProviderRefundSpec` | LayerZero, Hyperlane, Wormhole | C25 |
 | `ProviderIdTableSpec` | the five transceivers with an id table (all but `op-stack-l2-l2`) | C1 (transmitter lookup), C5 (transceiver), C28 |
 | `ProviderDefaultGasSpec` | the five whose sends carry a gas limit (all but `op-stack-l2-l2`) | C32 |
-| `ProviderDeliveryGasSpec` | the five whose sends carry a gas limit (all but `op-stack-l2-l2`) | Each `DeliveryGas` default is at least 10% above what its delivery measures through the binding's fixture ([deploy/CHECKS.md §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)) |
+| `ProviderDeliveryGasSpec` | the five whose sends carry a gas limit (all but `op-stack-l2-l2`) | Each `DeliveryGas` default is at least 10% above what its delivery measures through the binding's fixture ([deploy/CHECKS.md §4](../../contracts/evm/deploy/CHECKS.md#4-destination-gas)) |
 | `ProviderEvmRecipientSpec` | all but LayerZero (delivers to its peer) | R4.3 for recipients |
 | `ProviderTransmitterSpec` | all six, and `layerzero-oft` | C9 |
 | `ProviderTransmitterSendSpec` | the five whose sends carry a gas limit (all but `op-stack-l2-l2`) | A conduit's own send through the binding's real transmitter is paid from its balance whatever `msg.value` is ([R7.1](#r7-fees-and-value), #55), at `DeliveryGas.PAYLOAD` (C32) |
@@ -942,7 +942,7 @@ below. The column says where each line is held.
 | C8 | `inbound_routeBytesRoundTripThroughTheCodec` | `chainKeyOfRoute(routeFor(k)) == k` for every configured chain. | core `DestinationNaming.t.sol`: the route is the chain identifier and the chainKey its hash |
 | C9 | `inbound_toATransmitterReverts` | [R3.1](#r3-receive). | `ProviderTransmitterSpec` |
 | C10 | `inbound_aWideSenderIsRejectedNotTruncated` | [R4.3](#r4-the-byte-forms-which-are-the-authentication). | `ProviderWideSenderSpec` |
-| C11 | `quote_equalsWhatTheSendActuallyConsumes` | Quote, send with exactly that value, assert the provider was paid it and nothing refunded. The central test. | `ProviderFeeSpec` against mocks. Real endpoints: fork test, not built ([todo §3](todo.md#3-infrastructure)) |
+| C11 | `quote_equalsWhatTheSendActuallyConsumes` | Quote, send with exactly that value, assert the provider was paid it and nothing refunded. The central test. | `ProviderFeeSpec` against mocks. Real endpoints: fork test, not built ([todo §3](../todo.md#3-infrastructure)) |
 | C12 | `quote_isTakenOverTheExactPayloadBytes` | Two payloads of different lengths quote differently, and the longer one's quote matches a send of the longer one. [R2.3](#r2-quote). | `ProviderPayloadPricedSpec` |
 | C13 | `quote_revertsWhereTheSendWouldRevert` | Unconfigured route, unroutable destination, below the provenance bar. [R2.5](#r2-quote). | `ProviderSendSpec` |
 | C14 | `quote_isView` | Called through `staticcall` and succeeds. [R2.2](#r2-quote). | `ProviderSendSpec` |
@@ -990,7 +990,7 @@ message it ever carries.
 
 The suite is separate from, and does not replace, the `test/vectors/` corpus planned for the
 commitment half, which is
-[load-bearing for the scheme plugins](todo.md#4-post-launch-non-evm-destinations) and not
+[load-bearing for the scheme plugins](../todo.md#4-post-launch-non-evm-destinations) and not
 built yet.
 
 ---

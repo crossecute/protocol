@@ -4,11 +4,11 @@ What caching one child Safe approval costs, for the nested shape issue
 [#107](https://github.com/crossecute/protocol/issues/107) uses as sizing input: a 2-of-2 parent
 whose owners are a 10-of-13 child and a 5-of-7 child, each approving with exactly its threshold
 of EOA signatures. The thresholds are an input to this note, not a claim about any deployed Safe.
-[`safe-guard-design.md`](safe-guard-design.md#persistent-child-approval-evidence) describes the
+[`safe-guard-design.md`](../safe/safe-guard-design.md#persistent-child-approval-evidence) describes the
 record itself.
 
 **Measured.** The gas figures come from `test/ApprovalGas.t.sol` in
-[`contracts/safe-guard/`](../contracts/safe-guard/), which runs the child's `signMessage`
+[`contracts/safe-guard/`](../../contracts/safe-guard/), which runs the child's `signMessage`
 transaction under `CrossecuteGuard` and again under an unmodified `SafePolicyGuard` with the same
 policy, and reports the difference. Run it with
 `forge test --match-contract ApprovalGasTest -vv`. Repeated runs of the same code give the same

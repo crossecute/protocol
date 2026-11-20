@@ -8,9 +8,9 @@ from a registered Merkle root, and how a receiver verifies and executes it. Trac
 [#109](https://github.com/crossecute/protocol/issues/109).
 
 **Status.** Implemented under
-[`contracts/evm/src/messaging/signed/`](../contracts/evm/src/messaging/signed/); see
+[`contracts/evm/src/messaging/signed/`](../../contracts/evm/src/messaging/signed/); see
 [Implementation](#implementation) for where each part lives and what it leaves out. Gas/payload measurements and real Safe 1.5.0/guard/conduit integration tests are recorded in
-[safe-signed-dispatch-measurements.md](safe-signed-dispatch-measurements.md), completing #134.
+[safe-signed-dispatch-measurements.md](../benchmarks/safe-signed-dispatch-measurements.md), completing #134.
 The inherited delivery-gas defaults are unsuitable for general signed delivery: use explicit
 provider gas attributes derived from an exact destination simulation. This file describes
 application dispatch; the [authority design](safe-authority-updates.md) owns bootstrap
@@ -26,12 +26,12 @@ work is identified explicitly.
 This file describes signed dispatch with #109 receiver integration. The
 [authority design](safe-authority-updates.md) owns #109's linked, destination-independent
 Safe-scoped graph selection and commitment lifetime. Its
-[receiver authority wrapper](../contracts/evm/src/messaging/authority/ReceiverAuthorityTemplate.sol)
+[receiver authority wrapper](../../contracts/evm/src/messaging/authority/ReceiverAuthorityTemplate.sol)
 is inherited by SignedReceiver. Each receiver stores its own selected source-chain/Safe
 graph and head; there is no shared registry, global child feed or automatic refresh.
 Bootstrap, direct submitAuthority and provider authority relay/quote are integrated. Remaining SDK and
 deployment checks belong to the
-[verification plan](safe-authority-verification-review.md).
+[verification plan](../planning/safe-authority-verification-review.md).
 
 ## Decisions
 
@@ -189,9 +189,9 @@ Authority:
 
 ### Q1. Signed calldata and delivery envelope
 
-[`SignedDispatchTypes.sol`](../contracts/evm/src/messaging/signed/types/SignedDispatchTypes.sol) declares a
+[`SignedDispatchTypes.sol`](../../contracts/evm/src/messaging/signed/types/SignedDispatchTypes.sol) declares a
 shared `SafeTxEvidence` containing a
-[`SignedSafeTx`](../contracts/safe-guard/src/ICrossecuteGuard.sol) in `signedSafeTx`
+[`SignedSafeTx`](../../contracts/safe-guard/src/ICrossecuteGuard.sol) in `signedSafeTx`
 (the exact `SafeTx` and its signatures), and nested approval evidence. For a standalone delivery, decode recipient and plain payload
 from the signed `sendMessage` calldata. For a Merkle delivery, decode the root from the
 signed `registerRoot` calldata and use the separately supplied leaf and proof.
@@ -223,7 +223,7 @@ signed `registerRoot` calldata and use the separately supplied leaf and proof.
   reverts the relay, including the used mark. Direct submission proves membership using
   the full leaf and executes without applying its provider attributes.
 - **Q1.9** Provider envelope costs, including nested evidence, and provider-limit checks are
-  recorded in [the measurements](safe-signed-dispatch-measurements.md). Leaf data, proofs and attributes are variable length because the
+  recorded in [the measurements](../benchmarks/safe-signed-dispatch-measurements.md). Leaf data, proofs and attributes are variable length because the
   number of calls, tree depth and provider options vary.
 - **Q1.10** A repeat `registerRoot` reverts with `RootAlreadyRegistered(root)`, including
   when the Safe signs it at a new nonce. The original registration and used-leaf records
@@ -301,7 +301,7 @@ Cases:
   namespace retains its field offsets; its former owner mapping is unused, and its root
   and source-chain fields identify the source. Authority data has its own ERC-7201 namespace.
   No migration from an earlier deployed receiver is provided. The base's sequential
-  layout is unchanged ([R8.2](provider-spec.md#r8-storage-and-address-parity)).
+  layout is unchanged ([R8.2](../providers/provider-spec.md#r8-storage-and-address-parity)).
 - **Q3.10** Transmitter creation derives live owners to fail early for a graph that cannot
   derive, in every binding: the registry transceivers and `LzOftConduitFactory` both call
   `SafeViewer.signedAuthority`, so one owner is accepted or refused alike. Bootstrap instead takes a supplied selected graph and checks its hash and head
@@ -450,7 +450,7 @@ Cases:
 - **Q6.10** Size the full encoded provider payload, including the signed authorization,
   any leaf and proof, and the nested evidence with its lookup keys and array framing.
   Quote and send with the same encoded bytes, destination and provider attributes. Pay
-  the provider the fee returned by the quote for that send. The [guard measurements](safe-approval-evidence-sizing.md)
+  the provider the fee returned by the quote for that send. The [guard measurements](../benchmarks/safe-approval-evidence-sizing.md)
   cover guard return data.
 
 ### Q7. Resource limits
@@ -470,8 +470,8 @@ Cases:
   payload under Q6.10.
 - **Q7.4** The transmitter adds no payload size cap, including for standalone sends (O3).
 - **Q7.5** Local signature, evidence, bootstrap and payload measurements are recorded in
-  [the dispatch report](safe-signed-dispatch-measurements.md) and
-  [authority update measurements](benchmarks/authority-109/updates.md). CI checks runtime
+  [the dispatch report](../benchmarks/safe-signed-dispatch-measurements.md) and
+  [authority update measurements](../benchmarks/authority-109/updates.md). CI checks runtime
   size against EIP-170. Live provider message-size and destination-gas limits require
   per-route validation in [#118](https://github.com/crossecute/protocol/issues/118).
 
@@ -556,8 +556,8 @@ Cases:
   enforces EIP-170 for production source artifacts; deployment must use the reviewed
   linked-library addresses.
 - **O14.** The receiver deduplicates, so the exactly-once transport requirement
-  ([P7](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist),
-  [R3.5](provider-spec.md#r3-receive)) can be relaxed for signed mode. Check each provider's retry path for
+  ([P7](../providers/provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist),
+  [R3.5](../providers/provider-spec.md#r3-receive)) can be relaxed for signed mode. Check each provider's retry path for
   failed deliveries; the CCIP ordering preflight is
   [#118](https://github.com/crossecute/protocol/issues/118).
 - **O15.** Direct standalone submission uses payable `submitMessage`. Direct Merkle
@@ -610,21 +610,21 @@ Where the design lives in code, and what #108's implementation leaves out.
 
 | Part | Where |
 | --- | --- |
-| Dispatch payload types and wire format tags | [`signed/types/SignedDispatchTypes.sol`](../contracts/evm/src/messaging/signed/types/SignedDispatchTypes.sol) |
-| Shared Safe owners, authority records and owner-kind constants | [`signed/types/SafeAuthorityTypes.sol`](../contracts/evm/src/messaging/signed/types/SafeAuthorityTypes.sol) |
-| Transmitter interface and initialization interface | [`outbound/ISignedTransmitter.sol`](../contracts/evm/src/messaging/outbound/ISignedTransmitter.sol) |
-| Receiver interface and initialization interface | [`inbound/ISignedReceiver.sol`](../contracts/evm/src/messaging/inbound/ISignedReceiver.sol) |
-| `ISignedTransmitter.bootstrap` and `registerRoot`, whose selectors the guard reads | [`outbound/ISignedTransmitter.sol`](../contracts/evm/src/messaging/outbound/ISignedTransmitter.sol) |
-| Leaf hash, execution ID, proof check (Q2) | [`signed/DispatchLeaves.sol`](../contracts/evm/src/messaging/signed/DispatchLeaves.sol) |
-| Live graph derivation and canonical check (Q3) | [`signed/SafeAuthorityGraph.sol`](../contracts/evm/src/messaging/signed/SafeAuthorityGraph.sol) |
-| Selected authority storage, hashing and recursive verification (Q5, Q6) | [`authority/ReceiverAuthority.sol`](../contracts/evm/src/messaging/authority/ReceiverAuthority.sol), [`AuthorityUpdateEncoding.sol`](../contracts/evm/src/messaging/authority/AuthorityUpdateEncoding.sol), [`SafeQuorum.sol`](../contracts/evm/src/messaging/signed/SafeQuorum.sol), [`SafeSignaturesUtils.sol`](../contracts/evm/src/messaging/signed/SafeSignaturesUtils.sol) |
-| Source evidence collection under live thresholds (Q6.1, Q6.4) | [`signed/NestedApprovalCollector.sol`](../contracts/evm/src/messaging/signed/NestedApprovalCollector.sol) |
-| Signed calldata decoding shared by both ends (Q1.4) | [`signed/SignedDispatchCalls.sol`](../contracts/evm/src/messaging/signed/SignedDispatchCalls.sol) |
-| Mode at creation (D20) | [`signed/SafeViewer.sol`](../contracts/evm/src/messaging/signed/SafeViewer.sol) (`signedAuthority`), `TransceiverExtension.signedAuthority`, `TransceiverBase.createTransmitter`, `LzOftConduitFactory.createTransmitter` |
+| Dispatch payload types and wire format tags | [`signed/types/SignedDispatchTypes.sol`](../../contracts/evm/src/messaging/signed/types/SignedDispatchTypes.sol) |
+| Shared Safe owners, authority records and owner-kind constants | [`signed/types/SafeAuthorityTypes.sol`](../../contracts/evm/src/messaging/signed/types/SafeAuthorityTypes.sol) |
+| Transmitter interface and initialization interface | [`outbound/ISignedTransmitter.sol`](../../contracts/evm/src/messaging/outbound/ISignedTransmitter.sol) |
+| Receiver interface and initialization interface | [`inbound/ISignedReceiver.sol`](../../contracts/evm/src/messaging/inbound/ISignedReceiver.sol) |
+| `ISignedTransmitter.bootstrap` and `registerRoot`, whose selectors the guard reads | [`outbound/ISignedTransmitter.sol`](../../contracts/evm/src/messaging/outbound/ISignedTransmitter.sol) |
+| Leaf hash, execution ID, proof check (Q2) | [`signed/DispatchLeaves.sol`](../../contracts/evm/src/messaging/signed/DispatchLeaves.sol) |
+| Live graph derivation and canonical check (Q3) | [`signed/SafeAuthorityGraph.sol`](../../contracts/evm/src/messaging/signed/SafeAuthorityGraph.sol) |
+| Selected authority storage, hashing and recursive verification (Q5, Q6) | [`authority/ReceiverAuthority.sol`](../../contracts/evm/src/messaging/authority/ReceiverAuthority.sol), [`AuthorityUpdateEncoding.sol`](../../contracts/evm/src/messaging/authority/AuthorityUpdateEncoding.sol), [`SafeQuorum.sol`](../../contracts/evm/src/messaging/signed/SafeQuorum.sol), [`SafeSignaturesUtils.sol`](../../contracts/evm/src/messaging/signed/SafeSignaturesUtils.sol) |
+| Source evidence collection under live thresholds (Q6.1, Q6.4) | [`signed/NestedApprovalCollector.sol`](../../contracts/evm/src/messaging/signed/NestedApprovalCollector.sol) |
+| Signed calldata decoding shared by both ends (Q1.4) | [`signed/SignedDispatchCalls.sol`](../../contracts/evm/src/messaging/signed/SignedDispatchCalls.sol) |
+| Mode at creation (D20) | [`signed/SafeViewer.sol`](../../contracts/evm/src/messaging/signed/SafeViewer.sol) (`signedAuthority`), `TransceiverExtension.signedAuthority`, `TransceiverBase.createTransmitter`, `LzOftConduitFactory.createTransmitter` |
 | Signed bootstrap send and arrival (Q4) | `TransceiverBase.bootstrapSigned` and `_signedBootstrapInbound` |
-| Transmitter (T1 to T9) | [`outbound/SignedTransmitter.sol`](../contracts/evm/src/messaging/outbound/SignedTransmitter.sol), with its builders in [`SignedTransmitterLib.sol`](../contracts/evm/src/messaging/outbound/SignedTransmitterLib.sol) |
-| Receiver (R1 to R16) | [`inbound/SignedReceiver.sol`](../contracts/evm/src/messaging/inbound/SignedReceiver.sol) |
-| Atomic source batch | [`SafeBatchExecutor.sol`](../contracts/safe-guard/src/SafeBatchExecutor.sol) |
+| Transmitter (T1 to T9) | [`outbound/SignedTransmitter.sol`](../../contracts/evm/src/messaging/outbound/SignedTransmitter.sol), with its builders in [`SignedTransmitterLib.sol`](../../contracts/evm/src/messaging/outbound/SignedTransmitterLib.sol) |
+| Receiver (R1 to R16) | [`inbound/SignedReceiver.sol`](../../contracts/evm/src/messaging/inbound/SignedReceiver.sol) |
+| Atomic source batch | [`SafeBatchExecutor.sol`](../../contracts/safe-guard/src/SafeBatchExecutor.sol) |
 
 How the pieces fit:
 
@@ -644,7 +644,7 @@ How the pieces fit:
   Each route recognizes its signed source call before applying authorization.
 - **Quotes.** In signed mode `quoteMessage` and `quoteMessageBreakdown` require the signed quote API.
   `quoteSignedMessage`, `quoteBootstrap`, `quoteRelay` and `quoteAuthority` price the same bytes
-  as their send paths (Q6.10). The standalone quote includes the [outbound Crossecute fee](provider-spec.md#r7-fees-and-value)
+  as their send paths (Q6.10). The standalone quote includes the [outbound Crossecute fee](../providers/provider-spec.md#r7-fees-and-value)
   paid to the treasury. Bootstrap, leaf relay and authority relay quote provider fees.
 - **Size.** `ReceiverAuthority`, `AuthorityRecognition` and `SignedTransmitterLib` are linked
   libraries, deployed as `WormholeMessage` and `LzMessage` are, to keep transmitters and
@@ -702,21 +702,21 @@ compose gas and zero-amount OFT compatibility still need deployment validation p
 Not in #108's implementation:
 
 - **Authority tooling and live deployment validation.** #109 integrates direct submitAuthority,
-  provider relay/quote, receiver rotation and offline [evidence archives](../tools/authority-archive/README.md).
+  provider relay/quote, receiver rotation and offline [evidence archives](../../tools/authority-archive/README.md).
   [SDK execution](https://github.com/crossecute/sdk/issues/14), archive-service operation
   and live provider validation remain separate delivery work.
 - **Diverging chains.** A signed receiver is not created where addresses diverge (zkSync,
   Tron), which is outside #108's scope. The source refuses a signed bootstrap to a
   destination that reports its receiver. Non-EVM destinations are [#128](https://github.com/crossecute/protocol/issues/128).
 Completed #134 measurements and real-Safe integration evidence are in
-[safe-signed-dispatch-measurements.md](safe-signed-dispatch-measurements.md). Those measurements
+[safe-signed-dispatch-measurements.md](../benchmarks/safe-signed-dispatch-measurements.md). Those measurements
 predate the OFT integration above; zkSync/Tron signed support remains separate work.
 
 ## Tests
 
 #108's acceptance criteria list the required tests; the suites are in
-[`contracts/evm/test/signed/`](../contracts/evm/test/signed/) and
-[`contracts/safe-guard/test/SafeBatchExecutor.t.sol`](../contracts/safe-guard/test/SafeBatchExecutor.t.sol).
+[`contracts/evm/test/signed/`](../../contracts/evm/test/signed/) and
+[`contracts/safe-guard/test/SafeBatchExecutor.t.sol`](../../contracts/safe-guard/test/SafeBatchExecutor.t.sol).
 These cases follow from the items above and are not in the acceptance criteria:
 
 - the transceiver selects signed mode for a compatible installed guard and plain mode

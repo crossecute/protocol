@@ -51,7 +51,7 @@ struct Plan {
 }
 
 /// @title GovernancePlan
-/// @notice Steps 3 to 6 of `docs/provider-spec.md` §6 for the parity chains in `deploy/`, as the
+/// @notice Steps 3 to 6 of `docs/providers/provider-spec.md` §6 for the parity chains in `deploy/`, as the
 ///         transactions that carry them: the N × N tables every transceiver needs about every
 ///         other chain, and every chain's registry entries through its timelock.
 ///

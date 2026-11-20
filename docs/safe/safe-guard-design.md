@@ -5,7 +5,7 @@ signatures to a `sendMessage` and accept a signed `bootstrap` only from an owner
 leaves evidence a receiver can check. Tracked in
 [issue #107](https://github.com/crossecute/protocol/issues/107).
 
-**Status.** Implemented and tested in [`contracts/safe-guard/`](../contracts/safe-guard/), a
+**Status.** Implemented and tested in [`contracts/safe-guard/`](../../contracts/safe-guard/), a
 separate Foundry project, against real Safe 1.5.0 proxies. The protocol's signed transmitters
 consume it and its receivers verify what it hands out
 ([#108](https://github.com/crossecute/protocol/issues/108),
@@ -14,14 +14,14 @@ test transmitter, and an end-to-end test joining the two is
 [#134](https://github.com/crossecute/protocol/issues/134). Authority updates are
 [#109](https://github.com/crossecute/protocol/issues/109).
 
-**Where the reasoning lives.** As in [`message-flow.md`](message-flow.md), each decision is
+**Where the reasoning lives.** As in [`message-flow.md`](../architecture/message-flow.md), each decision is
 argued in the NatSpec of the contract that implements it. This file says what the pieces are
 and how they connect. Where the two disagree, the contract is right.
 
 ## Authority updates (#109)
 
 `CrossecuteGuard` also inherits
-[`SourceAuthorityGuard`](../contracts/safe-guard/src/authority/SourceAuthorityGuard.sol), the
+[`SourceAuthorityGuard`](../../contracts/safe-guard/src/authority/SourceAuthorityGuard.sol), the
 source half of the [authority design](safe-authority-updates.md#source-guard-and-mutation-batch):
 activation, linked portable updates staged with stageUpdate, and ownership changes as one
 SafeTx through the pinned MultiSendCallOnly. The guard stores selection hashes and
@@ -32,7 +32,7 @@ handler. Before activation, policies govern ordinary calls, subject to the execu
 and the restriction of the pinned MultiSend executor to authority changes.
 An activated Safe also needs both guard slots, which activation checks; the #107 baseline permits
 the module slot to stay optional. The
-[verification plan](safe-authority-verification-review.md) lists what remains.
+[verification plan](../planning/safe-authority-verification-review.md) lists what remains.
 
 ## Decisions
 
@@ -149,7 +149,7 @@ argument: owner signatures, any nested contract-signature data with its offsets,
 extension if present. There is no byte cap. Staging, cleanup and the owner-execution lock
 cost 16,263 gas for the two-EOA-signature fixture without an extension. Larger blobs add
 copying and transient-storage costs; the measured sizes are in
-[`contracts/safe-guard/README.md`](../contracts/safe-guard/README.md#gas). The record lives in
+[`contracts/safe-guard/README.md`](../../contracts/safe-guard/README.md#gas). The record lives in
 EIP-1153 transient storage starting at a per-Safe id, `keccak256(abi.encode(safe, NAMESPACE))`.
 
 **Not all of the blob is signed.** Safe checks the first threshold-many signatures and ignores
@@ -216,7 +216,7 @@ signatures against stored authority and can proceed without source registration 
 
 **Cost.** Publication execution costs about 56,000 gas for one leaf and about 6,600 gas per
 further leaf, plus the leaves' calldata
-([`contracts/safe-guard/README.md`](../contracts/safe-guard/README.md#gas)). The check adds one
+([`contracts/safe-guard/README.md`](../../contracts/safe-guard/README.md#gas)). The check adds one
 storage read to `registerRoot`.
 
 ## Transmitter side
@@ -317,7 +317,7 @@ cannot stand in for the empty child payload. A child signature set may contain a
 entries (`v = 1`) that a receiver cannot verify offchain, so the transmitter and receiver
 reject them at every level (#108).
 
-[`safe-approval-evidence-sizing.md`](safe-approval-evidence-sizing.md) works through the size
+[`safe-approval-evidence-sizing.md`](../benchmarks/safe-approval-evidence-sizing.md) works through the size
 and storage cost of this evidence for one nested Safe shape.
 
 ## Installation
@@ -342,7 +342,7 @@ The guard needs EIP-1153 (`TSTORE`/`TLOAD`), so it targets Cancun. The owner pre
 transient storage on every transaction, so on a chain without EIP-1153 every owner transaction
 would revert, including one that removes the guard. Install it only where Cancun is active. It is compiled with Solidity 0.8.30 and via-IR, matching the
 policy-engine. The project keeps its own configuration, output and cache; `contracts/evm/`
-retains its Paris target and legacy compiler pipeline. [`contracts/safe-guard/README.md`](../contracts/safe-guard/README.md)
+retains its Paris target and legacy compiler pipeline. [`contracts/safe-guard/README.md`](../../contracts/safe-guard/README.md)
 has the pins and commands.
 
 ## Earlier work

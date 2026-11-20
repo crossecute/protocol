@@ -223,7 +223,7 @@ Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a boots
 1,000,000 on every configured pair; CCIP refuses 3,000,000 toward zkSync, so a caller's own
 attribute can exceed a lane's cap. Nothing checks an attribute against these measurements:
 one below them makes the delivery revert, and it is retried with more gas
-([provider-spec R1.5](../../../docs/provider-spec.md#r1-send)).
+([provider-spec R1.5](../../../docs/providers/provider-spec.md#r1-send)).
 
 EraVM prices differently and Forge cannot run it, so zkSync is measured on a local node by
 `test/eravm/era-delivery-gas.sh`. Each number is the smallest gas limit on the call into
@@ -306,7 +306,7 @@ have no code at the predeploy, as expected.
 The binding has no transceiver and no provider ids, so §3's lanes and §5's verification are
 those of the OFT a conduit sends through. Two things are checked: that the factory lands at
 its one address, and, per candidate OFT, the prerequisites O1 to O7 of
-[`layerzero-oft-spec.md` §2](../../../docs/layerzero-oft-spec.md#2-oft-prerequisites).
+[`layerzero-oft-spec.md` §2](../../../docs/providers/layerzero-oft-spec.md#2-oft-prerequisites).
 
 **Placement.** The factory and its two logic contracts deploy through Arachnid's factory at
 salt zero (§1). The address depends on the compiled and linked bytecode, the canonical treasury
@@ -389,7 +389,7 @@ for it was not checked.
 ## 8. Safe-signed dispatch (#134, 2026-11-17)
 
 Measured 2026-11-17 at code commit `a4dde1a039b5b8bb11ce802fae61381e70f28b2f`.
-[Complete reproducible tables, assumptions and provider-size checks](../../../docs/safe-signed-dispatch-measurements.md)
+[Complete reproducible tables, assumptions and provider-size checks](../../../docs/benchmarks/safe-signed-dispatch-measurements.md)
 are in the signed-dispatch measurement note. Paris production receiver measurements and
 Cancun real-Safe source integration are separate; no live fee or lane-cap certification is implied.
 
@@ -449,7 +449,7 @@ initially disabled for every outbound lane. Before the transceiver owner calls
    receiver/transceiver inbound policies are satisfiable, including automatic reports
    which still send without attributes. A receiver policy that becomes unsatisfiable also
    blocks the message that would reset it
-   ([options guide](../../../docs/ccip-v2.md#configure-inbound-policies)).
+   ([options guide](../../../docs/providers/ccip-v2.md#configure-inbound-policies)).
 4. Validate actual delivery, full-finality rejection of faster requests, policy updates
    with pending messages, No Exec/manual execution, and delivery gas on the target VM.
 5. Store the results in this file or a linked versioned record and use its content hash
@@ -460,7 +460,7 @@ No V3 lane checks have been recorded by this refactor, and no lane is enabled by
 Local option and actual OffRamp/Router tests for
 [issue #150](https://github.com/crossecute/protocol/issues/150), together with successful
 zkSync/Tron compilation, are recorded in
-[the local validation report](../../../docs/ccip-v2-validation.md). Production lane
+[the local validation report](../../../docs/providers/ccip-v2-validation.md). Production lane
 evidence and native deployment/delivery-gas checks remain tracked in
 [deployment issue #118](https://github.com/crossecute/protocol/issues/118).
-See [the CCIP options guide](../../../docs/ccip-v2.md) for configuration and defaults.
+See [the CCIP options guide](../../../docs/providers/ccip-v2.md) for configuration and defaults.

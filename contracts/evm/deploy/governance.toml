@@ -1,4 +1,4 @@
-# What every chain's step 1 and step 2 must agree on (docs/provider-spec.md §6). Each value is
+# What every chain's step 1 and step 2 must agree on (docs/providers/provider-spec.md §6). Each value is
 # hashed into an address that has to be the same on every parity chain: the timelock, registry,
 # and treasury through their constructor arguments, the transceivers through each provider's
 # record, and the governor's conduits through its owner, salt, and home. Read by

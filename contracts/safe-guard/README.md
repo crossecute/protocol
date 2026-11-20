@@ -1,7 +1,7 @@
 # Safe guard
 
 `CrossecuteGuard`, the Safe 1.5.0 guard described in
-[`docs/safe-guard-design.md`](../../docs/safe-guard-design.md), with its tests. This is a separate
+[`docs/safe/safe-guard-design.md`](../../docs/safe/safe-guard-design.md), with its tests. This is a separate
 Foundry project from [`contracts/evm/`](../evm/); the two projects share compatible
 interfaces, types and verification libraries.
 
@@ -56,7 +56,7 @@ The pinned MultiSendCallOnly executor is accepted only for recognized authority-
 batches, including before activation; ordinary owner batches and module batches reject.
 Signed `sendMessage` calls inside MultiSend are unsupported.
 
-See the [publication and registration rules](../../docs/safe-guard-design.md#merkle-leaf-publication)
+See the [publication and registration rules](../../docs/safe/safe-guard-design.md#merkle-leaf-publication)
 for indexer inputs and the scope of the pre-hook check.
 
 ## Build and chain support
@@ -108,7 +108,7 @@ hashes it for the execution lock and staged record. With the same two signatures
 
 A `bootstrap` takes the same staging and cleanup path. There is no byte cap, so the submitter pays this cost and a blob too large for the block
 limit cannot be executed. Child approval caching is measured in
-[`docs/safe-approval-evidence-sizing.md`](../../docs/safe-approval-evidence-sizing.md).
+[`docs/benchmarks/safe-approval-evidence-sizing.md`](../../docs/benchmarks/safe-approval-evidence-sizing.md).
 
 `test/LeafPublicationGas.t.sol` measures `publishLeaves` execution for 448-byte execution leaves.
 The figures exclude the transaction's intrinsic and calldata cost, which grows by 512 bytes of
@@ -131,7 +131,7 @@ forge test --match-contract 'SendMessageGasTest|ApprovalGasTest|LeafPublicationG
 actual signed Hyperlane transceivers/conduits with a mock transport. Context-specific
 remappings import EVM sources into this Cancun test project; the production Paris
 compiler settings remain unchanged. See
-[the measured gas, sizes and test boundaries](../../docs/safe-signed-dispatch-measurements.md).
+[the measured gas, sizes and test boundaries](../../docs/benchmarks/safe-signed-dispatch-measurements.md).
 
 ```bash
 forge test --match-contract SignedDispatchIntegrationTest -vv

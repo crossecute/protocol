@@ -44,7 +44,7 @@ The suite selects Cancun execution for the upstream binaries; protocol compilati
 remains Paris.
 
 Artifact provenance, package archive and file checksums, and reproduction instructions
-are in [the fixture directory](../contracts/evm/test/fixtures/ccip-v2/README.md).
+are in [the fixture directory](../../contracts/evm/test/fixtures/ccip-v2/README.md).
 
 ## Native compilation
 

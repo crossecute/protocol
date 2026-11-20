@@ -1,8 +1,8 @@
 # Authority review findings and disposition
 
-Security review register for [#109](../safe-authority-updates.md). This file owns
+Security review register for [#109](../safe/safe-authority-updates.md). This file owns
 finding status and unresolved choices, not duplicate design text or implementation
-instructions. [Acceptance coverage](../safe-authority-verification-review.md) maps
+instructions. [Acceptance coverage](safe-authority-verification-review.md) maps
 requirements to tests. The original reviews are preserved in Git commits 9181da8
 (round 1) and 5a18cd6 (round 2); superseded worksheets and the long conversation
 tracker are removed from the current tree.

@@ -9,7 +9,7 @@ import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
 
 /// @dev Measures what caching one approval adds to the child's `signMessage` execution, for the
-///      two child shapes in docs/safe-approval-evidence-sizing.md. The baseline is the same Safe
+///      two child shapes in docs/benchmarks/safe-approval-evidence-sizing.md. The baseline is the same Safe
 ///      and policy under an unmodified SafePolicyGuard.
 contract ApprovalGasTest is GuardTestBase {
     function test_gas_approvalCache_10of13() public {

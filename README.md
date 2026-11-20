@@ -7,7 +7,7 @@ Secure operations across chains from one owner, anchored on whichever chain each
 A conduit's owner is any address that can make a call: an EOA, a multisig, a DAO's governor,
 or any other contract. In plain mode the protocol never inspects what the owner is. It only
 authenticates the address. A Safe owner with a compatible guard can instead create its conduit
-in signed mode ([Safe-signed dispatch](docs/safe-signed-dispatch.md)), where receivers verify
+in signed mode ([Safe-signed dispatch](docs/safe/safe-signed-dispatch.md)), where receivers verify
 the Safe's own signatures.
 
 Without it, an owner on six chains needs six admin accounts: six addresses to keep in step,
@@ -43,7 +43,7 @@ scaling with the number of chains.
 
 The atomicity is in the authorization, not the settlement: messages land when their bridges
 deliver, and a revert on one chain leaves that chain behind until retry rather than rolling
-back the others (see [Failure handling](docs/message-flow.md#failure-handling)). What it
+back the others (see [Failure handling](docs/architecture/message-flow.md#failure-handling)). What it
 removes is divergence at the point of decision: six chains cannot hold six different
 payloads when only one was approved.
 
@@ -154,7 +154,7 @@ home derived the receiver's address before the first message left. The report is
 inside the delivery callback at the fee its own quote names, paid from the transceiver's
 float, so an underfunded float reverts and takes the conduit creation with it: all or
 nothing, and retryable by anyone, who can bring the report's cost with the retry (see
-[path B](docs/message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)). This runs
+[path B](docs/architecture/message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)). This runs
 once per chain.
 
 A bootstrap may carry the conduit's whole first payload. Without a gas attribute it is sent
@@ -359,11 +359,11 @@ Then, per destination, add what the chain needs:
 ## Message providers
 
 Six native bindings live under `src/protocols/`. Each is held to
-[`docs/provider-spec.md`](docs/provider-spec.md). Each is one transceiver per chain, with
+[`docs/providers/provider-spec.md`](docs/providers/provider-spec.md). Each is one transceiver per chain, with
 zkSync and Tron variants where the provider reaches those chains. On a transceiver, the
 delivery's origin names a chain and the sender must be that chain's counterpart. A seventh,
 `layerzero-oft`, has no transceiver: a conduit sends through an OFT its own team operates,
-and is held to [`docs/layerzero-oft-spec.md`](docs/layerzero-oft-spec.md). Where the
+and is held to [`docs/providers/layerzero-oft-spec.md`](docs/providers/layerzero-oft-spec.md). Where the
 bindings differ is in who delivers a message to a conduit and what authenticates it:
 
 | Provider | Inbound entry point | Sender authenticated by | Replay refused by |
@@ -445,7 +445,7 @@ What an operator or integrator has to know:
   so an OFT outage does not stop those paths after bootstrap. Its initial authority still
   relies on authenticated OFT delivery. Both modes use the same route-bound address;
   signed bootstrap requires an activated source Safe and matching receiver authority pins
-  ([signed OFT transport](docs/safe-signed-dispatch.md#layerzero-oft-signed-transport)).
+  ([signed OFT transport](docs/safe/safe-signed-dispatch.md#layerzero-oft-signed-transport)).
 - **A `layerzero-oft` conduit reaches only the chains it was created with.** They are bound
   into its address, so another chain means another conduit. It carries no tokens, and reaches
   no zkSync or Tron chain.
@@ -533,27 +533,8 @@ script's pinned commit changes, re-check the matching section there.
 
 ## Docs
 
-- [`docs/message-flow.md`](docs/message-flow.md): the two paths, the wire formats, and how
-  the contracts fit together
-- [`docs/encoding.md`](docs/encoding.md): call serialization, the commitment preimage, and
-  what changes off the EVM
-- [`docs/provider-spec.md`](docs/provider-spec.md): what a message provider binding must
-  implement to be compliant, and what the provider itself must be capable of. Normative
-- [`docs/layerzero-oft-spec.md`](docs/layerzero-oft-spec.md): what the `layerzero-oft`
-  binding is held to, and what an OFT must be before a conduit uses it. Normative
-- [`docs/safe-guard-design.md`](docs/safe-guard-design.md): the Safe guard that stages owner
-  signatures for a transmitter and caches child Safe approvals, built under
-  [`contracts/safe-guard/`](contracts/safe-guard/); its approval storage cost is in
-  [`docs/safe-approval-evidence-sizing.md`](docs/safe-approval-evidence-sizing.md)
-- [Provider research](https://github.com/crossecute/research/blob/main/protocol/provider-research.md), in the `crossecute/research` repository: what each transport
-  guarantees about replay, how ERC-7786 attaches, and the design influences and candidate
-  additions each suggests. Pinned to other people's releases, so it goes stale on their
-  schedule rather than ours
-- [`docs/safe-signed-dispatch.md`](docs/safe-signed-dispatch.md): the Safe-signed dispatch
-  design for #108, with its decisions, the check orders the transmitter and receiver follow,
-  and where each part is implemented under
-  [`contracts/evm/src/messaging/signed/`](contracts/evm/src/messaging/signed/)
-- [`docs/todo.md`](docs/todo.md): everything outstanding, ordered by what blocks what
+The [documentation index](docs/README.md) covers protocol architecture, provider
+bindings, Safe integration, benchmarks, and outstanding work.
 
 ## Status
 
@@ -612,9 +593,9 @@ upstream message into memory; other providers retain their calldata decode path.
 
 Transmitters and all CCIP transceiver variants support opt-in V3 message attributes.
 The transceiver owner must enable a verified outbound lane first. Receiver policies
-remain mandatory regardless of sender options. See [CCIP 2.0 options](docs/ccip-v2.md)
+remain mandatory regardless of sender options. See [CCIP 2.0 options](docs/providers/ccip-v2.md)
 for defaults, authority, pending-message effects, and why a custom verifier policy can
 stop a receiver permanently.
-[Local validation](docs/ccip-v2-validation.md) covers the options and actual OffRamp
+[Local validation](docs/providers/ccip-v2-validation.md) covers the options and actual OffRamp
 behavior; [deployment issue #118](https://github.com/crossecute/protocol/issues/118) tracks live-lane
 and native-execution checks before production enablement.

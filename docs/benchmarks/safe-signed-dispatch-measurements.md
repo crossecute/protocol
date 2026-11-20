@@ -6,10 +6,10 @@ integration tests. These are execution-gas observations, not live provider fee q
 No fork RPC was configured; no transaction was broadcast.
 
 These tables describe the named code commit. The receiver's selected-head/graph bootstrap
-and linked authority verification are specified in [safe-authority-updates.md](safe-authority-updates.md),
-with measurements in [updates.md](benchmarks/authority-109/updates.md). Current OFT runtime
+and linked authority verification are specified in [safe-authority-updates.md](../safe/safe-authority-updates.md),
+with measurements in [updates.md](authority-109/updates.md). Current OFT runtime
 and complete bootstrap sizing are recorded under
-[signed OFT transport](safe-signed-dispatch.md#layerzero-oft-signed-transport).
+[signed OFT transport](../safe/safe-signed-dispatch.md#layerzero-oft-signed-transport).
 
 ## Production Paris receiver
 

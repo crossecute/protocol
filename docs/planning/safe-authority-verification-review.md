@@ -1,10 +1,10 @@
 # Authority implementation and verification plan
 
 This file owns concrete implementation gates and acceptance coverage for the
-[#109 design](safe-authority-updates.md). It is not an independent policy spec.
-[Review findings](planning/safe-authority-review-109.md) track security questions;
-[shared vectors](vectors/safe-authority-updates-109.json) and
-[benchmarks](benchmarks/authority-109/README.md) have separate purposes.
+[#109 design](../safe/safe-authority-updates.md). It is not an independent policy spec.
+[Review findings](safe-authority-review-109.md) track security questions;
+[shared vectors](../vectors/safe-authority-updates-109.json) and
+[benchmarks](../benchmarks/authority-109/README.md) have separate purposes.
 
 Production rollout and persistent archive operation are tracked in
 [protocol#118](https://github.com/crossecute/protocol/issues/118). SDK atomic execution
@@ -20,7 +20,7 @@ and witness integration are tracked in [sdk#14](https://github.com/crossecute/sd
 | Mutation encoding | ownershipBatchData packs the guard's registerOwnershipChange(update) call and then zero-value supported self-CALLs into MultiSendCallOnly calldata; decodeOwnershipBatch inverts it and accepts only data that re-encodes exactly. AuthorityMutations.applyMutations derives every intermediate owner list in Safe 1.5.0 order, checks predecessor/sentinel, threshold and the 16-owner cap at each step, and requires the result to equal the expected record; added owners take their kind from it. A differential fuzz test checks each step against a real Safe 1.5.0. The receiver authority library calls it for root and child ownership changes. SourceAuthority.t.sol covers a threshold change before later mutations under one pre-batch quorum, and fault-injects a post-state mismatch to check rollback of owners, nonce, head and publication. | Live source validation. |
 | Transport | relayAuthority and quoteAuthority share exact publication checks, route validation and wire construction. Guard publication commits to the verified portable submission and emits its full bytes. Provider and direct submission share verification and replay state. Only the exact current accepted submission gets a provider no-op acknowledgment; a head match alone grants nothing. Caller-funded relay accounting, refunds and locking are shared with leaf relay. | Live provider validation and operation of finalized evidence capture with independent backups. |
 | Initial authority | Signed bootstrap carries the source guard, current selection head, encoded selected graph and setup calls. Quote and send check the same guard selection; an unactivated Safe cannot bootstrap. The receiver checks its immutable guard pin and seeds once before setup. | Verify configured pins and bootstrap contents on each deployment. |
-| Caches and witnesses | Receivers retain full records and graph entries, with graph(hash)/record(hash) readback and selected-graph verification of ordinary messages. The source guard has no full-record cache or graph readback; callers preserve graphs from staging calldata and full published submissions. Its currentGraph witness is authenticated against the stored selection hash before use. Both paths start transition proofs from the selected graph's positions, with intermediate rows scoped to one verification. A regression rejects historical cached receiver positions and accepts a forward successor whose owners equal an earlier record. | Operate backed-up persistent archives and test restoration. The [offline utility](../tools/authority-archive/README.md) imports source-hash-checked graphs/submissions and retrieves exact witnesses and complete forward catch-up chains; it does not run a background indexer. |
+| Caches and witnesses | Receivers retain full records and graph entries, with graph(hash)/record(hash) readback and selected-graph verification of ordinary messages. The source guard has no full-record cache or graph readback; callers preserve graphs from staging calldata and full published submissions. Its currentGraph witness is authenticated against the stored selection hash before use. Both paths start transition proofs from the selected graph's positions, with intermediate rows scoped to one verification. A regression rejects historical cached receiver positions and accepts a forward successor whose owners equal an earlier record. | Operate backed-up persistent archives and test restoration. The [offline utility](../../tools/authority-archive/README.md) imports source-hash-checked graphs/submissions and retrieves exact witnesses and complete forward catch-up chains; it does not run a background indexer. |
 | Execution isolation | Authority submission, signed initialization, direct and provider message/leaf execution, and finalize use ReceiverBase's shared nonReentrant lock. Reentry tests cover all these application routes against authority submission. | Live provider/callback validation. |
 | Commitments | Root-rotation tests preserve repeat approvals, permissionless finalization, explicit cancellation and consumption; accepted work has no authority-based invalidation. Real-Safe nested adoption additionally preserves two approvals, permissionless consumption and explicit cancellation. | Live-provider validation. |
 | Resource behavior | The 16-immediate-owner cap applies to full graphs, child records and mutation steps. No aggregate/depth/evidence/work cap is added. SafeAuthorityGraph supplies canonical acyclic traversal, and SafeQuorum terminates through shorter inline blobs or distinct approval hashes. Malformed input and out-of-gas submissions leave no partial state on every receiver route (T7, T18). | Simulate exact graphs and payloads against actual provider/VM gas and size limits. |
@@ -94,7 +94,7 @@ changes a deployment helper to via-IR, which would change Proxy initcode and the
 address. Clean-build comparisons keep Proxy, ProxyDeployer and transceiver artifacts
 unchanged; receiver and authority library changes are expected.
 
-The [shared vectors](vectors/safe-authority-updates-109.json) are generated with `cast`,
+The [shared vectors](../vectors/safe-authority-updates-109.json) are generated with `cast`,
 independently of the Solidity encoders: Safe 1.5.0 SafeTx and SafeMessage hashes with
 their signatures, and 18 receiver vectors covering EOA, nested, mixed, multilevel and
 shared, dynamic-offset, stale-snapshot, wrong-domain and threshold cases. Each receiver
@@ -104,5 +104,5 @@ seeds a real SignedReceiver from each, checks record and graph hashes, SafeTx ha
 ownership-batch calldata against the production encoders, and submits it. The 38 semantic
 cases stay prose expectations, covered by the acceptance matrix. Historical 43-case gas/wire benchmarks remain unchanged
 measurements of the existing verifier. Current source update execution and receiver
-measurements are documented in [the current benchmark report](benchmarks/authority-109/updates.md). Run relevant source/receiver integration, both lint profiles, formatting,
+measurements are documented in [the current benchmark report](../benchmarks/authority-109/updates.md). Run relevant source/receiver integration, both lint profiles, formatting,
 size/selector checks and real Safe 1.5.0 fixtures before enabling any deployment.

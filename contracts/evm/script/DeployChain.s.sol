@@ -8,7 +8,7 @@ import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol
 import {Governance, GovernanceConfig, ChainContracts, ChainDeploy} from "script/deploy/ChainDeploy.sol";
 
 /// @title DeployChain
-/// @notice Step 1 of `docs/provider-spec.md` §6 on one parity chain: its `TimelockController`,
+/// @notice Step 1 of `docs/providers/provider-spec.md` §6 on one parity chain: its `TimelockController`,
 ///         `ChainRegistry`, and `Treasury`. Every input is in `deploy/`; any conduit may
 ///         broadcast, and a rerun deploys nothing.
 contract DeployChain is Script {
