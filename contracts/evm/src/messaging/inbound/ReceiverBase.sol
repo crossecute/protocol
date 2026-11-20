@@ -312,7 +312,7 @@ abstract contract ReceiverBase is
     ///      `TransmitterBase._requireOwnRecipient`.
     ///
     /// @dev `receiveId` is ignored: nothing here correlates messages, and replay is the
-    ///      transport's to prevent (`docs/provider-spec.md` R3.5).
+    ///      transport's to prevent (`docs/providers/provider-spec.md` R3.5).
     function receiveMessage(bytes32, bytes calldata sender, bytes calldata payload)
         external
         payable

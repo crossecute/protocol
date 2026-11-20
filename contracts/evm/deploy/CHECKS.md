@@ -223,7 +223,7 @@ Without a gas attribute every binding sends `DeliveryGas`: 1,000,000 for a boots
 1,000,000 on every configured pair; CCIP refuses 3,000,000 toward zkSync, so a caller's own
 attribute can exceed a lane's cap. Nothing checks an attribute against these measurements:
 one below them makes the delivery revert, and it is retried with more gas
-([provider-spec R1.5](../../../docs/provider-spec.md#r1-send)).
+([provider-spec R1.5](../../../docs/providers/provider-spec.md#r1-send)).
 
 EraVM prices differently and Forge cannot run it, so zkSync is measured on a local node by
 `test/eravm/era-delivery-gas.sh`. Each number is the smallest gas limit on the call into
@@ -306,7 +306,7 @@ have no code at the predeploy, as expected.
 The binding has no transceiver and no provider ids, so §3's lanes and §5's verification are
 those of the OFT a conduit sends through. Two things are checked: that the factory lands at
 its one address, and, per candidate OFT, the prerequisites O1 to O7 of
-[`layerzero-oft-spec.md` §2](../../../docs/layerzero-oft-spec.md#2-oft-prerequisites).
+[`layerzero-oft-spec.md` §2](../../../docs/providers/layerzero-oft-spec.md#2-oft-prerequisites).
 
 **Placement.** The factory and its two logic contracts deploy through Arachnid's factory at
 salt zero (§1). The address depends on the compiled and linked bytecode, the canonical treasury
@@ -388,37 +388,13 @@ for it was not checked.
 
 ## 8. Safe-signed dispatch (#134, 2026-11-17)
 
-Measured 2026-11-17 at code commit `a4dde1a039b5b8bb11ce802fae61381e70f28b2f`.
-[Complete reproducible tables, assumptions and provider-size checks](../../../docs/safe-signed-dispatch-measurements.md)
-are in the signed-dispatch measurement note. Paris production receiver measurements and
-Cancun real-Safe source integration are separate; no live fee or lane-cap certification is implied.
-
-| Paris fixture | Standalone gas | Merkle gas | initializeSigned gas | Merkle wire bytes |
-| --- | ---: | ---: | ---: | ---: |
-| 2-of-3 EOA | 167,961 | 158,116 | 237,440 | 1,600 |
-| Inline child | 176,798 | 166,999 | 313,789 | 1,696 |
-| Cached child approval | 191,743 | 181,908 | 313,789 | 2,432 |
-| Two nested levels | 185,899 | 176,071 | 390,475 | 1,792 |
-| Shared child | 213,371 | 203,625 | 493,810 | 2,112 |
-| Large cached graph, 10 calls, depth 8, attributes | 385,799 | 384,234 | 851,875 | 7,264 |
-
-`initializeSigned` excludes conduit deployment and outer transceiver work. Application state
-and benchmark boundaries are documented in the full note. **The 200k payload and 1m bootstrap
-defaults are unsuitable for general signed delivery.** Sign explicit gas attributes after
-simulating the exact full provider-entry-point call. No universal constant can cover unbounded
-authority graphs and arbitrary application calls. No protocol cap or gas floor is added.
-
-Real Safe 1.5.0/guard/conduit tests in `contracts/safe-guard/test/SignedDispatchIntegration.t.sol`
-cover both provider/direct delivery, cached child evidence, shared nested owners, two-destination
-root publication/registration/relay, nonce-42/43 atomic batching and rollback, an owner rotation
-followed by a bootstrap to a new chain that trusts only the rotated owners, and destination
-out-of-gas followed by a successful direct retry.
-
-The production size check leaves 1,830 bytes on the CCIP transmitter, 250 on the CCIP
-receiver, 982 on the LayerZero transmitter, 1,256 on the Hyperlane transmitter, and 400 on
-the OFT transmitter. Source gas includes mock mailbox journaling.
-The three existing external-fork tests are still RPC-dependent. The measurements above cover
-the standard provider paths; OFT transport uses separate lane validation.
+The [signed dispatch benchmark](../../../docs/benchmarks/safe-signed-dispatch-measurements.md)
+records Paris receiver gas, wire sizes, Cancun real-Safe integration, and runtime sizes.
+Before enabling a signed route, simulate the exact destination provider call and sign
+explicit gas attributes where supported. Use the report's
+[gas guidance](../../../docs/benchmarks/safe-signed-dispatch-measurements.md#delivery-gas-decision)
+and [provider size and fee checks](../../../docs/benchmarks/safe-signed-dispatch-measurements.md#provider-size-and-per-byte-fee-checks).
+The three external fork tests remain RPC-dependent.
 
 ### Signed LayerZero OFT routes
 
@@ -449,18 +425,13 @@ initially disabled for every outbound lane. Before the transceiver owner calls
    receiver/transceiver inbound policies are satisfiable, including automatic reports
    which still send without attributes. A receiver policy that becomes unsatisfiable also
    blocks the message that would reset it
-   ([options guide](../../../docs/ccip-v2.md#configure-inbound-policies)).
+   ([options guide](../../../docs/providers/ccip-v2.md#configure-inbound-policies)).
 4. Validate actual delivery, full-finality rejection of faster requests, policy updates
    with pending messages, No Exec/manual execution, and delivery gas on the target VM.
 5. Store the results in this file or a linked versioned record and use its content hash
    as evidenceHash. The contract records this hash in an event; it does not verify the
    evidence or detect lane versions itself.
 
-No V3 lane checks have been recorded by this refactor, and no lane is enabled by it.
-Local option and actual OffRamp/Router tests for
-[issue #150](https://github.com/crossecute/protocol/issues/150), together with successful
-zkSync/Tron compilation, are recorded in
-[the local validation report](../../../docs/ccip-v2-validation.md). Production lane
-evidence and native deployment/delivery-gas checks remain tracked in
-[deployment issue #118](https://github.com/crossecute/protocol/issues/118).
-See [the CCIP options guide](../../../docs/ccip-v2.md) for configuration and defaults.
+V3 lane results are pending in
+[deployment issue #118](https://github.com/crossecute/protocol/issues/118). See the
+[CCIP options guide](../../../docs/providers/ccip-v2.md) for configuration and defaults.

@@ -156,7 +156,7 @@ abstract contract TransmitterBase is Initializable, OutboundBase, RolesEnumerabl
     /// @dev Dispatched, not landed: on a parity chain no report ever comes back, so nothing
     ///      here could wait for confirmation. Delivery is retryable at the provider, so a
     ///      bootstrap that reverts on arrival is pending, not lost. See
-    ///      [Failure handling](../../../../../docs/message-flow.md#failure-handling).
+    ///      [Failure handling](../../../../../docs/architecture/message-flow.md#failure-handling).
     ///
     /// @dev A permanently undeliverable bootstrap (a wrong route, a destination that never
     ///      accepts it) blocks any retry from here. Both causes are write-once transceiver

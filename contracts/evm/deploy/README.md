@@ -6,7 +6,7 @@ also needs a chain type first; see "Adding a chain type" in the [root README](..
 Most of what is set below is write-once on chain: a chain's grade in each registry, each
 transceiver's route, provider id, and counterpart for it, and LayerZero's peers. A wrong value
 is fixed only by redeploying. The steps follow
-[spec §6](../../../docs/provider-spec.md#6-configuration-a-compliant-deployment-performs),
+[spec §6](../../../docs/providers/provider-spec.md#6-configuration-a-compliant-deployment-performs),
 which is their specification.
 
 ## 1. Decide how the chain places contracts
@@ -176,7 +176,7 @@ bootstrap creates the governor's conduits there.
    - `setOperator`, naming a key on this chain that may reprice or halt bootstraps without a
      cross-chain governance message, if the chain has one.
 5. **Fund floats** (§6 step 7) on chains whose transceivers report, sized from
-   [R7.5](../../../docs/provider-spec.md#r7-fees-and-value)'s quote.
+   [R7.5](../../../docs/providers/provider-spec.md#r7-fees-and-value)'s quote.
 
 For the parity chains, these payloads come from this directory, so every chain's tables agree:
 
