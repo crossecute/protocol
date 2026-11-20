@@ -17,6 +17,7 @@ import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftDeploy, LzOftDestination} from "script/deploy/LzOftDeploy.sol";
 import {DeliveryGasMeter} from "test/protocols/DeliveryGasMeter.sol";
 import {bootstrapPayload} from "test/Harness.sol";
+import {createRpcFork} from "test/fork/ForkBlock.sol";
 
 /// @dev `OAppOptionsType3`, which this repo does not vendor.
 interface IEnforcedOptions {
@@ -88,9 +89,9 @@ abstract contract LzOftForkBase is Test {
         string memory e = vm.envOr("ETH_RPC_URL", string(""));
         string memory a = vm.envOr("ARBITRUM_RPC_URL", string(""));
         if (bytes(f).length == 0 || bytes(e).length == 0 || bytes(a).length == 0) return false;
-        fraxtal = vm.createFork(f);
-        ethereum = vm.createFork(e);
-        arbitrum = vm.createFork(a);
+        fraxtal = createRpcFork(vm, f, "FRAXTAL_FORK_BLOCK");
+        ethereum = createRpcFork(vm, e, "ETH_FORK_BLOCK");
+        arbitrum = createRpcFork(vm, a, "ARBITRUM_FORK_BLOCK");
         // Frax's contracts use opcodes after `paris`, the version this repo compiles for so its
         // addresses match on every chain. Execution only: the bytecode deployed here is unchanged.
         vm.setEvmVersion("cancun");

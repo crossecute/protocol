@@ -417,8 +417,38 @@ out-of-gas followed by a successful direct retry.
 The production size check leaves 1,830 bytes on the CCIP transmitter, 250 on the CCIP
 receiver, 982 on the LayerZero transmitter, 1,256 on the Hyperlane transmitter, and 400 on
 the OFT transmitter. Source gas includes mock mailbox journaling.
-The three existing external-fork tests are still RPC-dependent. The measurements above cover
-the standard provider paths; OFT transport uses separate lane validation.
+### LayerZero fork regression run (#118)
+
+All three RPC-dependent regressions passed on 2026-11-19 Pacific time with Forge 1.8.1
+and solc 0.8.28. The protocol code was from commit
+`25b436e619c87c4ce9e14ab7b56061c01ae6296b`. The test harness accepts block numbers
+to replay the same chain state.
+
+| Network | Block | Block hash |
+| --- | ---: | --- |
+| Ethereum | 26,452,787 | `0xa0f39d06250d8e90d447063e7bfe97354564270482e5e1036d12ff18a1be1653` |
+| Fraxtal | 44,161,882 | `0x715467e210341ecc933a710c7cef720e31c12d7490e2caf4e9fd21d6b742f9c2` |
+| Arbitrum One | 525,772,439 | `0xd36b2bccd4298aa2296342270ca1a08c8109d2c36013767267cbf0888340c8c2` |
+
+Run from `contracts/evm` with RPCs that can serve account state at these heights.
+
+```sh
+ETH_RPC_URL=https://ethereum-rpc.publicnode.com \
+FRAXTAL_RPC_URL=https://fraxtal-rpc.publicnode.com \
+ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc \
+ETH_FORK_BLOCK=26452787 FRAXTAL_FORK_BLOCK=44161882 ARBITRUM_FORK_BLOCK=525772439 \
+forge test --match-path 'test/fork/*.t.sol' -vv
+```
+
+- `LzDvnForkTest` confirmed Ethereum's zkSync quote reverted with the default DVN
+  and returned a nonzero fee after pinning LayerZero Labs' DVN.
+- `LzOftForkTest` sent a frxUSD OFT bootstrap and payload from Fraxtal to both
+  Ethereum and Arbitrum on local forks.
+- `LzOftForkDeliveryGasTest` passed the receive and compose gas assertions on both
+  destinations. Bootstrap compose used 470,273 gas on Ethereum and 470,348 on Arbitrum.
+
+The OFT tests simulate provider delivery using plain bootstrap and payload messages.
+Signed OFT lane validation remains a deployment gate.
 
 ### Signed LayerZero OFT routes
 

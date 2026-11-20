@@ -7,6 +7,7 @@ import {
     MessagingParams
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
+import {createRpcFork} from "test/fork/ForkBlock.sol";
 
 /// @notice An OApp that is its own delegate, as every LayerZero contract here is.
 contract SelfDelegatedOApp {
@@ -26,7 +27,7 @@ contract LzDvnForkTest is Test {
     function test_aPinnedDvnMakesTheZkSyncPathwayQuotable() public {
         string memory rpc = vm.envOr("ETH_RPC_URL", string(""));
         if (bytes(rpc).length == 0) vm.skip(true);
-        vm.createSelectFork(rpc);
+        vm.selectFork(createRpcFork(vm, rpc, "ETH_FORK_BLOCK"));
 
         SelfDelegatedOApp oapp = new SelfDelegatedOApp();
         MessagingParams memory params = MessagingParams(
