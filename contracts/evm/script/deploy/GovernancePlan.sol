@@ -495,7 +495,8 @@ library GovernancePlan {
     }
 
     /// @dev For LayerZero, first the transmitter's own DVN where the pathway needs one, and its
-    ///      peer there, for the bootstrap and the messages `connect` sends.
+    ///      peer there, for the messages `connect` sends. The bootstrap is the transceiver's send,
+    ///      over the transceiver's pin.
     function _bootstrapTxs(Plan memory p, string memory name, ChainEntry memory x)
         private
         view

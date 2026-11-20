@@ -7,7 +7,8 @@ what rather than by size.
 this file is the gap between that design and the tree.
 [`provider-spec.md`](providers/provider-spec.md) is what the six bindings under
 `contracts/evm/src/protocols/` are held to, and [`layerzero-oft-spec.md`](providers/layerzero-oft-spec.md)
-the seventh; what they mean for an operator is in the README.
+the seventh. The [operator guide](operator-guide.md#message-providers) covers provider setup
+and trust assumptions.
 
 ---
 
@@ -48,8 +49,8 @@ the seventh; what they mean for an operator is in the README.
 
 - **Fraxtal is configured but not deployed.** Its LayerZero pathways default to the dead DVN, so
   every one is pinned ([CHECKS §5](../contracts/evm/deploy/CHECKS.md#5-verification-on-the-destination),
-  #94), and a conduit's owner must call `LzTransmitter.setDvn` before its first quote over plain
-  LayerZero there. CCIP carries Fraxtal only to and from Ethereum and Base (`[blocked]` in
+  #94), and a conduit's owner must call `LzTransmitter.setDvn` before its first message there
+  after the bootstrap, which the transceiver sends over its own pin. CCIP carries Fraxtal only to and from Ethereum and Base (`[blocked]` in
   `ccip.toml`), so Fraxtal to Arbitrum or Optimism has LayerZero and Hyperlane alone.
   `layerzero-oft` delivery into Fraxtal fits its gas on a fork
   ([CHECKS §4](../contracts/evm/deploy/CHECKS.md#4-destination-gas)); the transceiver providers'

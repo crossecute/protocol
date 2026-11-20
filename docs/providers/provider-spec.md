@@ -675,7 +675,8 @@ A transceiver is its own delegate the same way, and that delegate cannot move: L
 inherits the DVN pinned for its home's eid. A transmitter's owner sets the DVN stack its sends
 use with `setDvn(eid, required, optional, optionalThreshold)`, which replaces the pathway's
 default and any earlier call and leaves the conduit its own delegate; nothing constrains the
-stack. The owner may also name itself delegate through OApp's `setDelegate`, which is its own
+stack. A conduit's bootstrap is its transceiver's send, over the transceiver's pin, so only a
+message after it depends on that call. The owner may also name itself delegate through OApp's `setDelegate`, which is its own
 authority over its own sends (#51, #94).
 
 **R6.5** A binding SHOULD conduit for the per-conduit provider cost and state it.
