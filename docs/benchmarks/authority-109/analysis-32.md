@@ -86,7 +86,7 @@ is outside this analysis.
   nonzero storage slots has 640,000 gas in base zero-to-nonzero SSTORE charges,
   before cold access and other work. This historical harness does not measure
   linked-authority storage or descendant proofs; current layouts and costs are
-  documented in the [authority design](../../safe-authority-updates.md) and [updates.md](updates.md).
+  documented in the [authority design](../../safe/safe-authority-updates.md) and [updates.md](updates.md).
 - Check exact serialized message bytes and destination verification cost during
   build/quote, for the selected pathway. A transport payload limit need not become
   an aggregate authority-entry cap: some proofs/transactions may fit while others

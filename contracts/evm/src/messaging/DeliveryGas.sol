@@ -14,7 +14,7 @@ pragma solidity ^0.8.0;
 ///      These inherited defaults are unsuitable for general Safe-signed delivery: #134's
 ///      shared-child payload exceeds 200k and a large graph's signed initialization alone
 ///      uses about 852k of the bootstrap default. Supply explicit provider gas attributes after simulating the complete
-///      destination entry point (docs/safe-signed-dispatch-measurements.md).
+///      destination entry point (docs/benchmarks/safe-signed-dispatch-measurements.md).
 library DeliveryGas {
     uint256 internal constant BOOTSTRAP = 1_000_000;
     uint256 internal constant REPORT = 250_000;

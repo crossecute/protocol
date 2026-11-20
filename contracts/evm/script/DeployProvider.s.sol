@@ -13,7 +13,7 @@ import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Governance, GovernanceConfig, ChainContracts, ChainDeploy} from "script/deploy/ChainDeploy.sol";
 
 /// @title DeployProvider
-/// @notice Step 2 of `docs/provider-spec.md` §6 for one provider on one standard EVM chain:
+/// @notice Step 2 of `docs/providers/provider-spec.md` §6 for one provider on one standard EVM chain:
 ///         its conduit implementations, its transceiver implementation, and the transceiver,
 ///         deployed through `ProxyDeployer` from the registry's record.
 ///

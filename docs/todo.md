@@ -3,10 +3,10 @@
 Everything known to be missing, undecided, or wrong, in one place. Ordered by what blocks
 what rather than by size.
 
-[`message-flow.md`](message-flow.md) and [`encoding.md`](encoding.md) describe the design;
+[`message-flow.md`](architecture/message-flow.md) and [`encoding.md`](architecture/encoding.md) describe the design;
 this file is the gap between that design and the tree.
-[`provider-spec.md`](provider-spec.md) is what the six bindings under
-`contracts/evm/src/protocols/` are held to, and [`layerzero-oft-spec.md`](layerzero-oft-spec.md)
+[`provider-spec.md`](providers/provider-spec.md) is what the six bindings under
+`contracts/evm/src/protocols/` are held to, and [`layerzero-oft-spec.md`](providers/layerzero-oft-spec.md)
 the seventh; what they mean for an operator is in the README.
 
 ---
@@ -39,7 +39,7 @@ the seventh; what they mean for an operator is in the README.
   sets the price. An empty float refuses bootstraps to that chain from every home, but strands
   none: anyone can retry one and bring its report's cost, so until a refill every user of that
   chain pays their own report. A fee of at least one report's cost makes the attacker pay for
-  every report the float pays ([path B](message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)
+  every report the float pays ([path B](architecture/message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)
   gives the cost), which needs the report's measured cost on each reporting chain. Each home's
   owner, or the operator it names, can halt bootstraps to a reporting chain by setting its fee
   there to zero, and the owner can limit which conduits bootstrap with an allowlist.
@@ -81,7 +81,7 @@ the seventh; what they mean for an operator is in the README.
 ## 3. Infrastructure
 
 - **Deploy scripts cover parity chains only**
-  ([spec §6](provider-spec.md#6-configuration-a-compliant-deployment-performs)). Steps 1 to 6
+  ([spec §6](providers/provider-spec.md#6-configuration-a-compliant-deployment-performs)). Steps 1 to 6
   are scripted for them, the N × N tables as payloads from `contracts/evm/deploy/`. Not
   scripted: `op-stack-l2-l2`'s lanes, which the payload script refuses to skip once a chain is
   listed; registry plugins, which no parity chain needs (a commitment scheme only previews);
@@ -95,22 +95,13 @@ the seventh; what they mean for an operator is in the README.
   0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19).
   zksolc 1.5.15, with 0.8.28-1.0.1, compiles `ChainRegistry` (2026-10-20, #82), but not
   `VmDeriver`, whose Bitcoin schemes use `ripemd160`. CI runs neither.
-- **Signed delivery needs an explicit, simulated gas budget.** #134's reproducible gas,
-  size and real Safe 1.5.0 integration evidence is in
-  [safe-signed-dispatch-measurements.md](safe-signed-dispatch-measurements.md). The inherited
-  200k/1m defaults do not cover general signed delivery. Live provider lanes still need exact
-  gas estimates, configured-size-limit checks and fee quotes; local mocks certify none of
-  those live configurations. #109 now implements source activation and updates, receiver
-  bootstrap and selected-graph verification, publication, provider relay/quote and atomic
-  direct catch-up. Its [verification plan](safe-authority-verification-review.md) tracks
-  external [SDK execution tooling](https://github.com/crossecute/sdk/issues/14),
-  archive-service operation and live-provider validation. The offline
-  [archive utility](../tools/authority-archive/README.md) provides graph and evidence retrieval. Current authority update
-  measurements are in [updates.md](benchmarks/authority-109/updates.md).
+- **Size and price signed delivery per live lane.** Use the
+  [signed dispatch gas guidance](benchmarks/safe-signed-dispatch-measurements.md#delivery-gas-decision)
+  to simulate the exact delivery, check the lane's configured payload limit, and quote the fee.
 - **Published leaves need an indexer.** The [SDK Merkle package](https://github.com/crossecute/sdk/pull/13)
   and the guard tests check the same three-leaf publication vector. An indexer can recover
   ordered leaves from the guard call input and use the SDK to build proofs. See
-  [Merkle leaf publication](safe-guard-design.md#merkle-leaf-publication) for trace requirements.
+  [Merkle leaf publication](safe/safe-guard-design.md#merkle-leaf-publication) for trace requirements.
 - **Nothing checks for Cancun before the Safe guard is installed.** The guard reads transient
   storage in every owner pre-hook, so on a chain without EIP-1153 it would make every owner
   transaction revert, including its own removal. Installation tooling should confirm the chain
@@ -133,7 +124,7 @@ the seventh; what they mean for an operator is in the README.
   report's quote as `msg.value`. For CCIP it needs a contract that transfers the quote to the
   float and calls manual execution in one transaction, since a separate top-up can be spent by
   another retry first (#78). Neither is written.
-- **The compliance suite's gaps** ([spec §8](provider-spec.md#8-the-compliance-suite) says
+- **The compliance suite's gaps** ([spec §8](providers/provider-spec.md#8-the-compliance-suite) says
   where every line is held). C11 and C29 to C31 against real endpoints are the fork tests
   below. C24's check cannot see a collision inside a single call, so two fields an
   initializer sets together are covered only by the suites that read them back.
@@ -180,7 +171,7 @@ the seventh; what they mean for an operator is in the README.
 Launch is EVM-only. No chain here is reachable until its vectors exist, so none of this
 blocks it.
 
-- **`test/vectors/`.** [`encoding.md`](encoding.md) specifies the corpus and the
+- **`test/vectors/`.** [`encoding.md`](architecture/encoding.md) specifies the corpus and the
   "assert fields, not bytes" rule. Foundry can verify the commitment half for every VM with
   no non-EVM tooling: cheap, and the only defence on the execute-on-arrival path where
   there is no commitment at all. **Now load-bearing for the scheme plugins**: an
@@ -201,7 +192,7 @@ blocks it.
   a commitment perfectly and have no way to perform the approved calls. It also has no
   per-owner deployment, so the one-conduit-per-owner model and its single address do not
   survive. The largest unresolved piece of non-EVM support: see
-  [`encoding.md`](encoding.md#commitments-off-the-evm).
+  [`encoding.md`](architecture/encoding.md#commitments-off-the-evm).
 - **A Cardano receiver model, or a decision that Cardano is out of scope.** eUTxO
   validators approve spending; they do not execute.
 - **Poseidon for Starknet commitments.** `Scheme.Poseidon` is declared and reverts
@@ -215,7 +206,7 @@ blocks it.
 - **The opaque container off the EVM**: ABI framing or a length-prefixed one. Not blocking
   until a non-EVM receiver exists, because the commitment never sees the container.
 - **The Solana account list belongs inside the committed element.** Argued in
-  [`encoding.md`](encoding.md); worth marking settled when the first vector is written.
+  [`encoding.md`](architecture/encoding.md); worth marking settled when the first vector is written.
 - **Owner-writable non-EVM locations**: allowed directly, or only through the graded
   resolution paths?
 
@@ -231,15 +222,15 @@ is live: `deploy/providers/op-stack-l2-l2.toml` lists no chain. Before listing o
 - **Someone must relay.** `sendMessage` is non-payable and `relayMessage` permissionless, so
   delivery depends on an autorelayer or on this protocol relaying.
 - **Expiry is unverified.** Whether a source log expires after some window, ending its retry,
-  is not settled. [Failure handling](message-flow.md#failure-handling) assumes indefinite
+  is not settled. [Failure handling](architecture/message-flow.md#failure-handling) assumes indefinite
   retry, so this is the provider checklist's work
-  ([spec §2](provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)).
+  ([spec §2](providers/provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)).
 
 ## 6. Safe-signed dispatch
 
 The signature-enabled transmitter and receiver
 ([#108](https://github.com/crossecute/protocol/issues/108)) are built;
-[`safe-signed-dispatch.md`](safe-signed-dispatch.md) holds the decisions and, under
+[`safe-signed-dispatch.md`](safe/safe-signed-dispatch.md) holds the decisions and, under
 "Implementation", what the build leaves out. Outstanding:
 
 - **Signed receivers on diverging chains.** zkSync and Tron refuse a signed bootstrap; supporting
@@ -247,17 +238,14 @@ The signature-enabled transmitter and receiver
 - **Signed OFT deployment validation.** Bootstrap, dispatch and authority relay are implemented;
   each intended OFT lane still needs the [signed-route checks](../contracts/evm/deploy/CHECKS.md#signed-layerzero-oft-routes)
   for zero-amount compose compatibility, exact gas/fees, payload limits and receiver authority pins.
-- **Authority execution tooling and operation.** The [#109 implementation](safe-authority-updates.md)
-  includes source activation/updates, receiver catch-up and offline evidence archives. SDK
-  execution, archive-service operation and live-provider validation remain in the
-  [verification plan](safe-authority-verification-review.md#implementation-coverage-and-remaining-work).
+- **Authority execution tooling and operation.** Track
+  [SDK execution tooling](https://github.com/crossecute/sdk/issues/14), archive-service
+  operation, and live-provider validation in the
+  [authority verification plan](planning/safe-authority-verification-review.md#implementation-coverage-and-remaining-work).
 
 ## CCIP 2.0 production enablement
 
-Local option coverage, actual OffRamp/Router enforcement tests, and native compilation
-for [issue #150](https://github.com/crossecute/protocol/issues/150) are recorded in
-[the validation report](ccip-v2-validation.md). Live lane/version evidence, actual native
-VM deployment and delivery gas, and production executor/proof services remain tracked in
-[deployment issue #118](https://github.com/crossecute/protocol/issues/118). Follow
-[the options guide](ccip-v2.md) and
-[deployment checks](../contracts/evm/deploy/CHECKS.md#ccip-20-options) before enabling V3.
+Before enabling V3, complete the
+[deployment checks](../contracts/evm/deploy/CHECKS.md#ccip-20-options) for lane versions,
+native VM deployment and delivery gas, and production executors and verifiers. Track
+results in [deployment issue #118](https://github.com/crossecute/protocol/issues/118).

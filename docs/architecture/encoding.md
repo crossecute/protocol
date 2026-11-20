@@ -299,7 +299,7 @@ than falling back to keccak, because a silent fallback would hand back a well-fo
 commitment that a Starknet receiver can never match, failing only on a live message.
 `Commitment.isComputable(scheme)` is the ask-before-you-build read, and it is false only for
 `Poseidon`. Until it is ported and checked against Starknet vectors (not built yet;
-[`todo.md` §4](todo.md#4-post-launch-non-evm-destinations)), a Starknet
+[`todo.md` §4](../todo.md#4-post-launch-non-evm-destinations)), a Starknet
 commitment is computed off-chain and carried in an opaque element that calls that receiver's
 own `commit`, which is the same mechanism every deferred payload uses.
 
@@ -327,7 +327,7 @@ lookup), that is the whole safety argument for letting the preview be swappable.
 Getting the primitive wrong therefore fails closed, the same way building a commitment with
 the local chainKey does. It is not free: an unmatched commitment sits outstanding until a
 `cancel` crosses, which is why no plugin is to be configured for a chain before it is checked
-against that chain's vectors (not built yet; [`todo.md` §4](todo.md#4-post-launch-non-evm-destinations)). It no longer blocks anything else, since approvals are unordered.
+against that chain's vectors (not built yet; [`todo.md` §4](../todo.md#4-post-launch-non-evm-destinations)). It no longer blocks anything else, since approvals are unordered.
 
 **The chainKey is a compile-time constant almost everywhere.** On EVM, `ChainKey.local()`
 derives it from `block.chainid` and nothing has to be configured, which is exactly why the
@@ -444,7 +444,7 @@ a file.
 
 ### The vector corpus
 
-Not built yet ([`todo.md` §4](todo.md#4-post-launch-non-evm-destinations)). The planned layout:
+Not built yet ([`todo.md` §4](../todo.md#4-post-launch-non-evm-destinations)). The planned layout:
 
 ```
 test/vectors/
@@ -538,13 +538,13 @@ version needs checking. Starknet's `starknet_keccak` is *not* keccak256: see abo
 
 This file owns application Call[] wire encoding and opaque commitments. #109's
 separate management encoding is defined by the
-[authority design](safe-authority-updates.md#linked-universally-reusable-updates)
-and [AuthorityUpdateEncoding](../contracts/evm/src/messaging/authority/AuthorityUpdateEncoding.sol).
+[authority design](../safe/safe-authority-updates.md#linked-universally-reusable-updates)
+and [AuthorityUpdateEncoding](../../contracts/evm/src/messaging/authority/AuthorityUpdateEncoding.sol).
 It uses signed predecessor hashes, no numeric destination nonce watermark and no
 destination-specific authority-update fields. Source SafeTx nonces remain signed.
 Ownership Call[] batches are packed as zero-value self-CALLs for MultiSendCallOnly;
 that packed helper encoding is distinct from application abi.encode(Call[]).
-The [shared authority vectors](vectors/safe-authority-updates-109.json) pin SafeTx and
+The [shared authority vectors](../vectors/safe-authority-updates-109.json) pin SafeTx and
 SafeMessage hashes and the #109 record, graph, ownership-batch, child-update, bootstrap and
 submission encodings, and `test/authority/AuthorityVectors.t.sol` replays them against the
 receiver. Freezing the final authority ABI remains a verification-plan gate.

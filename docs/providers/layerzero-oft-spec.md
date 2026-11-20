@@ -16,7 +16,7 @@ route, provenance bar, protocol bootstrap surcharge, receiver report or governor
 still pays the home OFT's quoted transport fee. The rest of that file's
 rules on conduits hold here as they do for every binding. What the conduit
 trusts instead is in the README's
-[message providers](../README.md#message-providers) section.
+[message providers](../../README.md#message-providers) section.
 
 Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 
@@ -37,7 +37,7 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 ## 2. OFT prerequisites
 
 A conduit MUST NOT be created on an OFT that fails one of these.
-[`deploy/CHECKS.md` §7](../contracts/evm/deploy/CHECKS.md#7-layerzero-oft) says how to check
+[`deploy/CHECKS.md` §7](../../contracts/evm/deploy/CHECKS.md#7-layerzero-oft) says how to check
 each, with frxUSD's results; `LzOftLeaves.s.sol` and `test/fork/LzOftFork.t.sol` run some of
 them for a candidate.
 
