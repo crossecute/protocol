@@ -23,15 +23,10 @@ work is identified explicitly.
 
 ## Authority-update integration (#109)
 
-This file describes signed dispatch with #109 receiver integration. The
-[authority design](safe-authority-updates.md) owns #109's linked, destination-independent
-Safe-scoped graph selection and commitment lifetime. Its
-[receiver authority wrapper](../../contracts/evm/src/messaging/authority/ReceiverAuthorityTemplate.sol)
-is inherited by SignedReceiver. Each receiver stores its own selected source-chain/Safe
-graph and head; there is no shared registry, global child feed or automatic refresh.
-Bootstrap, direct submitAuthority and provider authority relay/quote are integrated. Remaining SDK and
-deployment checks belong to the
-[verification plan](../planning/safe-authority-verification-review.md).
+`SignedReceiver` inherits the
+[receiver authority wrapper](../../contracts/evm/src/messaging/authority/ReceiverAuthorityTemplate.sol).
+The [authority design](safe-authority-updates.md) defines how bootstrap selects each
+receiver's graph and head and how direct and provider-delivered updates advance them.
 
 ## Decisions
 
@@ -701,10 +696,9 @@ compose gas and zero-amount OFT compatibility still need deployment validation p
 
 Not in #108's implementation:
 
-- **Authority tooling and live deployment validation.** #109 integrates direct submitAuthority,
-  provider relay/quote, receiver rotation and offline [evidence archives](../../tools/authority-archive/README.md).
-  [SDK execution](https://github.com/crossecute/sdk/issues/14), archive-service operation
-  and live provider validation remain separate delivery work.
+- **Authority tooling and live deployment validation.** See
+  [outstanding work](../todo.md#6-safe-signed-dispatch) for SDK, archive-service,
+  and live-provider requirements.
 - **Diverging chains.** A signed receiver is not created where addresses diverge (zkSync,
   Tron), which is outside #108's scope. The source refuses a signed bootstrap to a
   destination that reports its receiver. Non-EVM destinations are [#128](https://github.com/crossecute/protocol/issues/128).

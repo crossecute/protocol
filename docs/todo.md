@@ -95,18 +95,9 @@ the seventh; what they mean for an operator is in the README.
   0.8.28-1.0.2, compiles the zkSync transceivers and extensions (checked by hand 2026-10-19).
   zksolc 1.5.15, with 0.8.28-1.0.1, compiles `ChainRegistry` (2026-10-20, #82), but not
   `VmDeriver`, whose Bitcoin schemes use `ripemd160`. CI runs neither.
-- **Signed delivery needs an explicit, simulated gas budget.** #134's reproducible gas,
-  size and real Safe 1.5.0 integration evidence is in
-  [safe-signed-dispatch-measurements.md](benchmarks/safe-signed-dispatch-measurements.md). The inherited
-  200k/1m defaults do not cover general signed delivery. Live provider lanes still need exact
-  gas estimates, configured-size-limit checks and fee quotes; local mocks certify none of
-  those live configurations. #109 now implements source activation and updates, receiver
-  bootstrap and selected-graph verification, publication, provider relay/quote and atomic
-  direct catch-up. Its [verification plan](planning/safe-authority-verification-review.md) tracks
-  external [SDK execution tooling](https://github.com/crossecute/sdk/issues/14),
-  archive-service operation and live-provider validation. The offline
-  [archive utility](../tools/authority-archive/README.md) provides graph and evidence retrieval. Current authority update
-  measurements are in [updates.md](benchmarks/authority-109/updates.md).
+- **Size and price signed delivery per live lane.** Use the
+  [signed dispatch gas guidance](benchmarks/safe-signed-dispatch-measurements.md#delivery-gas-decision)
+  to simulate the exact delivery, check the lane's configured payload limit, and quote the fee.
 - **Published leaves need an indexer.** The [SDK Merkle package](https://github.com/crossecute/sdk/pull/13)
   and the guard tests check the same three-leaf publication vector. An indexer can recover
   ordered leaves from the guard call input and use the SDK to build proofs. See
@@ -247,17 +238,14 @@ The signature-enabled transmitter and receiver
 - **Signed OFT deployment validation.** Bootstrap, dispatch and authority relay are implemented;
   each intended OFT lane still needs the [signed-route checks](../contracts/evm/deploy/CHECKS.md#signed-layerzero-oft-routes)
   for zero-amount compose compatibility, exact gas/fees, payload limits and receiver authority pins.
-- **Authority execution tooling and operation.** The [#109 implementation](safe/safe-authority-updates.md)
-  includes source activation/updates, receiver catch-up and offline evidence archives. SDK
-  execution, archive-service operation and live-provider validation remain in the
-  [verification plan](planning/safe-authority-verification-review.md#implementation-coverage-and-remaining-work).
+- **Authority execution tooling and operation.** Track
+  [SDK execution tooling](https://github.com/crossecute/sdk/issues/14), archive-service
+  operation, and live-provider validation in the
+  [authority verification plan](planning/safe-authority-verification-review.md#implementation-coverage-and-remaining-work).
 
 ## CCIP 2.0 production enablement
 
-Local option coverage, actual OffRamp/Router enforcement tests, and native compilation
-for [issue #150](https://github.com/crossecute/protocol/issues/150) are recorded in
-[the validation report](providers/ccip-v2-validation.md). Live lane/version evidence, actual native
-VM deployment and delivery gas, and production executor/proof services remain tracked in
-[deployment issue #118](https://github.com/crossecute/protocol/issues/118). Follow
-[the options guide](providers/ccip-v2.md) and
-[deployment checks](../contracts/evm/deploy/CHECKS.md#ccip-20-options) before enabling V3.
+Before enabling V3, complete the
+[deployment checks](../contracts/evm/deploy/CHECKS.md#ccip-20-options) for lane versions,
+native VM deployment and delivery gas, and production executors and verifiers. Track
+results in [deployment issue #118](https://github.com/crossecute/protocol/issues/118).

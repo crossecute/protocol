@@ -20,19 +20,11 @@ and how they connect. Where the two disagree, the contract is right.
 
 ## Authority updates (#109)
 
-`CrossecuteGuard` also inherits
-[`SourceAuthorityGuard`](../../contracts/safe-guard/src/authority/SourceAuthorityGuard.sol), the
-source half of the [authority design](safe-authority-updates.md#source-guard-and-mutation-batch):
-activation, linked portable updates staged with stageUpdate, and ownership changes as one
-SafeTx through the pinned MultiSendCallOnly. The guard stores selection hashes and
-authenticates a caller-supplied currentGraph before using the linked ReceiverAuthority
-transition verifier. Receivers keep full records and graph entries. The guard takes its pins at
-deployment: MultiSendCallOnly, SignMessageLib, the Safe and SafeL2 singletons and the fallback
-handler. Before activation, policies govern ordinary calls, subject to the execution lock
-and the restriction of the pinned MultiSend executor to authority changes.
-An activated Safe also needs both guard slots, which activation checks; the #107 baseline permits
-the module slot to stay optional. The
-[verification plan](../planning/safe-authority-verification-review.md) lists what remains.
+[`SourceAuthorityGuard`](../../contracts/safe-guard/src/authority/SourceAuthorityGuard.sol)
+handles Safe activation and ownership mutations for `CrossecuteGuard`. See the
+[authority design](safe-authority-updates.md#source-guard-and-mutation-batch) for graph
+witnesses, deployment pins, and the ownership batch, and
+[activation](safe-authority-updates.md#activation) for setup and guard-slot requirements.
 
 ## Decisions
 

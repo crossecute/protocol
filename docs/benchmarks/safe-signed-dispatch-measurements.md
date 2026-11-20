@@ -159,6 +159,8 @@ Primary references checked 2026-11-11:
 
 ## Sizes and reproduction
 
+### Runtime sizes for the measurement revision
+
 | Production contract | Runtime bytes | EIP-170 headroom |
 | --- | ---: | ---: |
 | CcipTransmitter | 22,868 | 1,708 |
@@ -183,3 +185,15 @@ for both the default and source-only lint profiles; no rule is disabled by the w
 (cd contracts/safe-guard && python3 script/lint.py -D notes)
 (cd contracts/safe-guard && FOUNDRY_PROFILE=lint-src python3 script/lint.py -D notes src)
 ```
+
+### Runtime headroom at the 2026-11-19 guard reconciliation
+
+These figures were recorded at merge commit `f11ea9b`.
+
+| Production contract | EIP-170 headroom |
+| --- | ---: |
+| CcipTransmitter | 1,830 |
+| CcipReceiver | 250 |
+| LzTransmitter | 982 |
+| HyperlaneTransmitter | 1,256 |
+| LzOftTransmitter | 400 |
