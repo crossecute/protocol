@@ -65,6 +65,8 @@ The default for every Safe is zero delay and no expiry. Read a Safe's effective 
 seconds with `configurationTiming(safe)`. A Safe can call `configureTimingImmediately(delay, expiry)`
 before this guard occupies either of its guard slots. Include the call before setting either slot
 in the owner-approved [installation batch](../../docs/safe/safe-guard-design.md#installation).
+Initial setup and later changes accept a delay from zero through `MAX_CONFIGURATION_DELAY`
+(365 days).
 
 Once installed, a timing change takes two Safe owner calls to the guard.
 

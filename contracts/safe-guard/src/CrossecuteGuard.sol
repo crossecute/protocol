@@ -44,6 +44,10 @@ contract CrossecuteGuard is SafePolicyGuardBase, ICrossecuteGuard, SourceAuthori
     /// @dev Set above the address bits of the `_TARGET` word once the target has consumed.
     uint256 private constant _CONSUMED = 1 << 160;
 
+    uint256 public constant MAX_CONFIGURATION_DELAY = 365 days;
+
+    error ConfigurationDelayTooLong();
+
     struct ConfigurationTiming {
         uint256 delay;
         uint256 expiry;
@@ -86,6 +90,7 @@ contract CrossecuteGuard is SafePolicyGuardBase, ICrossecuteGuard, SourceAuthori
     }
 
     function _setConfigurationTiming(uint256 delay, uint256 expiry) private {
+        require(delay <= MAX_CONFIGURATION_DELAY, ConfigurationDelayTooLong());
         require(expiry != 0, ZeroExpiryNotAllowed());
         _timing[msg.sender] = ConfigurationTiming(delay, expiry);
         // forge-lint: disable-next-line(reentrancy-events) the guard-slot checks are staticcalls

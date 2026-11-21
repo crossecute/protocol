@@ -159,6 +159,30 @@ contract ConfigurationTimingTest is GuardTestBase {
         _assertTiming(safe, 0, FOREVER);
     }
 
+    function test_delayAboveMaximumRejectedBeforeAndAfterInstallation() public {
+        uint256 delay = guard.MAX_CONFIGURATION_DELAY() + 1;
+        bytes memory reason = abi.encodeWithSelector(CrossecuteGuard.ConfigurationDelayTooLong.selector);
+        _expectSafeRevert(
+            _newEoaSafe(), abi.encodeCall(CrossecuteGuard.configureTimingImmediately, (delay, FOREVER)), reason
+        );
+
+        bytes32 root = guard.timingConfigurationRoot(delay, FOREVER);
+        _request(safe, root);
+        _expectSafeRevert(safe, abi.encodeCall(CrossecuteGuard.applyConfigurationTiming, (delay, FOREVER)), reason);
+        assertEq(guard.rootExpiry(address(safe), root), FOREVER);
+        _assertTiming(safe, 0, FOREVER);
+    }
+
+    function test_maximumDelayCanMatureAndApplyARequest() public {
+        uint256 delay = guard.MAX_CONFIGURATION_DELAY();
+        Safe guarded = _installWithTiming(delay, FOREVER);
+        SafePolicyGuardBase.Configuration[] memory configs = _configs(address(0x1234));
+        bytes32 root = _requestPolicy(guarded, configs);
+        assertEq(guard.rootConfigured(address(guarded), root), START + delay);
+        vm.warp(START + delay);
+        _applyPolicy(guarded, configs);
+    }
+
     function _installWithTiming(uint256 delay, uint256 expiry) private returns (Safe guarded) {
         guarded = _newEoaSafe();
         bytes memory installation = abi.encodePacked(
