@@ -1,8 +1,7 @@
 # Protocol operator guide
 
 This guide covers chain setup, provider configuration, and deployment assumptions.
-See the [deployment guide](../contracts/evm/deploy/README.md) for adding a chain and
-the [deployment checks](../contracts/evm/deploy/CHECKS.md) for test results.
+Start with [Adding a chain or provider](#adding-a-chain-or-provider) for onboarding.
 
 Run the EVM contract tests from the repository root with [Foundry](https://getfoundry.sh/).
 
@@ -80,6 +79,46 @@ Contract paths in this section are relative to `contracts/evm/src/`.
 | Why the commitment _preview_ is swappable when the commitment is not     | `registry/ICommitmentScheme.sol`      |
 | Why the route slot holds a chain identifier, not a provider's id         | `OutboundBase._recipientOn`           |
 | Why the recipient is checked rather than trusted, and only on `eip155`   | `TransmitterBase.sendMessage`         |
+
+## Adding a chain or provider
+
+Deployment configuration lives in [`contracts/evm/deploy/`](../contracts/evm/deploy/).
+`chains.toml` records chain IDs and derivation types. `providers/<p>.toml` records
+provider-specific IDs and settings. [Deployment checks](../contracts/evm/deploy/CHECKS.md)
+contains endpoint addresses, preflight procedures, and dated results.
+
+### Add a chain
+
+1. Follow the [chain deployment guide](../contracts/evm/deploy/README.md) in order.
+   Run the applicable deployment checks for every provider that reaches the chain,
+   in both directions with each chain it will talk to, before adding it to
+   `chains.toml`.
+2. Add the chain to the applicable [provider values tables](../contracts/evm/deploy/CHECKS.md#provider-values)
+   and record the results with the date.
+3. Add the chain to a provider's configuration where its checks pass. If a
+   provider's checks fail for the chain, leave the chain out of that provider's
+   TOML and open an issue for the failure. Follow the deployment guide for
+   individual blocked lanes on a supported chain. Provider IDs and routes are
+   write-once, so resolve configuration problems before deployment.
+
+### Add a provider
+
+1. Check the [provider prerequisites](providers/provider-spec.md#2-provider-prerequisites-the-go-or-no-go-checklist)
+   and follow the [binding checklist](providers/provider-spec.md#10-checklist).
+2. Under `contracts/evm/`, put the binding in `src/protocols/<p>/`, its fixture in
+   `test/protocols/<p>/`, its deploy library in `script/deploy/<P>Deploy.sol`, and its
+   entry point in `script/Deploy<P>.s.sol`. Run the shared provider specs with the
+   new fixture.
+3. Add `deploy/providers/<p>.toml`. Record the provider ID source and the date in
+   the file header.
+4. Extend [deployment checks](../contracts/evm/deploy/CHECKS.md) for the provider
+   across all configured chains. Record endpoint values, how to quote a lane, what
+   an unconnected pair returns, how the destination verifies messages, and how
+   default destination gas compares with measured delivery costs. If payload size
+   affects fees, update the [fee specification](providers/provider-spec.md#r2-quote).
+
+For either addition, review [what the deployment checks do not cover](../contracts/evm/deploy/CHECKS.md#what-these-checks-do-not-cover)
+and record any outstanding work in [`docs/todo.md`](todo.md).
 
 ## Adding a chain type
 
