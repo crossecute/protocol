@@ -239,7 +239,7 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
         AuthorityGraph memory next = _aGraph(_record(b), bHead1);
         ChildUpdate[] memory children = new ChildUpdate[](1);
         children[0] = child;
-        // B's new owner votes for B inside A's update, as B's own owners now do on source.
+        // B votes in A's update under the owner record at B's selected head.
         bytes memory sig = _selectSig(next, KEY_D);
         batch.run(_selectCalls(next, children, sig, sig));
         assertEq(guard.selection(address(a)).authorityHash, _hash(next));

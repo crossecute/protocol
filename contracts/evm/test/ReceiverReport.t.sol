@@ -527,9 +527,8 @@ contract ReceiverReportRoundTripTest is WiresHome {
         assertEq(conduit.counterpartOn(remoteKey), abi.encodePacked(created));
     }
 
-    /// @dev And a second bootstrap is still refused in the meantime. The dispatch record is
-    ///      what prevents that, which is why it had to become a fact of its own rather than
-    ///      being read off the counterpart table.
+    /// @dev The dispatch record prevents a second bootstrap while the receiver
+    ///      address is unknown.
     function test_aSecondBootstrapIsRefusedWhileTheReportIsOutstanding() public {
         assertFalse(conduit.isReachable(remoteKey));
 
@@ -540,15 +539,8 @@ contract ReceiverReportRoundTripTest is WiresHome {
 
     /* ======================== no payload runs on a homeSide ========================= */
 
-    /// @notice Regression: a transceiver on one chain cannot report an address on another, and there
-    ///         is no `Call[]` path around that.
-    ///
-    /// @dev `_onDestinationReceiver` takes its `chainKey` from `_authenticateOrigin`. If an
-    ///      authenticated transceiver could deliver a call array, or call the report handler
-    ///      directly, it could pin a conduit's receiver on a chain it has nothing to do with,
-    ///      write-once and so unrecoverable. A transceiver runs no payload and the handler is
-    ///      internal, so neither entry exists. `test_aChainCannotReportAnAddressOnAnotherChain`
-    ///      covers the envelope path.
+    /// @dev The internal report handler uses the authenticated source chain key.
+    ///      The transceiver exposes no application execution entry point to bypass it.
     function test_noPayloadReachesTheReportHandlerOrTheBalance() public {
         vm.deal(address(homeSide), 5 ether);
 

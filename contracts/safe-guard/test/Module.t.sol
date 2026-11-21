@@ -200,7 +200,7 @@ contract ModuleTest is GuardTestBase {
         assertTrue(_exec(guarded, _signers(), address(guard), 0, applyTiming, Enum.Operation.Call));
     }
 
-    function test_ownerSendMessage_stillWorks() public {
+    function test_ownerCanSendWithTheModuleGuardInstalled() public {
         assertTrue(_exec(guarded, _signers(), address(guardedTransmitter), 0, _stagedData(), Enum.Operation.Call));
         assertEq(guardedTransmitter.sends(), 1);
     }
