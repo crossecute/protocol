@@ -4,6 +4,7 @@ pragma solidity =0.8.30;
 import {IERC7786GatewaySource} from "crossecute/messaging/IErc7786.sol";
 import {PolicyEngine} from "policy-engine/core/PolicyEngine.sol";
 import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {SafePolicyGuardBase} from "policy-engine/SafePolicyGuardBase.sol";
 import {IPolicy} from "policy-engine/interfaces/IPolicy.sol";
 import {ISafeTransactionGuard} from "policy-engine/interfaces/ISafeTransactionGuard.sol";
 import {Operation} from "policy-engine/interfaces/Operation.sol";
@@ -244,7 +245,7 @@ contract SendMessageTest is GuardTestBase {
     function test_nestedDuringPolicyCheck_rejected() public {
         ReenteringPolicy policy = new ReenteringPolicy();
         Safe checked = _newEoaSafe();
-        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](2);
+        SafePolicyGuardBase.Configuration[] memory configs = new SafePolicyGuardBase.Configuration[](2);
         configs[0] = _config(address(0), bytes4(0), Operation.CALL, address(policy));
         configs[1] =
             _config(address(multiSend), multiSend.multiSend.selector, Operation.DELEGATECALL, address(allowPolicy));
@@ -381,7 +382,7 @@ contract SendMessageTest is GuardTestBase {
             address(transmitter), 0, data, Enum.Operation.Call, 1, 0, 0, address(0), payable(address(0)), safe.nonce()
         );
         bytes memory signatures = _sign(_signers(), txHash);
-        vm.expectRevert(SafePolicyGuard.NonZeroSafeTxGas.selector);
+        vm.expectRevert(SafePolicyGuardBase.NonZeroSafeTxGas.selector);
         safe.execTransaction(
             address(transmitter), 0, data, Enum.Operation.Call, 1, 0, 0, address(0), payable(address(0)), signatures
         );
@@ -390,7 +391,7 @@ contract SendMessageTest is GuardTestBase {
             address(transmitter), 0, data, Enum.Operation.Call, 0, 0, 1, address(0), payable(address(0)), safe.nonce()
         );
         signatures = _sign(_signers(), txHash);
-        vm.expectRevert(SafePolicyGuard.NonZeroGasPrice.selector);
+        vm.expectRevert(SafePolicyGuardBase.NonZeroGasPrice.selector);
         safe.execTransaction(
             address(transmitter), 0, data, Enum.Operation.Call, 0, 0, 1, address(0), payable(address(0)), signatures
         );
@@ -415,12 +416,12 @@ contract SendMessageTest is GuardTestBase {
 
     function test_discovery_guardWithoutConsume() public {
         Safe plain = _newEoaSafe();
-        SafePolicyGuard plainGuard = new SafePolicyGuard(0, 1 days);
+        SafePolicyGuardBase plainGuard = new SafePolicyGuard(0, 1 days);
         _install(plain, _signers(), plainGuard, _defaultConfig(), false);
         TestTransmitter plainTransmitter = new TestTransmitter(address(plain), sink);
         bytes memory sigs =
             _signFor(plain, _signers(), address(plainTransmitter), 0, _stagedData(), Enum.Operation.Call);
-        // SafePolicyGuard has neither `consume` nor a fallback, so the call reverts with no data.
+        // SafePolicyGuardBase has neither `consume` nor a fallback, so the call reverts with no data.
         vm.expectCall(address(plainGuard), abi.encodeCall(ICrossecuteGuard.consume, (address(plain))));
         vm.expectRevert(bytes(""));
         _execWith(plain, address(plainTransmitter), 0, _stagedData(), Enum.Operation.Call, sigs);
@@ -435,7 +436,7 @@ contract SendMessageTest is GuardTestBase {
     /// @dev A module swaps the guard before the transmitter discovers it. The transmitter reads the
     ///      new guard, which holds no record, and rejects.
     function test_discovery_guardChangedBeforeConsumption() public {
-        CrossecuteGuardHarness replacement = new CrossecuteGuardHarness(0, 1 days, _pins());
+        CrossecuteGuardHarness replacement = new CrossecuteGuardHarness(_pins());
         GuardSwapModule module = new GuardSwapModule(safe, address(replacement));
         _exec(
             safe,
@@ -456,7 +457,7 @@ contract SendMessageTest is GuardTestBase {
     /// @dev Safe 1.5.0 sends the post-hook to the guard it read before execution, so a guard swapped
     ///      out during a `sendMessage` still clears its own record.
     function test_guardSwappedDuringSendMessage_oldGuardClears() public {
-        CrossecuteGuardHarness replacement = new CrossecuteGuardHarness(0, 1 days, _pins());
+        CrossecuteGuardHarness replacement = new CrossecuteGuardHarness(_pins());
         GuardSwapModule module = new GuardSwapModule(safe, address(replacement));
         _exec(
             safe,
@@ -527,10 +528,10 @@ contract SendMessageTest is GuardTestBase {
         return _execData(address(0xBEEF), 1, "", Enum.Operation.Call, _sign(_signers(), txHash));
     }
 
-    function _applyConfig(SafePolicyGuard.Configuration memory config) internal {
+    function _applyConfig(SafePolicyGuardBase.Configuration memory config) internal {
         Safe fresh = _newEoaSafe();
-        SafePolicyGuard.Configuration[] memory base = _defaultConfig();
-        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](base.length + 1);
+        SafePolicyGuardBase.Configuration[] memory base = _defaultConfig();
+        SafePolicyGuardBase.Configuration[] memory configs = new SafePolicyGuardBase.Configuration[](base.length + 1);
         for (uint256 i = 0; i < base.length; ++i) {
             configs[i] = base[i];
         }
@@ -605,8 +606,8 @@ contract HookCaller {
 
     constructor(CrossecuteGuardHarness guard, AllowPolicy allowPolicy) {
         GUARD = guard;
-        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](1);
-        configs[0] = SafePolicyGuard.Configuration(address(0), bytes4(0), Operation.CALL, address(allowPolicy), "");
+        SafePolicyGuardBase.Configuration[] memory configs = new SafePolicyGuardBase.Configuration[](1);
+        configs[0] = SafePolicyGuardBase.Configuration(address(0), bytes4(0), Operation.CALL, address(allowPolicy), "");
         guard.configureImmediately(configs);
     }
 

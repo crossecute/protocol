@@ -31,15 +31,14 @@ declare `pragma ^0.8.28`, so `contracts/evm/` can import them under its own comp
 | Dependency | Source | Commit |
 | --- | --- | --- |
 | Safe | [safe-fndn/safe-smart-account](https://github.com/safe-fndn/safe-smart-account) `v1.5.0` | `dc437e8` |
-| Policy engine | [crossecute/policy-engine](https://github.com/crossecute/policy-engine) `crossecute/extension-hooks` | `f6805df` |
+| Policy engine | [crossecute/policy-engine](https://github.com/crossecute/policy-engine) `crossecute/safe-policy-timing-171` | `115e1b6` |
 | forge-std | shared with `contracts/evm/lib/forge-std` | |
 | OpenZeppelin `MerkleProof` (tests only) | shared with `contracts/evm/lib/openzeppelin-contracts` | |
 
 The policy-engine fork is upstream
-[safe-research/policy-engine](https://github.com/safe-research/policy-engine) at `8ee68a8` plus two
-commits on `SafePolicyGuard`: internal callbacks after the owner policy check, after the module
-policy check and after owner execution, and a helper that strips the policy context extension
-from a signature blob.
+[safe-research/policy-engine](https://github.com/safe-research/policy-engine) at `8ee68a8`.
+The fork provides owner and module guard callbacks, a signature helper that strips policy context,
+and the shared configuration request logic in `SafePolicyGuardBase`.
 
 The staged selectors are `sendMessage(bytes,bytes,bytes[])` and `bootstrap(bytes,bytes[])`.
 The first is `IERC7786GatewaySource.sendMessage.selector`, imported from
@@ -59,6 +58,31 @@ Signed `sendMessage` calls inside MultiSend are unsupported.
 See the [publication and registration rules](../../docs/safe/safe-guard-design.md#merkle-leaf-publication)
 for indexer inputs and the scope of the pre-hook check.
 
+## Policy configuration timing
+
+The `CrossecuteGuard` constructor takes only the [authority pins](../../docs/safe/safe-authority-updates.md#source-guard-and-mutation-batch).
+The default for every Safe is zero delay and no expiry. Read a Safe's effective settings in
+seconds with `configurationTiming(safe)`. A Safe can call `configureTimingImmediately(delay, expiry)`
+before this guard occupies either of its guard slots. Include the call before setting either slot
+in the owner-approved [installation batch](../../docs/safe/safe-guard-design.md#installation).
+Initial setup and later changes accept a delay from zero through `MAX_CONFIGURATION_DELAY`
+(365 days).
+
+Once installed, a timing change takes two Safe owner calls to the guard.
+
+1. Compute `timingConfigurationRoot(delay, expiry)` and pass it to `requestConfiguration(root)`.
+2. Once the request matures, call `applyConfigurationTiming(delay, expiry)` with the same values.
+   The guard emits `ConfigurationTimingSet` when it stores the override.
+
+Policy changes use the same `requestConfiguration` entry point and still apply with
+`applyConfiguration(configurations)`. Both kinds of requests capture the Safe's delay and expiry
+when requested. Each request stores two 32-byte words. `rootConfigured(safe, root)` returns
+the maturity timestamp. `rootExpiry(safe, root)` returns the captured expiry in seconds or zero
+for an absent request. The request can be applied from maturity through the last second before
+its window closes. Use `type(uint256).max` for a window that never closes. Zero expiry is rejected.
+The Safe can call `invalidateRoot(root)` to discard a request. An expired root can be requested
+again under the Safe's current timing.
+
 ## Build and chain support
 
 The guard uses EIP-1153 transient storage (`TSTORE`/`TLOAD`), so it targets Cancun
@@ -67,7 +91,7 @@ installing the guard on a chain without EIP-1153 would make every owner transact
 including one that tries to remove it. Check that the chain has activated Cancun before installing.
 There is no persistent-storage fallback.
 
-Compiler settings follow the policy-engine: Solidity 0.8.30, which `SafePolicyGuard` pins exactly,
+Compiler settings follow the policy-engine: Solidity 0.8.30, which `SafePolicyGuardBase` pins exactly,
 and via-IR, without which it does not compile. The output and cache directories are this project's
 own. `contracts/evm/` keeps Solidity 0.8.28, Paris and the legacy compiler pipeline, importing
 only the compatible interfaces, types and hash helpers from this directory.

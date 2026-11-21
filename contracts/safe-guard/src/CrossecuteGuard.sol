@@ -3,7 +3,7 @@ pragma solidity =0.8.30;
 
 import {IERC7786GatewaySource} from "crossecute/messaging/IErc7786.sol";
 import {ISignedTransmitter} from "crossecute/messaging/outbound/ISignedTransmitter.sol";
-import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {SafePolicyGuardBase} from "policy-engine/SafePolicyGuardBase.sol";
 import {IERC165} from "policy-engine/interfaces/IERC165.sol";
 import {IPolicyEngine} from "policy-engine/interfaces/IPolicyEngine.sol";
 import {ISafeModuleGuard} from "policy-engine/interfaces/ISafeModuleGuard.sol";
@@ -24,7 +24,7 @@ import {SourceAuthorityGuard} from "./authority/SourceAuthorityGuard.sol";
 ///         `registerRoot` calls.
 /// @dev Every record is keyed by the hook caller, so a contract that calls the hooks directly
 ///      can only write and clear records under its own address.
-contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard, SourceAuthorityGuard {
+contract CrossecuteGuard is SafePolicyGuardBase, ICrossecuteGuard, SourceAuthorityGuard {
     /// @dev A Safe's transient record starts at its id, `keccak256(abi.encode(safe, NAMESPACE))`.
     bytes32 internal constant NAMESPACE = keccak256("crossecute.guard.safe");
     bytes32 private constant _EXECUTION_NAMESPACE = keccak256("crossecute.guard.execution");
@@ -44,15 +44,62 @@ contract CrossecuteGuard is SafePolicyGuard, ICrossecuteGuard, SourceAuthorityGu
     /// @dev Set above the address bits of the `_TARGET` word once the target has consumed.
     uint256 private constant _CONSUMED = 1 << 160;
 
+    uint256 public constant MAX_CONFIGURATION_DELAY = 365 days;
+
+    error ConfigurationDelayTooLong();
+
+    struct ConfigurationTiming {
+        uint256 delay;
+        uint256 expiry;
+    }
+
+    event ConfigurationTimingSet(address indexed safe, uint256 delay, uint256 expiry);
+
+    mapping(address safe => ConfigurationTiming) private _timing;
+
     // solhint-disable-next-line private-vars-leading-underscore
     mapping(address childSafe => mapping(bytes32 messageHash => SignedSafeTx)) private $approvals;
     // solhint-disable-next-line private-vars-leading-underscore
     mapping(bytes32 root => bool) private $published;
 
-    constructor(uint256 delay, uint256 expiry, Pins memory pins)
-        SafePolicyGuard(delay, expiry)
-        SourceAuthorityGuard(pins)
-    {}
+    constructor(Pins memory pins) SourceAuthorityGuard(pins) {}
+
+    /// @inheritdoc SafePolicyGuardBase
+    function configurationTiming(address safe) public view override returns (uint256 delay, uint256 expiry) {
+        ConfigurationTiming storage timing = _timing[safe];
+        expiry = timing.expiry;
+        if (expiry == 0) return (0, type(uint256).max);
+        return (timing.delay, expiry);
+    }
+
+    /// @notice Sets the caller's timing while this guard is absent from both Safe guard slots.
+    function configureTimingImmediately(uint256 delay, uint256 expiry) external {
+        require(!_isGuardEnabled(msg.sender), GuardAlreadyEnabled());
+        _setConfigurationTiming(delay, expiry);
+    }
+
+    /// @notice The root to pass to `requestConfiguration` for a change to these settings.
+    function timingConfigurationRoot(uint256 delay, uint256 expiry) public pure returns (bytes32) {
+        return keccak256(abi.encode(keccak256("CrossecuteGuard.ConfigurationTiming.v1"), delay, expiry));
+    }
+
+    /// @notice Applies the caller's matured timing request.
+    function applyConfigurationTiming(uint256 delay, uint256 expiry) external {
+        _consumeRequest(timingConfigurationRoot(delay, expiry));
+        _setConfigurationTiming(delay, expiry);
+    }
+
+    function _setConfigurationTiming(uint256 delay, uint256 expiry) private {
+        require(delay <= MAX_CONFIGURATION_DELAY, ConfigurationDelayTooLong());
+        require(expiry != 0, ZeroExpiryNotAllowed());
+        _timing[msg.sender] = ConfigurationTiming(delay, expiry);
+        // forge-lint: disable-next-line(reentrancy-events) the guard-slot checks are staticcalls
+        emit ConfigurationTimingSet(msg.sender, delay, expiry);
+    }
+
+    function _isConfigurationSelector(bytes4 selector) internal pure override returns (bool) {
+        return selector == this.applyConfigurationTiming.selector || super._isConfigurationSelector(selector);
+    }
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {

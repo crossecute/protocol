@@ -13,4 +13,4 @@
 [submodule "contracts/safe-guard/lib/policy-engine"]
 	path = contracts/safe-guard/lib/policy-engine
 	url = https://github.com/crossecute/policy-engine.git
-	branch = crossecute/extension-hooks
+	branch = crossecute/safe-policy-timing-171
