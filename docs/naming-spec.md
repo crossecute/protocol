@@ -17,7 +17,7 @@ What the tables do not cover:
 
 - **Private helpers are not rows.** A `private` function, or an `internal` one used only inside its own file with no override elsewhere, appears in a "Private helpers" line under its file. Those names follow the same rules.
 - **Callers are matched by name and call syntax, not by a compiler.** The match resolves the declared type of a variable where it can, so most same-name collisions are removed, but a call through a variable of an unrelated type with the same function name can still show up, and overloads share one caller list. Treat "Called by" as the places to check, and confirm with a build after renaming.
-- **Tests, fixtures, mocks, docs and the generated ABI file are excluded** from callers except where marked. Deployment scripts are in [the deployment scripts reference](deploy-scripts-spec.md).
+- **Tests, fixtures, mocks, docs and the generated ABI file are excluded** from callers except where marked. The SDK's Foundry scripting files are in [the scripts reference](scripts-spec.md), and the protocol's deployment scripts are not covered.
 - **Interfaces and their implementations each get a row.** Renaming one means renaming both, and the "Declared in" and "Implemented in" notes list the pair.
 - **Solidity events, errors, structs and constants are not rows.**
 
@@ -68,7 +68,7 @@ Library that turns a chain identity (an EVM chain id, `block.chainid`, or an ERC
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
-| `forEvm(chainId)`<br>_internal pure_ | Key for an eip155 chain id, computed with no storage or registry lookup. | ChainKey.local, TransmitterBase.isBootstrappedOn, TransmitterBase.recipientOn, TransmitterBase.commitmentFor, LzOftConduitFactory._createSignedReceiver, OpStackInteropTransceiver.receiveOpStackMessage, CrossecuteScript._requireConduit, CrossecuteScript._receiverOn, CrossecuteScript._add, CrossecuteScript._homeCallFor, LzDvn.isDeadDvnRequired; also tests | No |
+| `forEvm(chainId)`<br>_internal pure_ | Key for an eip155 chain id, computed with no storage or registry lookup. | ChainKey.local, TransmitterBase.isBootstrappedOn, TransmitterBase.recipientOn, TransmitterBase.commitmentFor, LzOftConduitFactory._createSignedReceiver, OpStackInteropTransceiver.receiveOpStackMessage, LzDvn.isDeadDvnRequired; also tests | No |
 | `local()`<br>_internal view_ | This chain's own key, derived from `block.chainid`, as a destination-side receiver computes it. | Commitment.hashCalls, TransceiverCore.constructor, LzOftConduitFactory.constructor; also tests | No |
 | `fromIdentifier(identifier)`<br>_internal pure_ | Key for any chain from an ERC-7930 envelope (strictly parsed, reduced to a chain identifier first), so every address on a chain gives one key. | OutboundBase._requireNames, TransmitterBase._requireOwnRecipient, TransmitterBase.commitmentForChain, LzOftConduitFactory.signedConduitBootstrap; also tests | No |
 | `fromParsed(io)`<br>_internal pure_ | Same as `fromIdentifier` for an envelope that was already parsed. | ChainKey.fromIdentifier, LzOftTransmitter._messageParam; also tests | No |
@@ -88,9 +88,9 @@ Library that encodes, strictly parses and derives keys for ERC-7930 interoperabl
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
 | `encode(chainType, chainRef, addr)`<br>_internal pure_ | Builds an interop address from a chain type, chain reference and address bytes. | Erc7930.encodeEvm, Erc7930.encodeChainId, Move.encodeMove, VmDeriver.deriveAddress, OutboundBase._recipientOn, LzOftConduitFactory.conduitBootstrap, LzOftConduitFactory.signedConduitBootstrap; also tests | No |
-| `encodeEvm(chainId, a)`<br>_internal pure_ | Builds the eip155 interop address for a chain id and an address. | SignedTransmitter._sendRelay, TransmitterBase._sendFundedMessage, TransceiverCore._reportPayload, MerklePackageScript._observeReceiver; also tests | No |
+| `encodeEvm(chainId, a)`<br>_internal pure_ | Builds the eip155 interop address for a chain id and an address. | SignedTransmitter._sendRelay, TransmitterBase._sendFundedMessage, TransceiverCore._reportPayload; also tests | No |
 | `encodeChainId(chainType, chainRef)`<br>_internal pure_ | Builds a chain identifier: an interop address with a zero-length address part. | ChainKey.fromParsed, Erc7930.encodeEvmChain, Erc7930.toChainIdentifier, TransmitterBase._decodeBootstrap; also tests | No |
-| `encodeEvmChain(chainId)`<br>_internal pure_ | Builds the chain identifier for an EVM chain id. | ChainKey.forEvm, TransmitterBase._evmIdentifier, CrossecuteScript._homeCallFor; also tests | No |
+| `encodeEvmChain(chainId)`<br>_internal pure_ | Builds the chain identifier for an EVM chain id. | ChainKey.forEvm, TransmitterBase._evmIdentifier; also tests | No |
 | `parseStrict(raw)`<br>_internal pure_ | Parses an envelope and reverts on anything non-canonical (version, lengths, trailing bytes, non-minimal eip155 reference). | ChainKey.fromIdentifier, Erc7930.toChainIdentifier, VmDeriver.deriveAddress, Payload.isTypedDestination, ReceiverBase.receiveMessage, OutboundBase._recipientOn, TransmitterBase._decodeBootstrap, SignedDispatchCalls.requireDestination, TransceiverBase._signedBootstrapInbound, TransceiverBase._onDestinationReceiver, TransceiverExtension._recordCounterpart, ProviderAddress.evmRecipient (+10 more); also tests | No |
 | `evmChainId(io)`<br>_internal pure_ | Reads the EVM chain id out of a parsed eip155 envelope (inverse of `encodeEvmChain`). | SignedDispatchCalls.requireDestination, TransceiverBase._signedBootstrapInbound, OpStackInteropMessage._requireSend, OpStackInteropTransceiver._conduitInitializer; also tests | No |
 | `toChainIdentifier(raw)`<br>_internal pure_ | Drops the address part of an envelope, leaving just the chain identifier. | Erc7930.chainKey, ChainRegistry._addChainKey | No |
@@ -339,12 +339,12 @@ Library for the wire encoding of call arrays (typed `Call[]` for EVM, opaque `by
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
-| `encodeCalls(calls)`<br>_internal pure_ | Wire bytes for an EVM destination's calls. | TransmitterBase.payloadForCalls, CrossecuteScript._homeCallFor, MerklePackageScript._queue; also tests | No |
+| `encodeCalls(calls)`<br>_internal pure_ | Wire bytes for an EVM destination's calls. | TransmitterBase.payloadForCalls; also tests | No |
 | `decodeCalls(wire)`<br>_internal pure_ | Decodes calldata wire bytes into calls and reverts on anything else. | ReceiverBase._onMessage, LzOftConduitFactory.conduitBootstrap; also tests | No |
 | `decodeCallsFromMemory(wire)`<br>_internal pure_ | Same as `decodeCalls` for a wire already in memory. | ReceiverBase._onMessageMemory, SignedReceiver.initializeSigned, SignedReceiver._runMessage, SignedReceiver._runLeaf, SignedTransmitterLib._bootstrapAuthority, TransmitterBase._quoteBootstrap, TransmitterBase._sendBootstrap; also tests | No |
 | `encodeElements(elements)`<br>_internal pure_ | Wire bytes for a destination's opaque call elements. | TransmitterBase.payloadForElements; also tests | No |
 | `decodeElementsFromMemory(wire)`<br>_internal pure_ | Decodes memory wire bytes into opaque elements. | TransmitterBase._quoteBootstrap, TransmitterBase._sendBootstrap; also tests | No |
-| `encodeBootstrap(destinationChainIdentifier, body)`<br>_internal pure_ | Bootstrap payload carrying the destination's chain identifier and the body the receiver runs on creation. | TransmitterBase.bootstrapPayload, CrossecuteScript._homeCallFor, SignedDispatch.bootstrapCalldataSigned; also tests | No |
+| `encodeBootstrap(destinationChainIdentifier, body)`<br>_internal pure_ | Bootstrap payload carrying the destination's chain identifier and the body the receiver runs on creation. | TransmitterBase.bootstrapPayload, SignedDispatch.bootstrapCalldataSigned; also tests | No |
 | `decodeBootstrap(payload)`<br>_internal pure_ | Splits a bootstrap payload into destination chain identifier and body. | TransmitterBase._decodeBootstrap; also tests | No |
 | `isTypedDestination(chainIdentifier)`<br>_internal pure_ | Whether a destination chain identifier takes the typed `Call[]` form. | TransmitterBase.commitmentForChain; also tests | No |
 
@@ -498,7 +498,7 @@ Interfaces for a receiver in signed mode: permissionless submission and nonce re
 |---|---|---|---|
 | `submitMessage(evidence)`<br>_ISignedReceiver · external payable_ | Submits a signed standalone message directly to its receiver, sharing verification and replay tracking with provider delivery. Implemented in: SignedReceiver. | SignedDispatch.submitMessageCalldata, SDK ts/signed.submitMessageCalldata, SDK ABI trim list; also tests | Yes via interface (state-changing) |
 | `submitLeaf(registrationEvidence, leaf, proof)`<br>_ISignedReceiver · external payable_ | Submits a Merkle-authorized execution leaf with its signed root registration and proof. Implemented in: SignedReceiver. | SignedDispatch.submitLeafCalldata, SDK ts/signed.submitLeafCalldata, SDK ABI trim list; also tests | Yes via interface (state-changing) |
-| `nextNonce()`<br>_ISignedReceiver · external view_ | The nonce the next new execution leaf must carry. Implemented in: SignedReceiver. | MerklePackageScript._observeReceiver, SDK ABI trim list; also tests | Yes via interface (read-only) |
+| `nextNonce()`<br>_ISignedReceiver · external view_ | The nonce the next new execution leaf must carry. Implemented in: SignedReceiver. | SDK ABI trim list; also tests | Yes via interface (read-only) |
 | `initializeSigned(sourceChainId, owner, body)`<br>_ISignedReceiverInit · external_ | Stores the source authority the bootstrap carried and runs the receiver's setup, called by the transceiver right after plain initialization. Implemented in: SignedReceiver. | TransceiverBase._signedBootstrapInbound, LzOftConduitFactory._createSignedReceiver, SDK ABI trim list; also tests | Yes via interface (state-changing) |
 
 
@@ -559,7 +559,7 @@ Receiver that can be created in signed mode: its bootstrap seeds the source auth
 | `isAuthorizedCaller(conduit)`<br>_public view_ | In signed mode, lets verified execution and finalization make self-calls; the transmitter address alone grants no authority. Overrides or is overridden in: ReceiverBase. | ReceiverBase.onlySourceTransmitter, CcipReceiver._authorizeCcipPolicyChange; also tests | Yes, anyone (read-only) |
 | `authorityGraph()`<br>_external view_ | The stored graph hash, or zero for a plain receiver. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `authorityRecords()`<br>_external view_ | The stored Safe authority records in canonical order. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
-| `nextNonce()`<br>_external view_ | The nonce the next new execution leaf must carry. Declared in: ISignedReceiver. | MerklePackageScript._observeReceiver, SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `nextNonce()`<br>_external view_ | The nonce the next new execution leaf must carry. Declared in: ISignedReceiver. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `executionAt(nonce)`<br>_external view_ | The execution id recorded at a nonce, or zero. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `isMessageExecuted(safeTxHash)`<br>_external view_ | Whether a standalone Safe transaction hash has already executed. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 
@@ -576,8 +576,8 @@ Interfaces for a transmitter in signed mode: the owner's calls plus the permissi
 |---|---|---|---|
 | `bootstrap(payload, attributes)`<br>_ISignedTransmitter · external payable_ | Sends receiver setup together with the guard's selected authority head and graph (payload body is an encoded signed bootstrap). Implemented in: SignedTransmitter. | SignedReceiver.initializeSigned, SignedTransmitter.bootstrap, CrossecuteGuard._isStaged, SignedDispatch.bootstrapCalldataSigned, SDK ts/signed.bootstrapCalldataSigned, SDK ABI trim list; also tests | Yes via interface (state-changing) |
 | `registerRoot(root)`<br>_ISignedTransmitter · external_ | Owner registers an authorized Merkle root so anyone can later relay its leaves. Implemented in: SignedTransmitter. | SignedDispatchCalls.registeredRoot, CrossecuteGuard._afterOwnerPolicyCheck, CrossecuteGuard._afterModulePolicyCheck, SignedDispatch.registerRootCalldata, SDK ts/signed.registerRootCalldata, SDK ABI trim list; also tests | Yes via interface (state-changing) |
-| `relayAuthority(recipient, submission, attributes)`<br>_ISignedTransmitter · external payable_ | Anyone relays a published authority submission to the conduit's receiver, paying the fee; retries allowed. Implemented in: SignedTransmitter. | SignedTransmitter._refundTo, AuthorityRelayScript._authorityRelayTx, SDK ts/authority.buildAuthorityRelayProposal, SDK ABI trim list; also tests | Yes via interface (state-changing) |
-| `quoteAuthority(recipient, submission, attributes)`<br>_ISignedTransmitter · external view_ | Prices the same authority relay. Implemented in: SignedTransmitter. | SignedTransmitter._refundTo, AuthorityRelayScript._authorityRelayTx, SDK ts/authority.buildAuthorityRelayProposal, SDK ABI trim list; also tests | Yes via interface (read-only) |
+| `relayAuthority(recipient, submission, attributes)`<br>_ISignedTransmitter · external payable_ | Anyone relays a published authority submission to the conduit's receiver, paying the fee; retries allowed. Implemented in: SignedTransmitter. | SignedTransmitter._refundTo, SDK ts/authority.buildAuthorityRelayProposal, SDK ABI trim list; also tests | Yes via interface (state-changing) |
+| `quoteAuthority(recipient, submission, attributes)`<br>_ISignedTransmitter · external view_ | Prices the same authority relay. Implemented in: SignedTransmitter. | SignedTransmitter._refundTo, SDK ts/authority.buildAuthorityRelayProposal, SDK ABI trim list; also tests | Yes via interface (read-only) |
 | `relayLeaf(registrationEvidence, leaf, proof)`<br>_ISignedTransmitter · external payable_ | Anyone pays to transmit one unused leaf authorized by a registered root and its signed registration. Implemented in: SignedTransmitter. | SignedTransmitter._refundTo, SignedDispatch.relayLeafCalldata, SDK ts/signed.relayLeafCalldata, SDK ABI trim list; also tests | Yes via interface (state-changing) |
 | `initializeSigned()`<br>_ISignedTransmitterInit · external_ | Turns on signed mode, once. Implemented in: SignedTransmitter. | TransceiverBase.createTransmitter, LzOftConduitFactory.createTransmitter, SDK ABI trim list; also tests | Yes via interface (state-changing) |
 | `isSigned()`<br>_ISignedTransmitterInit · external view_ | Whether the transmitter is in signed mode. Implemented in: SignedTransmitter. | TransceiverBase._isSignedConduit, LzOftConduitFactory.conduitBootstrap, LzOftConduitFactory.signedConduitBootstrap, LzOftConduitFactory.isSigned, SDK ABI trim list; also tests | Yes via interface (read-only) |
@@ -605,7 +605,7 @@ Abstract sending half shared by transmitters and transceivers: the counterpart a
 | `_sendMessage(recipient, payload, attributes, value)`<br>_internal_ | Provider-specific hook that puts a payload on the wire; no default. Overrides or is overridden in: CcipTransceiverBase, CcipTransmitter, HyperlaneTransceiverBase, HyperlaneTransmitter, LzOftTransmitter, LzTransceiverBase. | SignedTransmitter._sendRelay, TransmitterBase._sendFundedMessage, TransmitterBase._sendBootstrap, TransceiverBase._sendBootstrap, TransceiverBase._reportReceiver, LzOftTransmitter._sendSignedBootstrap; also tests | No |
 | `_defaultGas(payload)`<br>_internal pure_ | Destination gas used when attributes name none, a function of the payload. Overrides or is overridden in: TransceiverCore, TransmitterBase. | CcipTransceiverBase._sendMessage, CcipTransceiverBase._quoteMessage, CcipTransmitter._sendMessage, CcipTransmitter._quoteMessage, HyperlaneTransceiverBase._sendMessage, HyperlaneTransceiverBase._quoteMessage, HyperlaneTransmitter._sendMessage, HyperlaneTransmitter._quoteMessage, LzOftTransmitter._messageParam, LzTransceiverBase._sendMessage, LzTransceiverBase._quoteMessage, LzTransmitter._sendMessage (+9 more); also tests | No |
 | `_quoteMessage(recipient, payload, attributes)`<br>_internal view_ | Provider-specific hook returning what `_sendMessage` would cost. Overrides or is overridden in: CcipTransceiverBase, CcipTransmitter, HyperlaneTransceiverBase, HyperlaneTransmitter, LzOftTransmitter, LzTransceiverBase. | OutboundBase.quoteMessage, SignedTransmitter._quoteStandalone, SignedTransmitter._relay, TransmitterBase.quoteMessageBreakdown, TransmitterBase._quoteBootstrap, TransceiverBase._quoteBootstrap, TransceiverBase._reportReceiver, LzOftTransmitter._quoteSignedBootstrap; also tests | No |
-| `quoteMessage(recipient, payload, attributes)`<br>_external view_ | Quotes the cost of sending a payload to a recipient. Overrides or is overridden in: TransmitterBase. | CrossecuteScript._homeCallFor, SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `quoteMessage(recipient, payload, attributes)`<br>_external view_ | Quotes the cost of sending a payload to a recipient. Overrides or is overridden in: TransmitterBase. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 
 Private helpers: `_routeTo`.
 
@@ -636,12 +636,12 @@ Transmitter that can be created in signed mode: every owner send carries the own
 | `_quoteSignedBootstrap(chainKey, bytes, body, attributes)`<br>_internal view_ | Hook that prices a signed bootstrap; bindings with their own transport override it. Overrides or is overridden in: LzOftTransmitter. | SignedTransmitter.bootstrap, SignedTransmitter.quoteBootstrap | No |
 | `_sendSignedBootstrap(chainKey, bytes, body, attributes, fee)`<br>_internal_ | Hook that sends a signed bootstrap through the transceiver by default; OFT conduits send from the conduit. Overrides or is overridden in: LzOftTransmitter. | SignedTransmitter.bootstrap | No |
 | `relayLeaf(registrationEvidence, leaf, proof)`<br>_external payable_ | Permissionless relay of one registered leaf, with a lock, used-leaf mark and balance check against reentrancy. Declared in: ISignedTransmitter. | SignedTransmitter._refundTo, SignedDispatch.relayLeafCalldata, SDK ts/signed.relayLeafCalldata, SDK ABI trim list; also tests | Yes, anyone (state-changing) |
-| `relayAuthority(recipient, submission, attributes)`<br>_external payable_ | Permissionless relay of a published authority update to the receiver. Declared in: ISignedTransmitter. | SignedTransmitter._refundTo, AuthorityRelayScript._authorityRelayTx, SDK ts/authority.buildAuthorityRelayProposal, SDK ABI trim list; also tests | Yes, anyone (state-changing) |
+| `relayAuthority(recipient, submission, attributes)`<br>_external payable_ | Permissionless relay of a published authority update to the receiver. Declared in: ISignedTransmitter. | SignedTransmitter._refundTo, SDK ts/authority.buildAuthorityRelayProposal, SDK ABI trim list; also tests | Yes, anyone (state-changing) |
 | `quoteMessageBreakdown(recipient, payload, attributes)`<br>_public view_ | Quotes the plain send path, reverting in signed mode. Overrides or is overridden in: TransmitterBase. | TransmitterBase.sendMessage, TransmitterBase.quoteMessage; also tests | Yes, anyone (read-only) |
-| `quoteBootstrap(payload, attributes)`<br>_public view_ | Quotes a bootstrap in either mode, validating and pricing a signed one's graph. Overrides or is overridden in: TransmitterBase. | CrossecuteScript._homeCallFor, SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `quoteBootstrap(payload, attributes)`<br>_public view_ | Quotes a bootstrap in either mode, validating and pricing a signed one's graph. Overrides or is overridden in: TransmitterBase. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `quoteMessageSigned(evidence)`<br>_external view_ | Builds the signed standalone payload from supplied evidence and returns its fee. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `quoteRelay(registrationEvidence, leaf, proof)`<br>_external view_ | The fee for relaying a given registration, leaf and proof. | SignedTransmitter._refundTo, SDK ABI trim list; also tests | Yes, anyone (read-only) |
-| `quoteAuthority(recipient, submission, attributes)`<br>_external view_ | Prices the authority relay. Declared in: ISignedTransmitter. | SignedTransmitter._refundTo, AuthorityRelayScript._authorityRelayTx, SDK ts/authority.buildAuthorityRelayProposal, SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `quoteAuthority(recipient, submission, attributes)`<br>_external view_ | Prices the authority relay. Declared in: ISignedTransmitter. | SignedTransmitter._refundTo, SDK ts/authority.buildAuthorityRelayProposal, SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `_refundTo()`<br>_internal view_ | Sends provider refunds to whoever funds a leaf or authority relay; other entry points keep refunds. Overrides or is overridden in: OutboundBase, TransmitterBase. | HyperlaneTransmitter._sendMessage, HyperlaneTransmitter._quoteMessage, LzOftTransmitter._sendMessage, LzTransmitter._sendMessage, WormholeTransmitter._sendMessage; also tests | No |
 | `isSigned()`<br>_external view_ | Whether this transmitter is in signed mode. Declared in: ISignedTransmitterInit. | TransceiverBase._isSignedConduit, LzOftConduitFactory.conduitBootstrap, LzOftConduitFactory.signedConduitBootstrap, LzOftConduitFactory.isSigned, SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `isRootRegistered(root)`<br>_external view_ | Whether the owner registered a root on this transmitter. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
@@ -683,14 +683,14 @@ The per-user conduit on the home chain and source-side entry point (ERC-7786 `se
 | `bootstrapSigned(destinationChainKey, owner, salt, body, attributes)`<br>_IConduitTransceiver · external payable_ | Bootstrap for a signed conduit whose body is an encoded signed bootstrap. | tests only | Yes via interface (state-changing) |
 | `quoteBootstrapSigned(destinationChainKey, owner, salt, body, attributes)`<br>_IConduitTransceiver · external view_ | Prices a signed bootstrap. | SignedTransmitter._quoteSignedBootstrap; also tests | Yes via interface (read-only) |
 | `conduitBootstrap(route, owner, salt, body)`<br>_IConduitTransceiver · external view_ | The message a conduit sends itself through its own transport to stand up on a chain; empty recipient means the transceiver carries it. | TransmitterBase._quoteBootstrap; also tests | Yes via interface (read-only) |
-| `reportsReceiver(chainKey)`<br>_IConduitTransceiver · external view_ | Whether a destination reports its receiver address back rather than this chain deriving it. | SignedTransmitterLib.requireBootstrapBody, TransmitterBase._markBootstrapped, CrossecuteScript._receiverOn; also tests | Yes via interface (read-only) |
+| `reportsReceiver(chainKey)`<br>_IConduitTransceiver · external view_ | Whether a destination reports its receiver address back rather than this chain deriving it. | SignedTransmitterLib.requireBootstrapBody, TransmitterBase._markBootstrapped; also tests | Yes via interface (read-only) |
 | `routeTo(chainKey)`<br>_IConduitTransceiver · external view_ | The chain identifier the governor configured a destination under. | OpStackInteropMessage._requireSend; also tests | Yes via interface (read-only) |
-| `predictReceiver(chainKey, owner, salt)`<br>_IConduitTransceiver · external view_ | Where this conduit's receiver will sit on a chain that does not report it. | TransmitterBase._markBootstrapped, CrossecuteScript._receiverOn; also tests | Yes via interface (read-only) |
+| `predictReceiver(chainKey, owner, salt)`<br>_IConduitTransceiver · external view_ | Where this conduit's receiver will sit on a chain that does not report it. | TransmitterBase._markBootstrapped; also tests | Yes via interface (read-only) |
 | `signedAuthority(owner)`<br>_IConduitTransceiver · external view_ | The owner's live authority records, or empty for an owner without a compatible guard. | tests only | Yes via interface (read-only) |
-| `isBootstrapped(destinationChainKey)`<br>_TransmitterBase · public view_ | Whether a bootstrap to a destination has been dispatched. | CrossecuteScript._receiverOn, CrossecuteScript._add, CrossecuteScript._homeCallFor, SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `isBootstrapped(destinationChainKey)`<br>_TransmitterBase · public view_ | Whether a bootstrap to a destination has been dispatched. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `isBootstrappedOn(destinationChainId)`<br>_TransmitterBase · external view_ | Same by plain EVM chain id. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `isReachable(destinationChainKey)`<br>_TransmitterBase · external view_ | Whether this conduit can be sent to on a destination yet. | tests only | Yes, anyone (read-only) |
-| `destinationReceiverOn(destinationChainKey)`<br>_TransmitterBase · external view_ | This conduit's receiver on a destination in that chain's own format. | CrossecuteScript._receiverOn, SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `destinationReceiverOn(destinationChainKey)`<br>_TransmitterBase · external view_ | This conduit's receiver on a destination in that chain's own format. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `onDestinationReceiverReported(destinationChainKey, receiver)`<br>_TransmitterBase · external_ | Transceiver reports where the destination created this conduit's receiver, recorded as the counterpart. | tests only | Yes, but the body gates it (caller vs transceiver) (state-changing) |
 | `isReceiverPinned(destinationChainKey)`<br>_TransmitterBase · external view_ | Whether a receiver report for a destination has been accepted. | tests only | Yes, anyone (read-only) |
 | `_checkOwner()`<br>_TransmitterBase · internal view_ | Declared hook that reverts unless the caller is the owner. Overrides or is overridden in: LzTransmitter, OwnableTransmitter. | OwnableTransmitter._checkOwner, SignedTransmitter.sendMessage, SignedTransmitter.bootstrap, TransmitterBase.onlyConduitOwner, LzTransmitter._checkOwner | No |
@@ -699,16 +699,16 @@ The per-user conduit on the home chain and source-side entry point (ERC-7786 `se
 | `_sendFundedMessage(recipient, payload, attributes, providerFee, crossecuteFee)`<br>_TransmitterBase · internal_ | Requires the balance to cover provider and Crossecute fees, pays the Crossecute fee to the treasury, emits `MessageSent` and sends. | SignedTransmitter._sendStandalone, TransmitterBase.sendMessage | No |
 | `_crossecuteFee(providerFee)`<br>_TransmitterBase · internal pure_ | Crossecute fee for a provider fee, by default one tenth of it; bindings can override. Overrides or is overridden in: OpStackTransmitterBase. | SignedTransmitter._sendStandalone, SignedTransmitter.quoteMessageSigned, TransmitterBase.quoteMessageBreakdown | No |
 | `supportsAttribute(bytes4)`<br>_TransmitterBase · external view_ | ERC-7786 attribute support; none by default, bindings answer for theirs. Declared in: IERC7786GatewaySource. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
-| `recipientOn(destinationChainId)`<br>_TransmitterBase · public view_ | The recipient `sendMessage` takes for this conduit on an EVM chain id, reverting until the receiver is known. | CrossecuteScript._homeCallFor, SDK ts/authority.planAuthorityCatchUp, SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `recipientOn(destinationChainId)`<br>_TransmitterBase · public view_ | The recipient `sendMessage` takes for this conduit on an EVM chain id, reverting until the receiver is known. | SDK ts/authority.planAuthorityCatchUp, SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `chainIdentifierFor(destinationChainId)`<br>_TransmitterBase · public pure_ | ERC-7930 chain identifier for an EVM chain id. | tests only | Yes, anyone (read-only) |
 | `payloadForCalls(calls)`<br>_TransmitterBase · public pure_ | Wire bytes for an EVM destination's calls. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `payloadForElements(elements)`<br>_TransmitterBase · public pure_ | Wire bytes for a destination's opaque elements. | tests only | Yes, anyone (read-only) |
 | `_requireOwnRecipient(recipient)`<br>_TransmitterBase · internal view_ | Requires the recipient to be the receiver this conduit recorded for that chain and returns the chain key. | SignedTransmitter._quoteStandalone, SignedTransmitter._relay, TransmitterBase.quoteMessageBreakdown | No |
 | `bootstrap(payload, attributes)`<br>_TransmitterBase · public payable_ | Owner stands this conduit up on a destination through its transceiver and runs a payload there. Overrides or is overridden in: SignedTransmitter. | SignedReceiver.initializeSigned, SignedTransmitter.bootstrap, SDK ts/signed.bootstrapCalldataSigned, SDK ABI trim list; also tests | Yes, gated by onlyConduitOwner (state-changing) |
 | `bootstrapPayload(destinationChainIdentifier, body)`<br>_TransmitterBase · public pure_ | Builds the payload `bootstrap` takes from a destination chain identifier and body. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
-| `quoteMessage(recipient, payload, attributes)`<br>_TransmitterBase · public view_ | Quotes `sendMessage` with its checks applied. Overrides or is overridden in: OutboundBase. | CrossecuteScript._homeCallFor, SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `quoteMessage(recipient, payload, attributes)`<br>_TransmitterBase · public view_ | Quotes `sendMessage` with its checks applied. Overrides or is overridden in: OutboundBase. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `quoteMessageBreakdown(recipient, payload, attributes)`<br>_TransmitterBase · public view_ | Provider quote and Crossecute fee for a send. Overrides or is overridden in: SignedTransmitter. | SignedTransmitter.quoteMessageBreakdown, TransmitterBase.sendMessage, TransmitterBase.quoteMessage; also tests | Yes, anyone (read-only) |
-| `quoteBootstrap(payload, attributes)`<br>_TransmitterBase · public view_ | Quotes a bootstrap without the owner/salt check. Overrides or is overridden in: SignedTransmitter. | SignedTransmitter.quoteBootstrap, CrossecuteScript._homeCallFor, SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `quoteBootstrap(payload, attributes)`<br>_TransmitterBase · public view_ | Quotes a bootstrap without the owner/salt check. Overrides or is overridden in: SignedTransmitter. | SignedTransmitter.quoteBootstrap, SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `_decodeBootstrap(payload)`<br>_TransmitterBase · internal view_ | Decodes and checks a bootstrap payload into chain key, route, typed flag and body. | SignedTransmitter._signedBootstrap, TransmitterBase.bootstrap, TransmitterBase.quoteBootstrap | No |
 | `_requireFunded(fee)`<br>_TransmitterBase · internal view_ | Reverts unless the balance covers a fee. | SignedTransmitter.bootstrap, TransmitterBase._sendFundedMessage, TransmitterBase._sendBootstrap | No |
 | `_markBootstrapped(chainKey, route)`<br>_TransmitterBase · internal_ | Records the destination before the transport call so a reentrant bootstrap meets the record. | SignedTransmitter.bootstrap, TransmitterBase.bootstrap | No |
@@ -972,13 +972,13 @@ The transceiver's initialization, owner configuration, float withdrawal and view
 | `conduitSalt(owner, salt, homeChainKey)`<br>_external pure_ | External form of the conduit salt for owner, salt and home chain. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `predictConduit(owner, salt, homeChainKey)`<br>_external view_ | Where an owner's conduit lives on this chain before it exists. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `signedAuthority(owner)`<br>_external view_ | The owner's live authority records, or empty if its guard is not a Crossecute guard. | TransceiverBase.createTransmitter, SDK ABI trim list; also tests | Yes, anyone (read-only) |
-| `predictTransmitter(owner, salt)`<br>_external view_ | Where an owner/salt transmitter lives before it exists. | CrossecuteScript._requireConduit, SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `predictTransmitter(owner, salt)`<br>_external view_ | Where an owner/salt transmitter lives before it exists. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `reportPayload(owner, salt, receiver)`<br>_external view_ | The exact report bytes for an owner, salt and receiver, so the cost can be quoted. | tests only | Yes, anyone (read-only) |
 | `transmitterImplementation()`<br>_external view_ | The transmitter implementation address. | tests only | Yes, anyone (read-only) |
 | `receiverImplementation()`<br>_external view_ | The receiver implementation address. | tests only | Yes, anyone (read-only) |
 | `addressesDiverge()`<br>_external view_ | Whether this chain's conduit addresses diverge from Ethereum's CREATE2. | tests only | Yes, anyone (read-only) |
 | `chainRegistry()`<br>_external view_ | The registry this transceiver reads. | tests only | Yes, anyone (read-only) |
-| `messageProvider()`<br>_external view_ | The provider id this transceiver serves. | CrossecuteScript._requireConduit; also tests | Yes, anyone (read-only) |
+| `messageProvider()`<br>_external view_ | The provider id this transceiver serves. | tests only | Yes, anyone (read-only) |
 | `minCounterpartProvenance()`<br>_external view_ | The minimum provenance grade a counterpart must have. | none found | Yes, anyone (read-only) |
 | `bootstrapFee(chainKey)`<br>_external view_ | The bootstrap fee for a chain. | tests only | Yes, anyone (read-only) |
 | `operator()`<br>_external view_ | The fee operator. | tests only | Yes, anyone (read-only) |
@@ -1626,7 +1626,7 @@ Per-chain, owner-governed directory of the chains this chain talks to, the messa
 | `isLive(chainKey, messageProvider)`<br>_external view_ | Whether sends to a provider's transceiver on a chain are allowed. | TransceiverBase.isLive; also tests | Yes, anyone (read-only) |
 | `statusOf(chainKey, messageProvider)`<br>_external view_ | The provider's deployment status on a chain. | tests only | Yes, anyone (read-only) |
 | `deployedBy(chainKey, messageProvider)`<br>_external view_ | The deployer recorded for a provider's transceiver on a chain. | tests only | Yes, anyone (read-only) |
-| `predictTransceiver(chainKey, messageProvider)`<br>_public view_ | Recomputes where a provider's transceiver lands on a chain from the proxy deployer, recorded deployer, salt and initcode hash. | ChainRegistry.predictConduit, CrossecuteScript._requireConduit; also tests | Yes, anyone (read-only) |
+| `predictTransceiver(chainKey, messageProvider)`<br>_public view_ | Recomputes where a provider's transceiver lands on a chain from the proxy deployer, recorded deployer, salt and initcode hash. | ChainRegistry.predictConduit; also tests | Yes, anyone (read-only) |
 | `predictConduit(chainKey, messageProvider, owner, salt, homeChainKey)`<br>_external view_ | Recomputes where an owner's conduit lands on a chain (transceiver first, then conduit salt). | tests only | Yes, anyone (read-only) |
 | `provenanceFor(chainKey)`<br>_public view_ | The provenance grade registered for a chain. | TransceiverBase._bootstrapInbound, TransceiverBase._signedBootstrapInbound, TransceiverExtension._recordCounterpart, ChainRegistry._isEvmDerivable; also tests | Yes, anyone (read-only) |
 | `isReceiverCallbackRequired(chainKey)`<br>_external view_ | Whether conduits on a chain must report their own address home because this registry cannot recompute it. | TransceiverBase._onDestinationReceiver, TransceiverBase.reportsReceiver; also tests | Yes, anyone (read-only) |
@@ -1917,58 +1917,15 @@ None of these define functions that other code calls. Helper functions inside a 
 
 ### `contracts` (top level)
 
-#### `contracts/AuthorityRelayScript.sol`
-
-Abstract Foundry script base that checks a destination receiver's authority selection on a fork and writes the source Safe's `relayAuthority` transaction (single or multicall batch) as Safe EIP-712 typed data.
-
-| Function | What it does | Called by | User-called? |
-|---|---|---|---|
-| `aggregate3Value(calls)`<br>_IAuthorityRelayMulticall · external payable_ | Multicall3-style batch entry point that carries several relay calls in one Safe transaction. | AuthorityRelayScript._authorityRelayBatchTx; also tests | Yes, via a multicall contract the Safe calls |
-| `selection()`<br>_IAuthorityRelayReceiver · external view_ | The destination receiver's selected authority update head and graph hash, read to confirm nothing changed. | AuthorityRelayScript._requireAuthorityRelaySelection; also tests | Yes, anyone reads it on the receiver |
-| `_writeAuthorityRelay(relay, destinationRpc, output)`<br>_AuthorityRelayScript · internal_ | Checks one relay against the destination fork and writes the source Safe's `relayAuthority` transaction as typed data. | tests only | Yes, from a Foundry script |
-| `_writeAuthorityRelayBatch(relays, destinationRpcs, multicall, output)`<br>_AuthorityRelayScript · internal_ | Checks every relay against its destination fork and writes one multicall Safe transaction that relays them all. | tests only | Yes, from a Foundry script |
-| `_authorityRelayBatchTx(relays, multicall)`<br>_AuthorityRelayScript · internal_ | Builds the single multicall Safe transaction for relays that share a source chain, Safe and nonce. | AuthorityRelayScript._writeAuthorityRelayBatch; also tests | Yes, from a Foundry script |
-| `_authorityRelayTx(relay, quoteAccount)`<br>_AuthorityRelayScript · internal_ | Quotes the relay fee and builds the Safe transaction that calls `relayAuthority` on the transmitter. | AuthorityRelayScript._writeAuthorityRelay, AuthorityRelayScript._authorityRelayBatchTx; also tests | Yes, from a Foundry script |
-
-Private helpers: `_requireAuthorityRelaySelection`, `_destinationFork`, `_safeRelayProposal`.
-
-
-#### `contracts/CrossecuteScript.sol`
-
-Abstract Foundry script base that forks each destination, simulates batches as the conduit's receiver there, turns them into the owner's home-chain calls and writes them as a plan file, Safe typed data, a Safe batch file or a broadcast.
-
-| Function | What it does | Called by | User-called? |
-|---|---|---|---|
-| `_useHome(registry, transmitter_)`<br>_internal_ | Takes the `--fork-url` chain as the conduit's home and reverts unless the registry places the transmitter's transceiver and the transceiver's CREATE2 places the transmitter. | Example.run | Yes, from a Foundry script |
-| `_useDestination(rpcUrl)`<br>_internal_ | Creates and registers a fork of a destination RPC and returns its chain id (first overload at the latest block, second at a fixed block). | Example.run | Yes, from a Foundry script |
-| `_useDestination(rpcUrl, blockNumber)`<br>_internal_ | Creates and registers a fork of a destination RPC and returns its chain id (first overload at the latest block, second at a fixed block). | Example.run | Yes, from a Foundry script |
-| `_selectHome()`<br>_internal_ | Switches to the home fork; virtual so a test can run every chain in one EVM. | CrossecuteScript._registerDestination, CrossecuteScript._requireConduit, CrossecuteScript._receiverOn, CrossecuteScript._plan, CrossecuteScript._safeTx, CrossecuteScript._broadcast, MerklePackageScript._queue, MerklePackageScript._observeReceiver; also tests | Overridable hook (tests); scripts do not call it |
-| `_selectDestination(chainId)`<br>_internal_ | Switches to a destination's fork; virtual so a test can run every chain in one EVM. | CrossecuteScript._simulate, MerklePackageScript._observeReceiver; also tests | Overridable hook (tests); scripts do not call it |
-| `_requireConduit(registry)`<br>_internal_ | Reverts unless the registry's prediction of the transmitter's transceiver, and that transceiver's CREATE2 of the transmitter, both hold. | CrossecuteScript._useHome; also tests | Overridable hook (tests); runs inside `_useHome` |
-| `_receiverOn(chainId)`<br>_internal_ | The conduit's receiver on an EVM destination: the recorded one once bootstrapped, else the home transceiver's prediction. | CrossecuteScript._add, MerklePackageScript._observeReceiver; also tests | Yes, from a Foundry script |
-| `_add(chainId, calls, attributes)`<br>_internal_ | Simulates calls as the receiver on a destination and queues them; the first batch to an unbootstrapped destination becomes its bootstrap. | Example.run; also tests | Yes, from a Foundry script |
-| `_simulate(chainId, receiver, calls)`<br>_internal_ | Runs calls with the receiver as sender on the destination fork, checks its balance, and returns the gas used. | CrossecuteScript._add, MerklePackageScript._queue | Yes, from a Foundry script (subclasses) |
-| `_plan()`<br>_internal_ | Builds the owner's home-chain calls for every queued batch and dry-runs them as the owner, then restores the fork. | Example.run; also tests | Yes, from a Foundry script |
-| `_writeSafeBatch(plan, path)`<br>_internal_ | Writes the plan as a Safe Transaction Builder file for the owner Safe. | tests only | Yes, from a Foundry script |
-| `_writePlan(plan, path)`<br>_internal_ | Writes the plan file the TypeScript SDK reads and `crossecute check` verifies. | Example.run; also tests | Yes, from a Foundry script |
-| `_writeSafeTx(plan, nonce, path)`<br>_internal_ | Writes the plan as one Safe transaction at a nonce, as EIP-712 typed data to sign, and returns its hash. | Example.run; also tests | Yes, from a Foundry script |
-| `_safeTx(plan, nonce)`<br>_internal_ | Builds the one Safe transaction for a plan (direct call or MultiSendCallOnly) and checks it against the Safe's own `getTransactionHash`. | CrossecuteScript._writeSafeTx; also tests | Yes, from a Foundry script (subclasses) |
-| `_multiSendCallOnly(version)`<br>_internal view_ | The MultiSendCallOnly address a Safe of a given version uses on this chain, matched by code hash. | CrossecuteScript._safeTx; also tests | Yes, from a Foundry script (subclasses) |
-| `_knownMultiSendCallOnly(version)`<br>_internal view_ | Table of known MultiSendCallOnly deployments and code hash per Safe version; virtual so tests can add one. | CrossecuteScript._multiSendCallOnly; also tests | Overridable hook (tests) |
-| `_broadcast(plan)`<br>_internal_ | Sends the plan's calls from an EOA owner with the script's signer. | none found | Yes, from a Foundry script |
-
-Private helpers: `_homeCallFor`, `_multiSendPacked`, `_registerDestination`, `_requireLiveDvn`, `_runAsOwner`, `_toAddress`.
-
-
 #### `contracts/ISafe.sol`
 
 Interface of the Safe views the SDK reads (`VERSION`, `nonce`, `getTransactionHash`).
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
-| `VERSION()`<br>_external view_ | The Safe's version string, used to pick the MultiSendCallOnly. | CrossecuteScript._safeTx | Safe's own function (read-only); SDK reads it |
-| `nonce()`<br>_external view_ | The Safe's current nonce. | CrossecuteGuard._safeTx, CrossecuteScript._safeTx; also tests | Safe's own function (read-only); SDK reads it |
-| `getTransactionHash(to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, nonce)`<br>_external view_ | The Safe's own hash for a transaction, used to cross-check the SDK's computed hash. | CrossecuteScript._safeTx; also tests | Safe's own function (read-only); SDK reads it |
+| `VERSION()`<br>_external view_ | The Safe's version string, used to pick the MultiSendCallOnly. | none found | Safe's own function (read-only); SDK reads it |
+| `nonce()`<br>_external view_ | The Safe's current nonce. | CrossecuteGuard._safeTx; also tests | Safe's own function (read-only); SDK reads it |
+| `getTransactionHash(to, value, data, operation, safeTxGas, baseGas, gasPrice, gasToken, refundReceiver, nonce)`<br>_external view_ | The Safe's own hash for a transaction, used to cross-check the SDK's computed hash. | tests only | Safe's own function (read-only); SDK reads it |
 
 
 #### `contracts/LzDvn.sol`
@@ -1979,10 +1936,10 @@ Library plus LayerZero interfaces that detect whether a sender's send config req
 |---|---|---|---|
 | `messageProvider()`<br>_ILzConduitTransceiver · external view_ | The provider key the transceiver serves, compared with `keccak256("layerzero")` to detect a plain LayerZero conduit. | LzDvn.isDeadDvnRequired; also tests | LayerZero conduit's own function (read-only) |
 | `providerIdFor(chainKey)`<br>_ILzConduitTransceiver · external view_ | The LayerZero endpoint id for a chain key. | LzDvn.isDeadDvnRequired; also tests | LayerZero conduit's own function (read-only) |
-| `endpoint()`<br>_ILzConduit · external view_ | The conduit's LayerZero endpoint. | LzOftConduitFactory._authenticateBootstrap, LzOftConduitFactory._homeEid, LzOftReceiver.initialize, LzOftLeaves.run, LzOftDeploy.checkOnDestination, LzDvn.isDeadDvnRequired; also tests | LayerZero conduit's own function (read-only) |
+| `endpoint()`<br>_ILzConduit · external view_ | The conduit's LayerZero endpoint. | LzOftConduitFactory._authenticateBootstrap, LzOftConduitFactory._homeEid, LzOftReceiver.initialize, LzDvn.isDeadDvnRequired; also tests | LayerZero conduit's own function (read-only) |
 | `getSendLibrary(sender, eid)`<br>_ILzSendConfig · external view_ | The send library an OApp uses toward an endpoint id. | LzDvn.isDeadDvnRequired; also tests | LayerZero endpoint function (read-only) |
 | `getConfig(oapp, lib, eid, configType)`<br>_ILzSendConfig · external view_ | The send ULN config of an OApp, library and endpoint id. | LzDvn.isDeadDvnRequired; also tests | LayerZero endpoint function (read-only) |
-| `isDeadDvnRequired(transceiver, sender, chainId)`<br>_LzDvn · internal view_ | For a plain `layerzero` conduit, whether the sender's send ULN config toward a chain lists the dead DVN as required, and the destination's LayerZero eid. | CrossecuteScript._requireLiveDvn; also tests | Yes, from a Foundry script |
+| `isDeadDvnRequired(transceiver, sender, chainId)`<br>_LzDvn · internal view_ | For a plain `layerzero` conduit, whether the sender's send ULN config toward a chain lists the dead DVN as required, and the destination's LayerZero eid. | tests only | Yes, from a Foundry script |
 
 
 #### `contracts/LzOft.sol`
@@ -2012,7 +1969,7 @@ Library that builds the Merkle package (root, each leaf's hash and proof) a sign
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
 | `requireMerklePlan(leaves, receiverNonces)`<br>_internal pure_ | Reverts on a plan the receiver would refuse or that wastes a root (duplicate leaf, conflicting or stale nonces, missing or unused receiver nonces). | tests only | Yes, from a Foundry script |
-| `build(leaves, receiverNonces)`<br>_internal pure_ | Checks the plan and returns the root plus each leaf's hash and proof in order. | MerklePackageScript._merklePackage; also tests | Yes, from a Foundry script |
+| `build(leaves, receiverNonces)`<br>_internal pure_ | Checks the plan and returns the root plus each leaf's hash and proof in order. | tests only | Yes, from a Foundry script |
 | `publishLeavesCalldata(pkg)`<br>_internal pure_ | Calldata for the guard's `publishLeaves` carrying the encoded leaves in package order. | tests only | Yes, from a Foundry script |
 | `registerRootCalldata(pkg)`<br>_internal pure_ | Calldata for the transmitter's `registerRoot` for the owner Safe's signed transaction. | tests only | Yes, from a Foundry script |
 
@@ -2025,23 +1982,9 @@ Library that writes a `MerklePackage` as the JSON file the TypeScript SDK parses
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
-| `toJson(pkg)`<br>_internal pure_ | Serializes a Merkle package with decimal-string integers, lowercase hex and the TypeScript field order. | MerklePackageScript._writeMerklePackage; also tests | Yes, from a Foundry script |
+| `toJson(pkg)`<br>_internal pure_ | Serializes a Merkle package with decimal-string integers, lowercase hex and the TypeScript field order. | tests only | Yes, from a Foundry script |
 
 Private helpers: `_bytesArray`, `_entry`, `_receiverNonce`, `_wordArray`.
-
-
-#### `contracts/MerklePackageScript.sol`
-
-Abstract Foundry script base that drafts the Merkle package behind a signed `registerRoot`, adding execution leaves per destination receiver.
-
-| Function | What it does | Called by | User-called? |
-|---|---|---|---|
-| `_addLeaf(chainId, validAfter, deadline, calls, attributes)`<br>_internal_ | Queues calls for a destination receiver at the next free nonce after simulating them (first overload), or at a given nonce for the same batch under other attributes (second overload). | tests only | Yes, from a Foundry script |
-| `_addLeaf(chainId, nonce, validAfter, deadline, calls, attributes)`<br>_internal_ | Queues calls for a destination receiver at the next free nonce after simulating them (first overload), or at a given nonce for the same batch under other attributes (second overload). | tests only | Yes, from a Foundry script |
-| `_merklePackage()`<br>_internal view_ | Checks the queued plan and builds its package, reverting with a `MerklePackages` error on a plan the receiver would refuse. | tests only | Yes, from a Foundry script |
-| `_writeMerklePackage(pkg, path)`<br>_internal_ | Writes the package as JSON to a path. | tests only | Yes, from a Foundry script |
-
-Private helpers: `_observeReceiver`, `_queue`.
 
 
 #### `contracts/PlanJson.sol`
@@ -2050,9 +1993,9 @@ Library that serializes a plan as a Safe Transaction Builder batch, the plan fil
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
-| `safeBatch(plan)`<br>_internal pure_ | JSON in Safe Transaction Builder format bound to the owner Safe. | CrossecuteScript._writeSafeBatch | Yes, from a Foundry script |
-| `planFile(p)`<br>_internal pure_ | JSON plan file with decimal-string integers that the TypeScript SDK reads. | CrossecuteScript._writePlan | Yes, from a Foundry script |
-| `safeTxTypedData(chainId, safe, t)`<br>_internal pure_ | Safe EIP-712 typed data in the field order Forge Attest's `safe-eip712` reader needs. | AuthorityRelayScript._writeAuthorityRelay, AuthorityRelayScript._writeAuthorityRelayBatch, CrossecuteScript._writeSafeTx; also tests | Yes, from a Foundry script |
+| `safeBatch(plan)`<br>_internal pure_ | JSON in Safe Transaction Builder format bound to the owner Safe. | none found | Yes, from a Foundry script |
+| `planFile(p)`<br>_internal pure_ | JSON plan file with decimal-string integers that the TypeScript SDK reads. | none found | Yes, from a Foundry script |
+| `safeTxTypedData(chainId, safe, t)`<br>_internal pure_ | Safe EIP-712 typed data in the field order Forge Attest's `safe-eip712` reader needs. | tests only | Yes, from a Foundry script |
 
 Private helpers: `_batch`, `_calls`, `_homeCalls`, `_safeTxMessage`.
 
@@ -2063,9 +2006,9 @@ Library that computes Safe's EIP-712 domain separator, struct hash and transacti
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
-| `domainSeparator(chainId, safe)`<br>_internal pure_ | Safe's EIP-712 domain separator from chain id and Safe address. | CrossecuteScript._safeTx, SafeTxHash.hash; also tests | Yes, from a Foundry script |
-| `structHash(t)`<br>_internal pure_ | Safe's EIP-712 struct hash of a Safe transaction. | CrossecuteScript._safeTx, SafeTxHash.hash | Yes, from a Foundry script |
-| `hash(chainId, safe, t)`<br>_internal pure_ | The Safe transaction hash for a chain, Safe and transaction. | CrossecuteScript._safeTx; also tests | Yes, from a Foundry script |
+| `domainSeparator(chainId, safe)`<br>_internal pure_ | Safe's EIP-712 domain separator from chain id and Safe address. | SafeTxHash.hash; also tests | Yes, from a Foundry script |
+| `structHash(t)`<br>_internal pure_ | Safe's EIP-712 struct hash of a Safe transaction. | SafeTxHash.hash | Yes, from a Foundry script |
+| `hash(chainId, safe, t)`<br>_internal pure_ | The Safe transaction hash for a chain, Safe and transaction. | tests only | Yes, from a Foundry script |
 
 
 #### `contracts/SignedDispatch.sol`
@@ -2097,23 +2040,6 @@ Foundry builders for the protocol's signed dispatch: leaf encoding, Merkle root 
 Struct definitions for plans: `HomeCall`, `Batch` and `Plan`.
 
 _Declares no functions._
-
-
-
-## Example script: `script`
-
-### `script` (top level)
-
-#### `script/Example.s.sol`
-
-Example Foundry script that simulates ownership transfers on two destinations and writes the plan and the owner Safe's typed-data transaction.
-
-| Function | What it does | Called by | User-called? |
-|---|---|---|---|
-| `transferOwnership(newOwner)`<br>_IOwnable · external_ | Interface for the example's target contract; the plan calls it as the receiver. | Example._transfer; also tests | Target contract's own function |
-| `run()`<br>_Example · external_ | Entry point: uses the home chain, forks two destinations, queues a `transferOwnership` batch on each, then writes the plan and Safe transaction files. | tests only | Yes, run with `forge script` |
-
-Private helpers: `_transfer`.
 
 
 

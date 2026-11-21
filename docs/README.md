@@ -8,7 +8,7 @@
 ## Naming
 
 - [Naming and function reference](naming-spec.md) states the naming rules for the protocol and the SDK and lists every function by file, with its callers.
-- [Deployment scripts reference](deploy-scripts-spec.md) lists the Foundry deployment scripts the same way.
+- [Foundry scripts reference](scripts-spec.md) lists the SDK's Foundry scripting files the same way.
 
 ## Message providers
 
