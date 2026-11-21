@@ -50,7 +50,7 @@ Not yet covered by a rule: the lookup suffixes (`For`, `Of`, `On`, `At`, `To`), 
 | Staged record | The guard's record of an owner-signed Safe transaction, held until the signed target consumes it once. |
 | Execution leaf | A Merkle leaf with the fields destination, nonce, `validAfter`, deadline, calls and attributes. `executionId` is its replay identity and leaves out the attributes. |
 | Dispatch leaf hash | `dispatchLeafHash`: the double keccak of a leaf's encoded fields. `executionLeafHash` applies it to an execution leaf. |
-| Plan | The plain-mode file written by `CrossecuteScript._writePlan`: batches of home calls and the Safe transactions that carry them. `parsePlan` reads it and `requirePlan` checks it. |
+| Plan | The plain-mode plan file: batches of home calls and the Safe transactions that carry them. `parsePlan` reads it and `requirePlan` checks it. |
 | Merkle package | The leaves behind a signed `registerRoot`, with their tree, root and proofs. `requireMerklePlan` rejects leaf sets the receiver would refuse. |
 | Delivery bundle | A signed Safe transaction together with its Merkle package. `requireDeliveryBundle` checks it offline, and calldata that submits it can be produced from it. |
 | Wire body | The standalone or Merkle encoding that a signed receiver consumes (`encodeStandaloneWire`, `encodeMerkleWire`). |
@@ -2192,12 +2192,12 @@ Private helpers: `planHashes`, `assemble`, `fieldFromJSON`, `same`.
 
 #### `ts/src/plan.ts`
 
-Parses and checks the plan file written by `CrossecuteScript._writePlan`.
+Parses and checks the plain-mode plan file.
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
 | `parsePlan(json)`<br>_exported_ | Parses and type-checks a plan file without checking calls against batches. | cli.check; also tests | Yes (SDK API: `import` from `@crossecute/sdk`) |
-| `homeCalldata(batch)`<br>_exported_ | The transmitter calldata that carries a batch, as `CrossecuteScript._homeCallFor` builds it. | plan.requirePlan | Yes (SDK API: `import` from `@crossecute/sdk`) |
+| `homeCalldata(batch)`<br>_exported_ | The transmitter calldata that carries a batch. | plan.requirePlan | Yes (SDK API: `import` from `@crossecute/sdk`) |
 | `requirePlan(plan)`<br>_exported_ | Throws unless every home call is the transmitter call its batch implies and only the first call carries value. | cli.check, safeTx.requireSafeTx; also tests | Yes (SDK API: `import` from `@crossecute/sdk`) |
 
 
@@ -2221,7 +2221,7 @@ Reads, writes and checks Safe transaction typed data and hashes, and the MultiSe
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
-| `parseSafeTxTypedData(json)`<br>_exported_ | Parses typed data written by `CrossecuteScript._writeSafeTx`, refusing any other shape. | cli.check; also tests | Yes (SDK API: `import` from `@crossecute/sdk`) |
+| `parseSafeTxTypedData(json)`<br>_exported_ | Parses Safe transaction typed data, refusing any other shape. | cli.check; also tests | Yes (SDK API: `import` from `@crossecute/sdk`) |
 | `serializeSafeTxFields(tx)`<br>_exported_ | The ten `SafeTx` fields as JSON strings. | bundle.signedTxToJSON, cli.signWithLedger, safeQueue (type alias or module-level code), safeQueue.SafeQueue.propose, safeTx.serializeSafeTxTypedData; also tests | Yes (SDK API: `import` from `@crossecute/sdk`) |
 | `parseSafeTxFields(m)`<br>_exported_ | Inverse of `serializeSafeTxFields`. | bundle.signedTxFromJSON, safeQueue (type alias or module-level code), safeQueue.matchingTransaction, safeTx.parseSafeTxTypedData | Yes (SDK API: `import` from `@crossecute/sdk`) |
 | `safeTxHashes({…})`<br>_exported_ | The domain hash, message hash and Safe transaction hash a signer's device shows. | authority.prepareAuthorityExecution, authority.submissionHash, authorityAttest.scaffold, bundle.buildDeliveryBundle, bundle.requireDeliveryBundle, cli.check, safeQueue (type alias or module-level code), safeQueue.matchingTransaction; also tests | Yes (SDK API: `import` from `@crossecute/sdk`) |
@@ -2303,7 +2303,7 @@ A dash means that surface has no function for the concept. Only concepts that ha
 | Merkle package JSON | - | `MerklePackageJson.toJson` | `merklePackageToJsonObject`, `serializeMerklePackage` |
 | Safe transaction hash | `SafeHashes.transactionHash` (guard) | `SafeTxHash.hash` | `safeTxHashes` |
 | Safe typed data | - | `PlanJson.safeTxTypedData` | `serializeSafeTxTypedData`, `parseSafeTxTypedData` |
-| Plain-mode plan | - | `CrossecuteScript._plan`, `PlanJson.planFile` | `parsePlan`, `requirePlan`, `homeCalldata` |
+| Plain-mode plan | - | `PlanJson.planFile` | `parsePlan`, `requirePlan`, `homeCalldata` |
 | Authority graph and record hash | `AuthorityUpdateEncoding.graphHash`, `recordHash` | - | `authorityGraphHash`, `authorityRecordHash` |
 | Select a new authority graph | `ISourceAuthorityGuard.selectAuthority` | - | action `select` in `buildAuthorityProposal` |
 | EVM chain key | `ChainKey.forEvm` (and `Erc7930.chainKey`, a different value) | - | `chainKey` |
@@ -2335,4 +2335,4 @@ The SDK's `main` still uses the names in the left column. The sync renames them,
 | Foundry | `SignedDispatch.bootstrapBody` | `bootstrapBodySigned` |
 | Foundry | `MerklePackages.registerData`, `publishData`, `check` | `registerRootCalldata`, `publishLeavesCalldata`, `requireMerklePlan` |
 | Foundry | `LzOft.createTransmitterData`, `checkLeaves` | `createTransmitterCalldata`, `requireLeaves` |
-| Foundry | `LzDvn.requiresDeadDvn`, `CrossecuteScript._verifyConduit`, `AuthorityRelayScript._checkAuthorityRelaySelection` | `isDeadDvnRequired`, `_requireConduit`, `_requireAuthorityRelaySelection` |
+| Foundry | `LzDvn.requiresDeadDvn` | `isDeadDvnRequired` |
