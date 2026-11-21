@@ -41,7 +41,7 @@ Not yet covered by a rule: the lookup suffixes (`For`, `Of`, `On`, `At`, `To`), 
 
 | Term | Meaning |
 |---|---|
-| Chain key | The `bytes32` the protocol uses to name a chain. `ChainKey.forEvm` computes it for an EVM chain id. `Erc7930.chainKey` hashes an ERC-7930 chain identifier into a grouping key and is a different value. |
+| Chain key | The `bytes32` the protocol uses to name a chain, computed by hashing its canonical ERC-7930 chain identifier. `ChainKey.forEvm` takes an EVM chain id, and `Erc7930.chainKey` takes an ERC-7930 envelope. Both yield the same key for the same EVM chain. |
 | Provider id | A provider's own id for a chain: an eid, selector, domain, Wormhole chain id, or on OP Stack the messenger address. Written once per chain key by `ProviderChainId`. |
 | Plain mode, signed mode | In plain mode the conduit owner sends a message directly. In signed mode the owner Safe's signed transaction authorizes each send or Merkle leaf, through the guard. |
 | Bootstrap payload, body | The payload is `(destinationChainIdentifier, body)`. The body is what the destination receiver runs when it is created. |
@@ -1630,7 +1630,7 @@ Per-chain, owner-governed directory of the chains this chain talks to, the messa
 | `predictConduit(chainKey, messageProvider, owner, salt, homeChainKey)`<br>_external view_ | Recomputes where an owner's conduit lands on a chain (transceiver first, then conduit salt). | tests only | Yes, anyone (read-only) |
 | `provenanceFor(chainKey)`<br>_public view_ | The provenance grade registered for a chain. | TransceiverBase._bootstrapInbound, TransceiverBase._signedBootstrapInbound, TransceiverExtension._recordCounterpart, ChainRegistry._isEvmDerivable; also tests | Yes, anyone (read-only) |
 | `isReceiverCallbackRequired(chainKey)`<br>_external view_ | Whether conduits on a chain must report their own address home because this registry cannot recompute it. | TransceiverBase._onDestinationReceiver, TransceiverBase.reportsReceiver; also tests | Yes, anyone (read-only) |
-| `requireLocation(chainKey, interop)`<br>_external view_ | Reverts unless an ERC-7930 address is canonical, on the given chain, and accepted by that chain's validator. | TransceiverExtension._recordCounterpart; also tests | Yes, anyone (read-only) |
+| `requireLocation(chainKey, interop)`<br>_external view_ | Requires a canonical ERC-7930 envelope for the registered chain and runs its validator if configured. A chain identifier with an empty address can pass when no validator is configured. | TransceiverExtension._recordCounterpart; also tests | Yes, anyone (read-only) |
 | `setValidator(chainKey, validator)`<br>_external_ | Attaches a value-range validator to a chain. | tests only | Yes, gated by onlyOwner (state-changing) |
 | `setQualifier(chainKey, messageProvider, q)`<br>_external_ | Attaches a write-once Move qualified name to a provider's transceiver on a Move chain. | tests only | Yes, gated by onlyOwner (state-changing) |
 | `qualifier(chainKey, messageProvider)`<br>_external view_ | Reads the Move qualifier for a provider on a chain. | tests only | Yes, anyone (read-only) |
@@ -1675,7 +1675,7 @@ Interface of the slice of `ChainRegistry` a transceiver reads: grades, suspensio
 | `deployedBy(chainKey, messageProvider)`<br>_external view_ | Who deployed or will deploy a provider's transceiver on a chain. | tests only | Yes via interface (read-only) |
 | `currentDeployer()`<br>_external view_ | The deployer new provider entries are recorded under. | tests only | Yes via interface (read-only) |
 | `chainIdentifier(chainKey)`<br>_external view_ | The ERC-7930 chain identifier behind a chain key. | tests only | Yes via interface (read-only) |
-| `requireLocation(chainKey, interop)`<br>_external view_ | Reverts unless an address is well-formed on the chain. | TransceiverExtension._recordCounterpart; also tests | Yes via interface (read-only) |
+| `requireLocation(chainKey, interop)`<br>_external view_ | Requires a canonical ERC-7930 envelope for the registered chain and applies its configured validator, if any. Without a validator, the envelope may be a chain identifier with an empty address. | TransceiverExtension._recordCounterpart; also tests | Yes via interface (read-only) |
 | `deriveParams(chainKey)`<br>_external view_ | The derivation inputs recorded for a chain. | TransceiverExtension.resolveCounterpart | Yes via interface (read-only) |
 | `isReceiverCallbackRequired(chainKey)`<br>_external view_ | Whether conduits on a chain must report their own address home. | TransceiverBase._onDestinationReceiver, TransceiverBase.reportsReceiver; also tests | Yes via interface (read-only) |
 
@@ -2306,7 +2306,7 @@ A dash means that surface has no function for the concept. Only concepts that ha
 | Plain-mode plan | - | `PlanJson.planFile` | `parsePlan`, `requirePlan`, `homeCalldata` |
 | Authority graph and record hash | `AuthorityUpdateEncoding.graphHash`, `recordHash` | - | `authorityGraphHash`, `authorityRecordHash` |
 | Select a new authority graph | `ISourceAuthorityGuard.selectAuthority` | - | action `select` in `buildAuthorityProposal` |
-| EVM chain key | `ChainKey.forEvm` (and `Erc7930.chainKey`, a different value) | - | `chainKey` |
+| EVM chain key | `ChainKey.forEvm(chainId)` and `Erc7930.chainKey(envelope)` produce the same key for the same chain | - | `chainKey` |
 | LayerZero OFT leaf | `LzOftMessage.leaf` | `LzOft.leafHash` | `lzOftLeafHash` |
 | LayerZero OFT root | `LzOftMessage.root` | `LzOft.root` | `lzOftRoot` |
 | LayerZero OFT conduit salt and address | `LzOftConduitFactory.conduitSalt`, `predictConduit` | `LzOft.conduitSalt`, `predictConduit` | `lzOftConduitSalt`, `predictLzOftConduit` |
@@ -2317,7 +2317,7 @@ A dash means that surface has no function for the concept. Only concepts that ha
 
 # Part 5: SDK names at the protocol 0.3.0 sync
 
-The SDK's `main` still uses the names in the left column. The sync renames them, and renames the one protocol function its trimmed ABI keeps (`quoteSignedMessage` to `quoteMessageSigned`, in the `MEMBERS` table of `scripts/sync-protocol.py` and in the generated `ts/src/signedAbi.ts`). This part is removed once the sync lands.
+The SDK's `main` still uses the names in the left column. At the sync, apply the renames below and replace `quoteSignedMessage` with `quoteMessageSigned` in the `MEMBERS` table of `scripts/sync-protocol.py`. Regenerate `ts/src/signedAbi.ts` and update the release assertion in `ts/test/protocolRelease.test.ts` and the quote example in `docs/usage.md`. Remove this section once the sync lands.
 
 | Surface | Current name | Name after the sync |
 |---|---|---|

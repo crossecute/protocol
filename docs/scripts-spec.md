@@ -80,4 +80,3 @@ Example Foundry script that simulates ownership transfers on two destinations an
 | `run()`<br>_Example · external_ | Entry point: uses the home chain, forks two destinations, queues a `transferOwnership` batch on each, then writes the plan and Safe transaction files. | tests only | Yes, run with `forge script` |
 
 Private helpers: `_transfer`.
-
