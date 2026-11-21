@@ -462,6 +462,19 @@ against mocks.
 
 ## 8. Safe-signed dispatch (#134, 2026-11-17)
 
+For signed deployments and route enablement:
+
+- Before deploying receiver implementations, run `DeploySafeGuard.s.sol` with the pinned guard
+  build. Compare `predict()` with `address` in [`safe-guard.toml`](safe-guard.toml), then dry-run
+  the deployment on each chain. The dry run checks Arachnid's factory and the five canonical
+  Safe 1.5.0 runtime hashes.
+- After deploying the guard, run `DeploySafeGuard.s.sol --sig 'verify()' --rpc-url "$RPC"` on
+  each deployment chain. The script confirms the recorded address and all five guard pins.
+  See the [guard runbook](README.md#source-guard-for-signed-mode) for the full commands.
+- Before enabling a signed route, read `SOURCE_AUTHORITY_GUARD()` and `MULTISEND_CALL_ONLY()`
+  from the destination receiver implementation. Compare them with the verified release guard
+  and its MultiSendCallOnly pin. Confirm that the source Safe has activated.
+
 The [signed dispatch benchmark](../../../docs/benchmarks/safe-signed-dispatch-measurements.md)
 records Paris receiver gas, wire sizes, Cancun real-Safe integration, and runtime sizes.
 Before enabling a signed route, simulate the exact destination provider call and sign

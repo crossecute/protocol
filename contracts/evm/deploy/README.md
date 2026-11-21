@@ -86,6 +86,9 @@ derives from it.
 
 **Step 2, per provider:**
 
+For signed deployments, complete the [source guard deployment](#source-guard-for-signed-mode)
+and set the [receiver pins](#signed-receiver-implementations) before running the provider script.
+
 ```
 forge script script/Deploy<Provider>.s.sol --rpc-url <rpc> --broadcast --sender <deployer>
 ```
@@ -113,9 +116,45 @@ encoding also links `LzOftMessage`. `forge script` deploys linked libraries befo
 through Arachnid's factory, so
 it has one address on every parity chain.
 
-Set `CROSSECUTE_AUTHORITY_GUARD` and `CROSSECUTE_MULTISEND_CALL_ONLY` before deploying
-receiver implementations for signed mode. The provider deploy helpers, including OFT, pass them as
-constructor immutables, with no setters. Setting just one fails before receiver creation.
+### Source guard for signed mode
+
+Deploy `CrossecuteGuard` before running a signed receiver deployment on the chain.
+[`safe-guard.toml`](safe-guard.toml) records the release address, all five canonical Safe 1.5.0
+addresses and runtime hashes. Each Safe has zero policy configuration delay and no expiry
+by default. A Safe can choose its own timing at the shared address. See
+[policy configuration timing](../../safe-guard/README.md#policy-configuration-timing)
+for the Safe's setup and update calls.
+
+From `contracts/safe-guard`, using the pinned Solidity 0.8.30, via-IR and Cancun settings:
+
+```sh
+forge script script/DeploySafeGuard.s.sol --sig 'predict()'
+forge script script/DeploySafeGuard.s.sol --rpc-url "$RPC"
+forge script script/DeploySafeGuard.s.sol --rpc-url "$RPC" --account "$DEPLOYER" --broadcast
+forge script script/DeploySafeGuard.s.sol --sig 'verify()' --rpc-url "$RPC"
+```
+
+For a new guard release, record the new prediction in `safe-guard.toml` before pinning it in
+receivers. For an existing release, the prediction must match the recorded address. The script
+checks Arachnid's factory and all five Safe runtime hashes before broadcasting, then deploys
+at salt zero. Forge also deploys any missing linked libraries deterministically. A rerun checks
+the existing guard.
+`verify()` checks the address and all five guard pins against the release file.
+To read the pins directly, set `GUARD` to the release address and run:
+
+```sh
+cast call "$GUARD" 'safePins()((address,address,address,address,address))' --rpc-url "$RPC"
+```
+
+The tuple contains MultiSendCallOnly, SignMessageLib, Safe, SafeL2 and
+CompatibilityFallbackHandler, in that order.
+
+### Signed receiver implementations
+
+Set `CROSSECUTE_AUTHORITY_GUARD` to the verified address from `safe-guard.toml` and
+`CROSSECUTE_MULTISEND_CALL_ONLY` to that file's `multi_send_call_only.address`. The provider
+deploy helpers, including OFT, pass both as constructor immutables. The scripts refuse a
+partial pair or a signed release deployment with no guard code on the deployment chain.
 Both unset deploy a receiver implementation for plain mode only. For OFT the pins also
 decide the factory's address, since the factory is built with the receiver's address and is not
 a proxy: a pin set on one chain and unset or different on another puts the factory, and every
@@ -125,16 +164,9 @@ links, canonical treasury configuration and pins. Record the address and set
 `CROSSECUTE_OFT_FACTORY` to it on every chain.
 The script refuses to deploy at a different address. A signed bootstrap names
 its source guard and must match the destination implementation's guard pin; the helper
-address must be the one that source guard recognizes. Verify both pins before enabling a
-signed route. Source Safes must activate before signed bootstrap can be quoted or sent.
-
-The shared source guard takes only its authority pins as constructor inputs. Safe policy
-timing is configured on that guard by each Safe, with zero delay and no expiry by default.
-A timing change leaves the guard address intact. For a new guard build, recompute its CREATE2
-address from the linked creation code and constructor pins before pinning it in receiver
-implementations. Run the OFT prediction again with the resulting guard pin.
-[Policy configuration timing](../../safe-guard/README.md#policy-configuration-timing)
-describes the Safe's setup and update calls.
+address must be the one that source guard recognizes. Before enabling a signed route,
+compare the receiver implementation's `SOURCE_AUTHORITY_GUARD()` and `MULTISEND_CALL_ONLY()`
+with the release inputs. Source Safes must activate before signed bootstrap can be quoted or sent.
 
 Every transceiver implementation names the chain's `TransceiverExtension` (#70), which
 `script/deploy/` deploys on first use through Arachnid's factory, so one serves every provider
