@@ -7,7 +7,11 @@ import {IChainRegistryRefs, ProviderDeployment} from "src/registry/IChainRegistr
 import {Provenance} from "src/registry/Provenance.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {check} from "script/deploy/ProxyDeploy.sol";
-import {TransceiverDeployment, expectedDeployer} from "script/deploy/TransceiverDeploy.sol";
+import {
+    TransceiverDeployment,
+    checkReceiverAuthorityDeployment,
+    expectedDeployer
+} from "script/deploy/TransceiverDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {Governance, GovernanceConfig, ChainContracts, ChainDeploy} from "script/deploy/ChainDeploy.sol";
@@ -43,6 +47,7 @@ abstract contract DeployProvider is Script {
     function run() external returns (address transceiver) {
         Governance memory g = _governance();
         GovernanceConfig.requireSet(g);
+        checkReceiverAuthorityDeployment();
         _preflight();
         vm.startBroadcast();
         (, address deployer,) = vm.readCallers();

@@ -5,6 +5,9 @@
 Foundry project from [`contracts/evm/`](../evm/); the two projects share compatible
 interfaces, types and verification libraries.
 
+The [deployment runbook](../evm/deploy/README.md#source-guard-for-signed-mode) covers predicting
+the release address, deploying the guard and verifying its immutable Safe pins.
+
 ## Layout
 
 | Path | What it holds |

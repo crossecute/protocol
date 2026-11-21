@@ -6,6 +6,7 @@ import {check} from "script/deploy/ProxyDeploy.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {Governance, GovernanceConfig, ChainDeploy} from "script/deploy/ChainDeploy.sol";
 import {LzOftDeploy} from "script/deploy/LzOftDeploy.sol";
+import {checkReceiverAuthorityDeployment} from "script/deploy/TransceiverDeploy.sol";
 import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 
 /// @title DeployLzOft
@@ -24,6 +25,7 @@ contract DeployLzOft is Script {
         ChainEntry[] memory chains = ChainConfig.chains(dir);
         ChainEntry memory local = ChainConfig.chainWithId(chains, block.chainid);
         check(local.derivation == Derivation.Parity, "layerzero-oft deploys only on a parity chain");
+        checkReceiverAuthorityDeployment();
         address treasury = _treasury(chains);
         check(treasury.code.length != 0, "deploy the chain treasury before layerzero-oft");
         LzOftDeploy.requireFactory(treasury, _expectedFactory());

@@ -8,6 +8,7 @@ libs = ["lib"]
 # `sendMessage` selector is read from the protocol's own ERC-7786 interface. Tests check Merkle
 # proofs with the protocol's pinned OpenZeppelin verifier.
 allow_paths = ["../evm"]
+fs_permissions = [{ access = "read", path = "../evm/deploy/safe-guard.toml" }]
 # Pinned to the policy-engine's own settings: SafePolicyGuard declares `pragma =0.8.30` and
 # does not compile without via-IR. Cancun is required for EIP-1153 transient storage.
 solc_version = "0.8.30"
@@ -36,6 +37,7 @@ remappings = [
     "@layerzerolabs/oft-evm/=../evm/lib/layerzero-oft-evm/",
     "@layerzerolabs/lz-evm-protocol-v2/=../evm/lib/layerzero-protocol-v2/",
     "evm-test/=../evm/test/",
+    "evm-script/=../evm/script/",
     "../evm/:test/protocols/=../evm/test/protocols/",
     "@openzeppelin/contracts/=../evm/lib/openzeppelin-contracts/contracts/",
     "crossecute/=../evm/src/",

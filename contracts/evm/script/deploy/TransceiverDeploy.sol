@@ -23,6 +23,12 @@ function receiverAuthorityPins(address guard, address multiSendCallOnly) pure re
     return (guard, multiSendCallOnly);
 }
 
+/// @notice Signed release deployments require the guard on the deployment chain.
+function checkReceiverAuthorityDeployment() view {
+    (address guard,) = receiverAuthorityPins();
+    check(guard == address(0) || guard.code.length != 0, "deploy the source authority guard before signed receivers");
+}
+
 /// @notice The extension every provider's transceiver implementation on this chain names, deployed
 ///         on first use. It takes no constructor arguments, so it has one address on every parity
 ///         chain.
