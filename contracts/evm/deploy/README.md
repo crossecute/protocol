@@ -128,6 +128,14 @@ its source guard and must match the destination implementation's guard pin; the 
 address must be the one that source guard recognizes. Verify both pins before enabling a
 signed route. Source Safes must activate before signed bootstrap can be quoted or sent.
 
+The shared source guard takes only its authority pins as constructor inputs. Safe policy
+timing is configured on that guard by each Safe, with zero delay and no expiry by default.
+A timing change leaves the guard address intact. For a new guard build, recompute its CREATE2
+address from the linked creation code and constructor pins before pinning it in receiver
+implementations. Run the OFT prediction again with the resulting guard pin.
+[Policy configuration timing](../../safe-guard/README.md#policy-configuration-timing)
+describes the Safe's setup and update calls.
+
 Every transceiver implementation names the chain's `TransceiverExtension` (#70), which
 `script/deploy/` deploys on first use through Arachnid's factory, so one serves every provider
 on the chain and it has one address on every parity chain.

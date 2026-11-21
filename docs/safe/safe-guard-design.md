@@ -31,7 +31,7 @@ witnesses, deployment pins, and the ownership batch, and
 These are settled. The sections below describe each in full.
 
 - **Safe version.** Safe 1.5.0 only. Earlier versions have no module guard.
-- **One guard.** A single shared `CrossecuteGuard` extends `SafePolicyGuard` and reuses its
+- **One guard.** A single shared `CrossecuteGuard` extends `SafePolicyGuardBase` and reuses its
   `PolicyEngine`, with all state keyed by Safe. `SafenetPolicy` is a policy a Safe may select,
   not part of the guard. The guard registers, forwards to, and delegatecalls no other guard.
 - **Guard slots (#107 baseline).** The transaction guard slot is required. The module guard slot is the
@@ -77,16 +77,15 @@ These are settled. The sections below describe each in full.
 
 ## Shape
 
-There is one guard contract, `CrossecuteGuard`. It extends `SafePolicyGuard` from
+There is one guard contract, `CrossecuteGuard`. It extends `SafePolicyGuardBase` from
 [safe-research/policy-engine](https://github.com/safe-research/policy-engine), vendored from
 the [`crossecute/policy-engine`](https://github.com/crossecute/policy-engine) fork. The fork
 adds internal callbacks after the owner policy check, after the module policy check, and
-after owner execution. The external hooks keep their checks and selectors. Everything
-Crossecute adds runs in those callbacks.
+after owner execution. The external hooks keep their checks and selectors.
 
 - **Target.** Safe 1.5.0. Earlier versions have no module guard and are not supported.
-- **Shared.** One deployment serves any number of Safes. Policy assignments, pending
-  configuration, transient staged records and cached approvals are all keyed by Safe.
+- **Shared.** One deployment serves any number of Safes. Policy assignments, configuration timing,
+  pending configuration, transient staged records and cached approvals are all keyed by Safe.
   Published roots are shared by every Safe on the guard.
 - **Policy.** The inherited `PolicyEngine` governs every owner and module transaction.
   `SafenetPolicy` is one policy a Safe may select, not part of the guard.
@@ -98,7 +97,7 @@ Crossecute adds runs in those callbacks.
 
 The inherited checks still apply: `safeTxGas` and `gasPrice` must be zero, so a failed inner
 call reverts the whole Safe transaction, and a Safe transaction may not target the guard
-except for the three configuration entry points.
+except for the owner configuration and source authority entry points.
 
 ## Owner execution
 
@@ -315,18 +314,22 @@ measures the size and storage cost of this evidence for one nested Safe shape.
 ## Installation
 
 A fresh Safe and a Safe that already has a transaction guard use the same entry points,
-with no migration-specific API. In one owner-approved MultiSend batch, the Safe:
+with no migration-specific API. Submit the following calls in one owner-approved MultiSend batch.
 
-1. calls `configureImmediately` on `CrossecuteGuard` with its policies, which works only
-   before the guard is installed on that Safe;
-2. calls `setGuard(CrossecuteGuard)`;
-3. optionally calls `setModuleGuard(CrossecuteGuard)`.
+1. Call `configureImmediately` on `CrossecuteGuard` with its policies and, if desired,
+   `configureTimingImmediately(delay, expiry)` with its configuration timing, before this
+   guard occupies either of the Safe's guard slots.
+2. Call `setGuard(CrossecuteGuard)`.
+3. Optionally call `setModuleGuard(CrossecuteGuard)`.
 
 On an already guarded Safe, the batch runs under the existing guard, which must permit it.
 Safe 1.5.0 calls the post-hook on the guard it read before execution, so the old guard
 receives the post-hook for the installing transaction and `CrossecuteGuard` sees no unmatched
-post-hook. After installation, configuration changes go through `requestConfiguration` and
-`applyConfiguration` with the inherited delay.
+post-hook. Once installed, owner calls use `requestConfiguration`, then
+`applyConfiguration` for policies or `applyConfigurationTiming` for timing. Both apply paths
+honor the maturity and expiry captured at request time. The default is zero delay with
+no expiry. See [policy configuration timing](../../contracts/safe-guard/README.md#policy-configuration-timing)
+for the root calculation and read methods.
 
 ## Build and chain support
 

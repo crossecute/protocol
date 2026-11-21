@@ -3,6 +3,7 @@ pragma solidity =0.8.30;
 
 import {PolicyEngine} from "policy-engine/core/PolicyEngine.sol";
 import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {SafePolicyGuardBase} from "policy-engine/SafePolicyGuardBase.sol";
 import {IERC165} from "policy-engine/interfaces/IERC165.sol";
 import {IPolicyEngine} from "policy-engine/interfaces/IPolicyEngine.sol";
 import {ISafeModuleGuard} from "policy-engine/interfaces/ISafeModuleGuard.sol";
@@ -22,7 +23,7 @@ contract InstallationTest is GuardTestBase {
 
     function test_installedGuardAdvertisesCrossecuteCapability() public {
         IERC165 installed = IERC165(GuardDiscovery.transactionGuard(address(safe)));
-        SafePolicyGuard plain = new SafePolicyGuard(0, 1 days);
+        SafePolicyGuardBase plain = new SafePolicyGuard(0, 1 days);
         assertTrue(installed.supportsInterface(type(ICrossecuteGuard).interfaceId));
         assertFalse(plain.supportsInterface(type(ICrossecuteGuard).interfaceId));
         assertTrue(installed.supportsInterface(type(IPolicyEngine).interfaceId));
@@ -59,15 +60,15 @@ contract InstallationTest is GuardTestBase {
 
     function _guardedByPrevious() internal returns (Safe guarded) {
         guarded = _newEoaSafe();
-        SafePolicyGuard previous = new SafePolicyGuard(0, 1 days);
+        SafePolicyGuardBase previous = new SafePolicyGuard(0, 1 days);
         _install(guarded, _signers(), previous, _defaultConfig(), false);
         assertEq(_slot(guarded, GUARD_SLOT), address(previous));
     }
 
     function test_existingGuard_deniesBatch_nothingChanges() public {
         Safe guarded = _newEoaSafe();
-        SafePolicyGuard previous = new SafePolicyGuard(0, 1 days);
-        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](2);
+        SafePolicyGuardBase previous = new SafePolicyGuard(0, 1 days);
+        SafePolicyGuardBase.Configuration[] memory configs = new SafePolicyGuardBase.Configuration[](2);
         configs[0] = _config(address(0), bytes4(0), Operation.CALL, address(allowPolicy));
         // The previous guard's own installation batch, permitted once and then removed.
         configs[1] =
@@ -104,7 +105,7 @@ contract InstallationTest is GuardTestBase {
     }
 
     function test_configureImmediately_rejectedOnceInstalled() public {
-        bytes memory data = abi.encodeCall(SafePolicyGuard.configureImmediately, (_defaultConfig()));
+        bytes memory data = abi.encodeCall(SafePolicyGuardBase.configureImmediately, (_defaultConfig()));
         bytes memory sigs = _signFor(safe, _signers(), address(guard), 0, data, Enum.Operation.Call);
         vm.expectRevert(PolicyEngine.GuardTargetDenied.selector);
         _execWith(safe, address(guard), 0, data, Enum.Operation.Call, sigs);
@@ -112,7 +113,7 @@ contract InstallationTest is GuardTestBase {
 
     function test_sharedGuard_independentConfiguration() public {
         Safe narrow = _newEoaSafe();
-        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](1);
+        SafePolicyGuardBase.Configuration[] memory configs = new SafePolicyGuardBase.Configuration[](1);
         configs[0] =
             _config(address(multiSend), multiSend.multiSend.selector, Operation.DELEGATECALL, address(allowPolicy));
         _install(narrow, _signers(), guard, configs, false);
@@ -126,8 +127,8 @@ contract InstallationTest is GuardTestBase {
         assertTrue(_exec(safe, _signers(), address(transmitter), 0, _sendMessageData(), Enum.Operation.Call));
     }
 
-    function _removeDelegatecallPolicy(Safe guarded, SafePolicyGuard previous) internal {
-        SafePolicyGuard.Configuration[] memory removal = new SafePolicyGuard.Configuration[](1);
+    function _removeDelegatecallPolicy(Safe guarded, SafePolicyGuardBase previous) internal {
+        SafePolicyGuardBase.Configuration[] memory removal = new SafePolicyGuardBase.Configuration[](1);
         removal[0] = _config(address(multiSend), multiSend.multiSend.selector, Operation.DELEGATECALL, address(0));
         bytes32 root = keccak256(abi.encode(removal));
         _exec(
@@ -135,7 +136,7 @@ contract InstallationTest is GuardTestBase {
             _signers(),
             address(previous),
             0,
-            abi.encodeCall(SafePolicyGuard.requestConfiguration, (root)),
+            abi.encodeCall(SafePolicyGuardBase.requestConfiguration, (root)),
             Enum.Operation.Call
         );
         _exec(
@@ -143,7 +144,7 @@ contract InstallationTest is GuardTestBase {
             _signers(),
             address(previous),
             0,
-            abi.encodeCall(SafePolicyGuard.applyConfiguration, (removal)),
+            abi.encodeCall(SafePolicyGuardBase.applyConfiguration, (removal)),
             Enum.Operation.Call
         );
     }

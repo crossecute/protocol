@@ -2,7 +2,7 @@
 pragma solidity =0.8.30;
 
 import {Call} from "crossecute/messaging/Call.sol";
-import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {SafePolicyGuardBase} from "policy-engine/SafePolicyGuardBase.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {ISignedTransmitter} from "crossecute/messaging/outbound/ISignedTransmitter.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
@@ -57,7 +57,7 @@ contract ModuleBootstrapTest is ModuleTest {
     ///      The transmitter then finds nothing staged, and the module post-hook reports the failure.
     function test_moduleUnstagedBootstrap_notDeniedOrStaged() public {
         vm.expectCall(address(guard), abi.encodeCall(ICrossecuteGuard.consume, (address(guarded))));
-        vm.expectRevert(SafePolicyGuard.ModuleExecutionFailed.selector);
+        vm.expectRevert(SafePolicyGuardBase.ModuleExecutionFailed.selector);
         module.execStrict(guarded, address(guardedTransmitter), unstagedBootstrapData(), Enum.Operation.Call);
     }
 }

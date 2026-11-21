@@ -3,6 +3,7 @@ pragma solidity =0.8.30;
 
 import {console2} from "forge-std/console2.sol";
 import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {SafePolicyGuardBase} from "policy-engine/SafePolicyGuardBase.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {SignMessageLib} from "safe-smart-account/libraries/SignMessageLib.sol";
@@ -10,7 +11,7 @@ import {GuardTestBase} from "./GuardTestBase.sol";
 
 /// @dev Measures the cache cost for the two fixtures in the
 ///      [child approval benchmark](../README.md#child-approval-evidence-sizing).
-///      The baseline is the same Safe and policy under an unmodified SafePolicyGuard.
+///      The baseline is the same Safe and policy under a fixed-timing SafePolicyGuard.
 contract ApprovalGasTest is GuardTestBase {
     function test_gas_approvalCache_10of13() public {
         _measure(13, 10);
@@ -31,7 +32,7 @@ contract ApprovalGasTest is GuardTestBase {
         assertGt(withCache, without);
     }
 
-    function _approvalGas(SafePolicyGuard guard_, uint256 ownerCount, uint256 threshold)
+    function _approvalGas(SafePolicyGuardBase guard_, uint256 ownerCount, uint256 threshold)
         internal
         returns (uint256 used, uint256 encoded)
     {
