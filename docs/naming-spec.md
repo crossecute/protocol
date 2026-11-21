@@ -17,7 +17,7 @@ What the tables do not cover:
 
 - **Private helpers are not rows.** A `private` function, or an `internal` one used only inside its own file with no override elsewhere, appears in a "Private helpers" line under its file. Those names follow the same rules.
 - **Callers are matched by name and call syntax, not by a compiler.** The match resolves the declared type of a variable where it can, so most same-name collisions are removed, but a call through a variable of an unrelated type with the same function name can still show up, and overloads share one caller list. Treat "Called by" as the places to check, and confirm with a build after renaming.
-- **Tests, fixtures, mocks, docs and the generated ABI file are excluded** from callers except where marked. Deployment scripts are out of scope.
+- **Tests, fixtures, mocks, docs and the generated ABI file are excluded** from callers except where marked. Deployment scripts are in [the deployment scripts reference](deploy-scripts-spec.md).
 - **Interfaces and their implementations each get a row.** Renaming one means renaming both, and the "Declared in" and "Implemented in" notes list the pair.
 - **Solidity events, errors, structs and constants are not rows.**
 
