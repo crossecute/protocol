@@ -13,7 +13,7 @@ import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 ///
 /// @dev `send` and `quote` are `public`, so they are deployed once and linked rather than
 ///      inlined into every Wormhole contract (#29). A linked call is a `DELEGATECALL`, so it runs in the caller's
-///      context and pays from the caller's balance as before. `verify` stays `internal`, since
+///      context and pays from the caller's balance as before. `consumeVaa` stays `internal`, since
 ///      it returns a calldata slice.
 ///
 /// @dev Published payload: `abi.encodePacked(uint16 targetChain, bytes32 targetAddress, payload)`.
@@ -266,7 +266,7 @@ library WormholeMessage {
     /// @dev Finalized only. Every send here publishes at `CONSISTENCY_FINALIZED`; a weaker level
     ///      can come only from an owner calling Core directly through `execute`, and a reorg on
     ///      the source could then undo a message the destination has already run.
-    function verify(address coreBridge, bool gatewayHeld, bytes calldata vaa)
+    function consumeVaa(address coreBridge, bool gatewayHeld, bytes calldata vaa)
         internal
         returns (uint16 emitterChain, address emitter, bytes calldata inner)
     {

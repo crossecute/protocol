@@ -36,7 +36,7 @@ library OpStackMessage {
         uint256 value,
         uint256 defaultGas
     ) internal returns (bytes32) {
-        address target = _check(recipient, value);
+        address target = _requireRecipient(recipient, value);
         ICrossDomainMessenger(messenger)
             .sendMessage(
                 target,
@@ -53,7 +53,7 @@ library OpStackMessage {
         pure
         returns (uint256)
     {
-        _check(recipient, 0);
+        _requireRecipient(recipient, 0);
         minGasLimitFrom(attributes, defaultGas);
         return 0;
     }
@@ -66,7 +66,7 @@ library OpStackMessage {
         return ICrossDomainMessenger(msg.sender).xDomainMessageSender();
     }
 
-    function _check(bytes memory recipient, uint256 value) private pure returns (address) {
+    function _requireRecipient(bytes memory recipient, uint256 value) private pure returns (address) {
         if (value != 0) revert OpStackValueNotSupported(value);
         return ProviderAddress.evmRecipient(recipient);
     }

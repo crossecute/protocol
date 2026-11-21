@@ -12,7 +12,7 @@ import {IRefValidator} from "src/registry/IRefValidator.sol";
 ///      which has caused real production bugs. Accepting a short form here would give
 ///      one address two distinct registry keys, so anything but 32 bytes is rejected.
 contract MoveValidator is IRefValidator {
-    function validateRef(bytes calldata interop) external pure override {
+    function requireRef(bytes calldata interop) external pure override {
         Erc7930.Interop memory io = Erc7930.parseStrict(interop);
         if (!Move.isMoveChain(io.chainType)) revert Move.NotMoveChain();
         // Zero-length address is a Chain Identifier, which has no address to check.

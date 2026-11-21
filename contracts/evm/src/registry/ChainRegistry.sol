@@ -53,7 +53,7 @@ struct ChainSupport {
 ///
 /// @dev It holds a directory of chainKeys and message providers, and the per-chain policy a
 ///      transceiver consults before recording anything: `provenanceFor`, `isSuspended`,
-///      `validateLocation`, `expectedTransceiver`, and `commitmentFor`. It holds no routes and
+///      `requireLocation`, `expectedTransceiver`, and `commitmentFor`. It holds no routes and
 ///      no counterparts, and no conduit reads it, so a compromised registry cannot misroute a
 ///      conduit's payload.
 ///
@@ -226,7 +226,7 @@ contract ChainRegistry is Ownable {
     }
 
     /// @notice Drop a chain from the directory.
-    /// @dev Stops onboarding only: `validateLocation` requires membership, so no transceiver
+    /// @dev Stops onboarding only: `requireLocation` requires membership, so no transceiver
     ///      can record a new counterpart there. Its identifier and grade stay, so transceivers
     ///      keep bootstrapping to it and accepting its reports; removal must not strand
     ///      conduits. Cutting a chain off is `setSuspended`, which still applies after removal.
@@ -461,7 +461,7 @@ contract ChainRegistry is Ownable {
     /// @dev True exactly where this contract cannot recompute addresses, so it cannot
     ///      disagree with the grades. Where a receiver landed is held by its transmitter, not
     ///      here. The home's side of `TransceiverExtension.addressesDiverge`.
-    function requiresReceiverCallback(bytes32 chainKey) external view returns (bool) {
+    function isReceiverCallbackRequired(bytes32 chainKey) external view returns (bool) {
         return !_isEvmDerivable(chainKey);
     }
 
@@ -469,14 +469,14 @@ contract ChainRegistry is Ownable {
     ///         ERC-7930 canonicity rules, that it is on `chainKey`, and the chain's validator.
     /// @dev A transceiver calls this before recording a counterpart, so one validator per chain serves
     ///      every provider.
-    function validateLocation(bytes32 chainKey, bytes calldata interop) external view {
+    function requireLocation(bytes32 chainKey, bytes calldata interop) external view {
         if (!_chainKeys.contains(chainKey)) revert UnknownChainKey();
         // `parseStrict` runs inside: rejects bad versions, length mismatches, trailing
         // bytes, and non-minimal eip155 chain references.
         if (Erc7930.chainKey(interop) != chainKey) revert UnknownChainKey();
 
         IRefValidator v = _validatorOf[chainKey];
-        if (address(v) != address(0)) v.validateRef(interop);
+        if (address(v) != address(0)) v.requireRef(interop);
     }
 
     /// @notice Attach a value-range validator to a chain.
@@ -495,7 +495,7 @@ contract ChainRegistry is Ownable {
         bytes memory identifier = _chainIdentifier[chainKey];
         if (identifier.length == 0) revert UnknownChainKey();
         if (!_messageProviders.contains(messageProvider)) revert UnknownMessageProvider();
-        Move.validate(q, Erc7930.parseStrict(identifier).chainType);
+        Move.requireQualifier(q, Erc7930.parseStrict(identifier).chainType);
 
         bytes32 qh = Move.hash(q);
         bytes memory existing = _qualifiers[chainKey][messageProvider];

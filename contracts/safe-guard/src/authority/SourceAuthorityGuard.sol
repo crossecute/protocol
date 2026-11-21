@@ -177,7 +177,7 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
             if (childUpdates.length != 0) revert ActivationChildUpdates();
             _requireSupportedConfiguration(safe);
             _requireNamedPositionsExecuted(newGraph);
-            updateHash = ReceiverAuthority.verifyActivation(
+            updateHash = ReceiverAuthority.requireActivation(
                 block.chainid, safe, evidence, newGraph, _liveRecord(safe, newGraph.nodes[0].record), recognized
             );
         } else {
@@ -199,7 +199,7 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
                     revert PositionNotExecuted(child, position);
                 }
             }
-            updateHash = ReceiverAuthority.verifyUpdate(
+            updateHash = ReceiverAuthority.requireUpdate(
                 selected,
                 staged.currentGraph,
                 ReceiverAuthority.UpdateRequest(block.chainid, safe, evidence, newGraph, childUpdates, all)

@@ -68,18 +68,18 @@ library StarknetDerive {
     }
 
     /// @notice A contract address must be strictly below L2_ADDRESS_UPPER_BOUND.
-    function validateAddress(uint256 addr) internal pure {
+    function requireAddress(uint256 addr) internal pure {
         if (addr >= L2_ADDRESS_UPPER_BOUND) revert AddressOutOfRange();
     }
 
     /// @notice A generic field element must be below FIELD_PRIME. Class hashes use
     ///         this wider bound (CLASS_HASH_UPPER_BOUND == FIELD_SIZE), not the
     ///         address bound.
-    function validateFelt(uint256 v) internal pure {
+    function requireFelt(uint256 v) internal pure {
         if (v >= FIELD_PRIME) revert FeltOutOfRange();
     }
 
-    function validateClassHash(uint256 v) internal pure {
+    function requireClassHash(uint256 v) internal pure {
         if (v >= FIELD_PRIME) revert ClassHashOutOfRange();
     }
 

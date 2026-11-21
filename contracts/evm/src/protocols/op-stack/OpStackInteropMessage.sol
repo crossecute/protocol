@@ -34,7 +34,7 @@ library OpStackInteropMessage {
         bytes[] memory attributes,
         uint256 value
     ) internal returns (bytes32) {
-        (uint256 destination, address target) = _check(routes, recipient, attributes, value);
+        (uint256 destination, address target) = _requireSend(routes, recipient, attributes, value);
         bytes memory message = abi.encodeCall(IOpStackRecipient.receiveOpStackMessage, (payload));
         // forge-lint: disable-next-line(unused-return) the hash is in the messenger's event; sends return 0
         IL2ToL2CrossDomainMessenger(MESSENGER).sendMessage(destination, target, message);
@@ -43,7 +43,7 @@ library OpStackInteropMessage {
 
     /// @dev Zero, after the same checks `send` applies, so it reverts wherever the send would.
     function quote(address routes, bytes memory recipient, bytes[] memory attributes) internal view returns (uint256) {
-        _check(routes, recipient, attributes, 0);
+        _requireSend(routes, recipient, attributes, 0);
         return 0;
     }
 
@@ -55,7 +55,7 @@ library OpStackInteropMessage {
         return IL2ToL2CrossDomainMessenger(msg.sender).crossDomainMessageContext();
     }
 
-    function _check(address routes, bytes memory recipient, bytes[] memory attributes, uint256 value)
+    function _requireSend(address routes, bytes memory recipient, bytes[] memory attributes, uint256 value)
         private
         view
         returns (uint256 destination, address target)

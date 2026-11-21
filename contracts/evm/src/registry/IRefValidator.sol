@@ -8,6 +8,6 @@ pragma solidity ^0.8.20;
 ///      `ChainRegistry.setValidator`.
 interface IRefValidator {
     /// @param interop Canonical ERC-7930 bytes, already structurally parsed.
-    /// @dev Reverts to reject. Called by `ChainRegistry.validateLocation`.
-    function validateRef(bytes calldata interop) external view;
+    /// @dev Reverts to reject. Called by `ChainRegistry.requireLocation`.
+    function requireRef(bytes calldata interop) external view;
 }

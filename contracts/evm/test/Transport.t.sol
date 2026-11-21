@@ -90,7 +90,7 @@ contract LiveRegistry {
         return true;
     }
 
-    function requiresReceiverCallback(bytes32) external pure returns (bool) {
+    function isReceiverCallbackRequired(bytes32) external pure returns (bool) {
         return false;
     }
 }

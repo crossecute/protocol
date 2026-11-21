@@ -55,7 +55,7 @@ library AuthorityMutations {
                 }
                 owners[0] = SafeOwner(owner, _kindIn(expected, owner));
                 ++count;
-                threshold = _checkThreshold(i, newThreshold, count);
+                threshold = _requireThreshold(i, newThreshold, count);
             } else if (selector == AuthorityUpdateEncoding.REMOVE_OWNER) {
                 (address prevOwner, address owner, uint256 newThreshold) =
                     abi.decode(arguments, (address, address, uint256));
@@ -64,7 +64,7 @@ library AuthorityMutations {
                 for (uint256 j = at; j < count; ++j) {
                     owners[j] = owners[j + 1];
                 }
-                threshold = _checkThreshold(i, newThreshold, count);
+                threshold = _requireThreshold(i, newThreshold, count);
             } else if (selector == AuthorityUpdateEncoding.SWAP_OWNER) {
                 (address prevOwner, address oldOwner, address newOwner) =
                     abi.decode(arguments, (address, address, address));
@@ -72,7 +72,7 @@ library AuthorityMutations {
                 uint256 at = _requirePredecessor(i, owners, count, prevOwner, oldOwner);
                 owners[at] = SafeOwner(newOwner, _kindIn(expected, newOwner));
             } else if (selector == AuthorityUpdateEncoding.CHANGE_THRESHOLD) {
-                threshold = _checkThreshold(i, abi.decode(arguments, (uint256)), count);
+                threshold = _requireThreshold(i, abi.decode(arguments, (uint256)), count);
             } else {
                 revert AuthorityUpdateEncoding.InvalidMutation(i);
             }
@@ -116,7 +116,7 @@ library AuthorityMutations {
     /// @dev The threshold Safe accepts after a step: nonzero and at most the owner count. Safe
     ///      skips changeThreshold when the value is unchanged, but an unchanged threshold always
     ///      meets this, so the accepted set is the same.
-    function _checkThreshold(uint256 index, uint256 threshold, uint256 count) private pure returns (uint256) {
+    function _requireThreshold(uint256 index, uint256 threshold, uint256 count) private pure returns (uint256) {
         if (threshold == 0 || threshold > count) revert MutationThreshold(index, threshold, count);
         return threshold;
     }

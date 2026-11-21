@@ -140,7 +140,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         bool typed;
         bytes memory supplied;
         (chainKey, route, typed, supplied) = _decodeBootstrap(payload);
-        body = SignedTransmitterLib.bootstrapBody(chainKey, typed, supplied);
+        body = SignedTransmitterLib.requireBootstrapBody(chainKey, typed, supplied);
     }
 
     /// @dev Later leaf relays need an explicit source registration; keeping signatures out of

@@ -20,7 +20,7 @@ import {AuthorityRecognition} from "./AuthorityRecognition.sol";
 /// @dev Owns graph authentication: canonical structure, each update kind's root record, the
 ///      flat child-update pass and every update's votes. Receiver submission recognizes pinned
 ///      source calls; the source guard supplies recognized calls. A receiver starts from its
-///      bootstrap and rejects submitted activations; the source guard uses verifyActivation.
+///      bootstrap and rejects submitted activations; the source guard uses requireActivation.
 library ReceiverAuthority {
     enum UpdateKind {
         Activation,
@@ -168,14 +168,14 @@ library ReceiverAuthority {
     }
 
     /// @notice Verify application evidence under the selected graph without changing its head.
-    function verify(State storage $, uint256 sourceChainId, address sourceSafe, SafeTxEvidence memory evidence)
+    function requireEvidence(State storage $, uint256 sourceChainId, address sourceSafe, SafeTxEvidence memory evidence)
         external
         view
         returns (bytes32 safeTxHash)
     {
         (SafeAuthorityRecord memory voters, VoterPositions memory positions) = _storedVoters($, 0);
         safeTxHash = SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, sourceSafe, sourceChainId);
-        _verifyVotes(sourceChainId, safeTxHash, evidence, VoteContext(sourceSafe, voters, positions));
+        _requireVotes(sourceChainId, safeTxHash, evidence, VoteContext(sourceSafe, voters, positions));
     }
 
     function _storedVoters(State storage $, uint256 extra)
@@ -234,7 +234,7 @@ library ReceiverAuthority {
     ///      `live` with each descendant counted at the position the graph names. The caller has
     ///      checked that every named position is an executed head with that record.
     /// @return updateHash The activation's SafeTx hash, the Safe's first head.
-    function verifyActivation(
+    function requireActivation(
         uint256 sourceChainId,
         address sourceSafe,
         SafeTxEvidence memory evidence,
@@ -262,13 +262,15 @@ library ReceiverAuthority {
             table.rows[table.count++] =
                 ProvenPosition(records[i].safe, entries[i].position, entries[i].recordHash, records[i], false);
         }
-        _verifyVotes(sourceChainId, updateHash, evidence, VoteContext(sourceSafe, live, VoterPositions(table, entries)));
+        _requireVotes(
+            sourceChainId, updateHash, evidence, VoteContext(sourceSafe, live, VoterPositions(table, entries))
+        );
     }
 
     /// @notice Verify a source update using the exact graph committed by its current selection.
     /// @dev The guard persists only the returned selection hashes; receivers use the same
     ///      transition check against their stored full graph.
-    function verifyUpdate(
+    function requireUpdate(
         AuthoritySelection memory current,
         AuthorityGraph memory currentGraph,
         UpdateRequest memory request
@@ -280,7 +282,7 @@ library ReceiverAuthority {
         _requireRoot(request.sourceSafe, currentGraph);
         (SafeAuthorityRecord memory voters, VoterPositions memory positions) =
             _voters(_requireCanonical(currentGraph), entries, request.childUpdates.length);
-        (updateHash,) = _verifyUpdate(current, request, VoteContext(request.sourceSafe, voters, positions));
+        (updateHash,) = _requireUpdate(current, request, VoteContext(request.sourceSafe, voters, positions));
     }
 
     function submit(State storage $, SubmissionRequest memory request) external returns (bytes32 updateHash) {
@@ -297,16 +299,17 @@ library ReceiverAuthority {
         (SafeAuthorityRecord memory voters, VoterPositions memory positions) =
             _storedVoters($, request.childUpdates.length);
         AuthorityEntry[] memory entries;
-        (updateHash, entries) = _verifyUpdate($.selection, update, VoteContext(request.context.safe, voters, positions));
+        (updateHash, entries) =
+            _requireUpdate($.selection, update, VoteContext(request.context.safe, voters, positions));
         _store($, request.newGraph, entries, recognized.root.update.newAuthorityHash);
         $.selection = AuthoritySelection(updateHash, recognized.root.update.newAuthorityHash);
     }
 
-    function _verifyUpdate(AuthoritySelection memory current, UpdateRequest memory request, VoteContext memory previous)
-        private
-        view
-        returns (bytes32 updateHash, AuthorityEntry[] memory newEntries)
-    {
+    function _requireUpdate(
+        AuthoritySelection memory current,
+        UpdateRequest memory request,
+        VoteContext memory previous
+    ) private view returns (bytes32 updateHash, AuthorityEntry[] memory newEntries) {
         _requireRoot(request.sourceSafe, request.newGraph);
         updateHash =
             SafeHashes.transactionHash(request.evidence.signedSafeTx.safeTx, request.sourceSafe, request.sourceChainId);
@@ -392,7 +395,7 @@ library ReceiverAuthority {
         for (uint256 i = seeds; i < table.count; ++i) {
             if (!table.rows[i].used) revert UnusedChildUpdate(i - seeds);
         }
-        _verifyVotes(
+        _requireVotes(
             request.sourceChainId,
             updateHash,
             request.evidence,
@@ -444,7 +447,7 @@ library ReceiverAuthority {
 
         bytes32 position = SafeHashes.transactionHash(child.evidence.signedSafeTx.safeTx, votes.safe, sourceChainId);
         if (_find(table, votes.safe, position) != table.count) revert RepeatedChildUpdate(index);
-        _verifyVotes(sourceChainId, position, child.evidence, votes);
+        _requireVotes(sourceChainId, position, child.evidence, votes);
         table.rows[table.count++] = ProvenPosition(votes.safe, position, newRecordHash, child.newRecord, false);
     }
 
@@ -472,7 +475,7 @@ library ReceiverAuthority {
     /// @dev Full portable quorum of `voters` over `safeTxHash`, safe's SafeTx in evidence, as a
     ///      Safe 1.5.0 signature blob. Nested Safe voters, at any depth, count under
     ///      _voterRecord(positions, ...).
-    function _verifyVotes(
+    function _requireVotes(
         uint256 sourceChainId,
         bytes32 safeTxHash,
         SafeTxEvidence memory evidence,
@@ -482,7 +485,7 @@ library ReceiverAuthority {
         assembly ("memory-safe") {
             context := votes
         }
-        SafeQuorum.verify(
+        SafeQuorum.requireQuorum(
             OwnerSource(context, sourceChainId, _openVoter, _isVoterOwner),
             votes.safe,
             safeTxHash,

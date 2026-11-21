@@ -87,7 +87,7 @@ contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver {
     ///      unmapped emitter chain reverts in the table.
     function executeVAAv1(bytes calldata multiSigVaa) external payable override {
         (uint16 emitterChain, address emitter, bytes calldata payload) =
-            WormholeMessage.verify(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
+            WormholeMessage.consumeVaa(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
         _onProviderInbound(emitterChain, emitter, payload);
     }
 

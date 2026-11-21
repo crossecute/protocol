@@ -116,7 +116,7 @@ library SafeAuthorityGraph {
         }
 
         (SafeOwner[] memory owners, uint256 threshold) = load(context, safe);
-        _checkGroup(safe, owners, threshold);
+        _requireGroup(safe, owners, threshold);
 
         index = traversal.count;
         if (index == traversal.records.length) _grow(traversal);
@@ -131,7 +131,7 @@ library SafeAuthorityGraph {
         traversal.open[index] = false;
     }
 
-    function _checkGroup(address safe, SafeOwner[] memory owners, uint256 threshold) private pure {
+    function _requireGroup(address safe, SafeOwner[] memory owners, uint256 threshold) private pure {
         if (threshold == 0 || threshold > owners.length) revert InvalidThreshold(safe, threshold, owners.length);
         for (uint256 i; i < owners.length; ++i) {
             address owner = owners[i].owner;

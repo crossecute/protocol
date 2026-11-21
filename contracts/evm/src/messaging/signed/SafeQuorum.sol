@@ -41,7 +41,7 @@ library SafeQuorum {
 
     /// @notice Require a valid quorum of `safe` over `dataHash`, including any nested approvals.
     /// @dev Duplicate child/message approvals revert; unused approvals are ignored.
-    function verify(
+    function requireQuorum(
         OwnerSource memory source,
         address safe,
         bytes32 dataHash,
@@ -56,11 +56,11 @@ library SafeQuorum {
                 ) revert DuplicateNestedSafeApproval(approvals[i].childSafe, approvals[i].messageHash);
             }
         }
-        _check(source, safe, dataHash, signatures, approvals);
+        _requireSignatures(source, safe, dataHash, signatures, approvals);
     }
 
     /// @dev Strictly ascending signers stop a repeated signer counting twice.
-    function _check(
+    function _requireSignatures(
         OwnerSource memory source,
         address safe,
         bytes32 dataHash,
@@ -100,7 +100,7 @@ library SafeQuorum {
         }
         signer = SafeSignaturesUtils.contractOwner(r);
         if (!source.isOwner(owners, signer, OWNER_SAFE)) revert NotAnOwner(safe, signer);
-        _checkNested(
+        _requireNested(
             source,
             signer,
             dataHash,
@@ -111,7 +111,7 @@ library SafeQuorum {
 
     /// @dev Binding to the child and source-chain domain proves the child authorized this parent
     ///      hash without calling a destination copy of the Safe.
-    function _checkNested(
+    function _requireNested(
         OwnerSource memory source,
         address child,
         bytes32 parentHash,
@@ -121,13 +121,13 @@ library SafeQuorum {
         uint256 chainId = source.chainId;
         bytes32 messageHash = SafeSignaturesUtils.nestedHash(parentHash, child, chainId);
         if (signatures.length != 0) {
-            _check(source, child, messageHash, signatures, approvals);
+            _requireSignatures(source, child, messageHash, signatures, approvals);
             return;
         }
         uint256 found = SafeSignaturesUtils.indexOfApproval(approvals, child, messageHash);
         if (found == approvals.length) revert MissingNestedSafeApproval(child, messageHash);
         SignedSafeTx memory approval = approvals[found].approval;
-        _check(
+        _requireSignatures(
             source,
             child,
             SafeSignaturesUtils.approvalHash(child, parentHash, approval.safeTx, chainId),

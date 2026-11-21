@@ -115,7 +115,7 @@ library CcipMessage {
             }
             if ((uint32(options.requestedFinalityConfig) & 0xfffe0000) != 0) revert InvalidCcipV3Options();
             FinalityCodec._validateRequestedFinality(options.requestedFinalityConfig);
-            CcipConfig.validateCCVs(options.ccvs);
+            CcipConfig.requireCCVs(options.ccvs);
             return ExtraArgsCodec._encodeGenericExtraArgsV3(options);
         }
         (bool present, bytes memory encoded) = ProviderAttribute.body(attributes, EXTRA_ARGS_ATTRIBUTE, 64);

@@ -130,7 +130,7 @@ library Move {
     }
 
     /// @notice Structural validation of a qualifier against its chain.
-    function validate(MoveQualifier memory q, uint16 chainType) internal pure {
+    function requireQualifier(MoveQualifier memory q, uint16 chainType) internal pure {
         if (!isMoveChain(chainType)) revert NotMoveChain();
         if (q.kind == MoveKind.Unset) revert BadKind();
 
