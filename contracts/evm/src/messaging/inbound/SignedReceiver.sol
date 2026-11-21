@@ -275,7 +275,7 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
         return _authority().selectedRecords();
     }
 
-    /// @notice The nonce the next new execution leaf must carry.
+    /// @inheritdoc ISignedReceiver
     function nextNonce() external view returns (uint256) {
         return _signedStorage().nextNonce;
     }

@@ -21,6 +21,9 @@ interface ISignedReceiver {
         ExecutionLeaf calldata leaf,
         bytes32[] calldata proof
     ) external payable;
+
+    /// @notice The nonce the next new execution leaf must carry.
+    function nextNonce() external view returns (uint256);
 }
 
 /// @notice What a transceiver asks of the receiver logic for a signed conduit. The receiver is
