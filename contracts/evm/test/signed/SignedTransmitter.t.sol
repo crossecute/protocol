@@ -511,7 +511,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
         _bootstrap();
         mailbox.setFeePerByte(10);
         SafeTxEvidence memory evidence = _send(_receiverHere(), _payload());
-        uint256 quote = st.quoteSignedMessage(evidence);
+        uint256 quote = st.quoteMessageSigned(evidence);
         uint256 before = address(st).balance;
         address treasury = ext(address(t)).treasury();
         uint256 treasuryBefore = treasury.balance;

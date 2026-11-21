@@ -261,7 +261,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
 
     /// @notice Quote the plain send path, reverting when this transmitter is in signed mode.
     /// @dev Signed transport fees depend on signatures absent from these arguments, so signed
-    ///      callers must use `quoteSignedMessage` instead.
+    ///      callers must use `quoteMessageSigned` instead.
     function quoteMessageBreakdown(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
         public
         view
@@ -287,7 +287,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     /// @notice Build the signed standalone payload and return the fee its send would pay.
     /// @dev Shares the send builder, including live nested approval collection, so a quote cannot
     ///      omit evidence bytes or price a different message.
-    function quoteSignedMessage(SafeTxEvidence calldata evidence) external view returns (uint256) {
+    function quoteMessageSigned(SafeTxEvidence calldata evidence) external view returns (uint256) {
         _requireSigned();
         evidence;
         (bytes memory recipient, bytes memory wire, bytes[] memory attributes) =

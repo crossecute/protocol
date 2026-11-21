@@ -147,7 +147,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
                 transmitter.sendMessage, (Erc7930.encodeEvm(DEST, b.conduit), abi.encode(new Call[](0)), new bytes[](0))
             )
         );
-        uint256 fee = transmitter.quoteSignedMessage(b.message);
+        uint256 fee = transmitter.quoteMessageSigned(b.message);
         uint256 treasuryBefore = factory.treasury().balance;
         _exec(b.message);
         MockOft.Sent memory sent = oft.sent(1);
