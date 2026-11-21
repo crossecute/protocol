@@ -92,7 +92,7 @@ contract EraDeliveryGas is Script {
             )
         );
         console.logBytes(
-            abi.encodeCall(HyperlaneTransceiverBase.setDomain, (ChainKey.forEvm(HOME_DOMAIN), HOME_DOMAIN))
+            abi.encodeCall(HyperlaneTransceiverBase.setProviderId, (ChainKey.forEvm(HOME_DOMAIN), HOME_DOMAIN))
         );
 
         // Two bootstraps for fresh owners, so each creates a conduit against cold storage, and

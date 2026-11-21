@@ -121,7 +121,7 @@ abstract contract HyperlaneFixture is ProviderGasFixture {
     }
 
     function _setProviderId(address t, bytes32 chainKey, uint256 providerId) internal override {
-        HyperlaneTransceiver(payable(t)).setDomain(chainKey, uint32(providerId));
+        HyperlaneTransceiver(payable(t)).setProviderId(chainKey, uint32(providerId));
     }
 
     function _configureRemote(address t, address) internal override {

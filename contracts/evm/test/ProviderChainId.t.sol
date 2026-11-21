@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {ProviderChainId} from "src/protocols/ProviderChainId.sol";
 
 /// @notice A harness exposing the internal seam, standing in for a real binding's typed
-///         `setEid`/`setSelector`/`setDomain` wrapper. The mixin does not know or care which
+///         `setProviderId` wrapper. The mixin does not know or care which
 ///         provider calls it; this harness exercises it directly, the way each binding's own
 ///         test suite exercises it through its typed wrapper instead.
 contract ProviderChainIdHarness is ProviderChainId {

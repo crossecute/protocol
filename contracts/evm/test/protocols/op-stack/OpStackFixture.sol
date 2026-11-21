@@ -98,7 +98,7 @@ abstract contract OpStackFixture is ProviderGasFixture {
     }
 
     function _setProviderId(address t, bytes32 chainKey, uint256 providerId) internal override {
-        OpStackTransceiver(payable(t)).setMessenger(chainKey, address(uint160(providerId)));
+        OpStackTransceiver(payable(t)).setProviderId(chainKey, address(uint160(providerId)));
     }
 
     function _configureRemote(address t, address) internal override {

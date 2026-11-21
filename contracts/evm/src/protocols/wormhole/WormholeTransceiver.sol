@@ -48,7 +48,7 @@ contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver {
     }
 
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape).
-    function setWormholeChain(bytes32 chainKey, uint16 wormholeChain) external onlyOwner {
+    function setProviderId(bytes32 chainKey, uint16 wormholeChain) external onlyOwner {
         _setProviderId(chainKey, wormholeChain);
     }
 

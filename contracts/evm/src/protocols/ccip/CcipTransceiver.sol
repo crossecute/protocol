@@ -39,7 +39,7 @@ abstract contract CcipTransceiverBase is ProviderTransceiver, CcipPolicy, IAny2E
     }
 
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape).
-    function setSelector(bytes32 chainKey, uint64 selector) external onlyOwner {
+    function setProviderId(bytes32 chainKey, uint64 selector) external onlyOwner {
         _setProviderId(chainKey, selector);
     }
 

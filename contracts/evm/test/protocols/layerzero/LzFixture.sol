@@ -134,7 +134,7 @@ abstract contract LzFixture is ProviderGasFixture {
     }
 
     function _setProviderId(address t, bytes32 chainKey, uint256 providerId) internal override {
-        LzTransceiver(payable(t)).setEid(chainKey, uint32(providerId));
+        LzTransceiver(payable(t)).setProviderId(chainKey, uint32(providerId));
     }
 
     /// @dev The peer must be the counterpart (#62), so a transceiver with no registry, as the

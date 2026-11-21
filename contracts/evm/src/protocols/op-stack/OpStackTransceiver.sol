@@ -37,7 +37,7 @@ contract OpStackTransceiver is ProviderTransceiver, IOpStackRecipient {
 
     /// @notice Name the messenger on this chain that reaches `chainKey`.
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape).
-    function setMessenger(bytes32 chainKey, address messenger) external onlyOwner {
+    function setProviderId(bytes32 chainKey, address messenger) external onlyOwner {
         _setProviderId(chainKey, uint160(messenger));
     }
 
