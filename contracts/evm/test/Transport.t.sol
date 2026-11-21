@@ -1073,11 +1073,7 @@ contract TransportTest is Test {
 
     /* ============================ the conduit's view =========================== */
 
-    /// @dev A conduit holds one transceiver address and one interface over it. `routeTo`
-    ///      joins bootstrap and the quotes on `IConduitTransceiver` rather than living on a
-    ///      second type. It answers for a destination the conduit has not bootstrapped,
-    ///      which is the one thing its own table cannot do: that table is written by
-    ///      `bootstrap`, so before the first message to a chain it holds nothing.
+    /// @dev The shared transceiver exposes routes independently of any conduit bootstrap.
     function test_theConduitInterfaceResolvesARoute() public {
         MockTransceiver t = new MockTransceiver();
         t.initialize(address(this), address(new MockTransmitter()));
@@ -1085,7 +1081,7 @@ contract TransportTest is Test {
         assertEq(
             IConduitTransceiver(address(t)).routeTo(ChainKey.forEvm(DEST)),
             Erc7930.encodeEvmChain(8453),
-            "the provider's own name for the chain, opaque"
+            "ERC-7930 chain identifier"
         );
     }
 
@@ -1107,10 +1103,8 @@ contract TransportTest is Test {
     }
 }
 
-/// @dev zkSync and Tron are `eip155` chains whose CREATE2 formula differs, so a conduit's
-///      address there is not the one it occupies at home. That is the case the whole
-///      counterpart table exists for: a derived peer is wrong on exactly these chains, and
-///      being `eip155` they cannot be excluded by chain type the way a non-EVM chain is.
+/// @dev Exercises the transmitter's recipient check when the recorded receiver
+///      address differs from the transmitter's address.
 contract DivergingDestinationTest is Test {
     MockTransmitter transmitter;
     MockTransceiver transceiver;
@@ -1134,10 +1128,9 @@ contract DivergingDestinationTest is Test {
         transmitter.bootstrap(bootstrapPayload(ZKSYNC, new Call[](0)), new bytes[](0));
     }
 
-    /// @dev Bootstrap records a presumption, and on a diverging chain it is wrong. Refusing
-    ///      the send is correct: the address holds no receiver, so the message would be paid
-    ///      for and fail on arrival.
-    function test_beforeCorrectionTheDivergedReceiverIsUnreachable() public {
+    /// @dev The mock treats all destinations as parity chains, so bootstrap records the
+    ///      transmitter's address and the recipient check refuses a different address.
+    function test_recipientMustMatchTheRecordedAddress() public {
         bytes memory recipient = Erc7930.encodeEvm(ZKSYNC, address(bytes20(DIVERGED)));
         bytes memory payload = transmitter.payloadForCalls(new Call[](0));
 
@@ -1146,8 +1139,8 @@ contract DivergingDestinationTest is Test {
         transmitter.sendMessage(recipient, payload, new bytes[](0));
     }
 
-    /// @dev Once zkSync reports its receiver, the transmitter can send to that address.
-    function test_afterCorrectionTheDivergedReceiverIsReachable() public {
+    /// @dev The report callback supplies the address the send path accepts.
+    function test_reportedReceiverIsReachable() public {
         bytes32 key = ChainKey.forEvm(ZKSYNC);
         bytes memory recipient = Erc7930.encodeEvm(ZKSYNC, address(bytes20(DIVERGED)));
         bytes memory payload = transmitter.payloadForCalls(new Call[](0));
@@ -1161,9 +1154,8 @@ contract DivergingDestinationTest is Test {
         assertEq(transmitter.destinationReceiverOn(key), DIVERGED);
     }
 
-    /// @dev The home address stops being accepted once the real one is recorded, so the two
-    ///      cannot both be live and a stale caller fails loudly.
-    function test_correctionRevokesTheHomeAddress() public {
+    /// @dev The recipient check uses the reported receiver after the callback.
+    function test_reportedReceiverDisplacesThePredictedAddress() public {
         bytes32 key = ChainKey.forEvm(ZKSYNC);
         bytes memory stale = Erc7930.encodeEvm(ZKSYNC, address(transmitter));
         bytes memory payload = transmitter.payloadForCalls(new Call[](0));

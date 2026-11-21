@@ -60,10 +60,8 @@ contract OwnedTransmitter {
     }
 }
 
-/// @dev A flag the clone can see. Clone storage starts empty and is never written by
-///      the test, so the switch is reached through an immutable in the implementation:
-///      immutables live in the implementation's bytecode, which is exactly what an
-///      EIP-1167 clone delegatecalls into.
+/// @dev An immutable implementation reference lets receiver proxies share this
+///      switchboard while looking up failure flags by proxy address.
 contract Switchboard {
     mapping(address receiver => bool) public shouldRevert;
 
@@ -350,8 +348,7 @@ contract CommitFinalizeTest is Test {
         r.finalize(new Call[](0));
     }
 
-    /// @dev An uninitialized clone authorizes nobody, so `execute` cannot be front-run
-    ///      onto a counterfactual receiver before the transceiver deploys it.
+    /// @dev The receiver rejects execution until it has a source transmitter.
     function test_executeOnAnUninitializedReceiverAuthorizesNobody() public {
         MockReceiver bare = new MockReceiver();
         vm.expectRevert(ReceiverBase.NotSourceTransmitter.selector);
@@ -424,23 +421,20 @@ contract CommitFinalizeTest is Test {
         t.inbound(transmitter, _deferred(address(r), keccak256("second")));
     }
 
-    /// @dev The commitment is what manufactures the receiver. Arrival creates the clone
-    ///      at its counterfactual address and hands it the hash in one step; the array is
-    ///      supplied later, by anyone.
+    /// @dev Bootstrap deploys the receiver at the predicted address and its setup
+    ///      self-call records the commitment for later finalization.
     function test_arrivalDeploysReceiverAtPredictedAddressHoldingTheCommitment() public {
         Call[] memory calls = _calls();
         bytes32 pending = hashOf(calls);
         address predicted = ext(address(t)).predictConduit(transmitter, bytes32(0), home());
-        assertEq(predicted.code.length, 0, "not deployed before the first commitment");
+        assertEq(predicted.code.length, 0, "no receiver before bootstrap");
 
-        MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
-        vm.prank(address(_r_transmitter));
-        _r_transmitter.commit(pending);
+        t.inbound(transmitter, _deferred(predicted, pending));
 
-        assertTrue(predicted.code.length != 0, "arrival manufactured it");
+        assertGt(predicted.code.length, 0, "bootstrap deployed the receiver");
         MockReceiver r = MockReceiver(payable(predicted));
         assertEq(r.sourceTransmitter(), address(r));
-        assertTrue(r.isCommitted(pending), "and it holds the bridged commitment");
+        assertTrue(r.isCommitted(pending), "setup recorded the commitment");
     }
 
     /// @dev The salt is the owner, their salt, and the home, none of which a payload changes,
@@ -510,21 +504,17 @@ contract CommitFinalizeTest is Test {
         assertEq(r.pendingCount(), 0);
     }
 
-    /// @dev Creation and the payload are one transaction. The clone is created and its
-    ///      payload runs inside `initialize`, so there is no window in which a receiver
-    ///      exists with its transmitter set and its payload unperformed, and no second
-    ///      call from the transceiver, which has no way to reach a receiver afterwards.
+    /// @dev The receiver runs the bootstrap's calls during initialization.
     function test_creationAndPayloadAreOneStep() public {
         Call[] memory calls = _calls();
-        bytes32 pending = hashOf(calls);
+        address predicted = ext(address(t)).predictConduit(transmitter, bytes32(0), home());
 
         vm.recordLogs();
-        MockReceiver _r_transmitter = _bootstrapped(t, transmitter);
-        vm.prank(address(_r_transmitter));
-        _r_transmitter.commit(pending);
-        MockReceiver r = MockReceiver(payable(ext(address(t)).predictConduit(transmitter, bytes32(0), home())));
+        t.inbound(transmitter, calls);
 
-        assertTrue(r.isCommitted(pending), "the payload pinned the hash itself");
+        MockReceiver r = MockReceiver(payable(predicted));
+        assertEq(r.executedCount(), calls.length, "setup executed the calls");
+        assertEq(r.pendingCount(), 0, "setup needed no deferred approval");
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 inits;
         for (uint256 i; i < logs.length; ++i) {
@@ -624,12 +614,10 @@ contract CommitFinalizeTest is Test {
         bare.initialize(msig, address(0));
     }
 
-    /// @dev A transceiver is a proxy, not a cloned receiver, and does not inherit the
-    ///      clone's `initialize` at all, so there is no one-shot slot for anyone to
-    ///      consume, rather than an inherited entry point overridden into reverting.
-    function test_transceiverHasNoCloneInitializer() public {
+    /// @dev The transceiver accepts only its provider's initialization entry point.
+    function test_transceiverRejectsAnUnsupportedInitializer() public {
         (bool ok,) = address(t).call(abi.encodeWithSignature("initialize(address,bytes32)", transmitter, bytes32(0)));
-        assertFalse(ok, "no clone initializer on a transceiver");
+        assertFalse(ok, "unsupported transceiver initializer");
     }
 
     /// @dev Each transceiver fixes its receiver implementation at initialization.
@@ -823,7 +811,7 @@ contract CommitFinalizeTest is Test {
         vm.expectRevert(RevertingReceiver.Nope.selector);
         RevertingReceiver(payable(poisoned)).finalize(stuck);
 
-        // The other sender is entirely unaffected, now and repeatedly.
+        // The other receiver can finalize independently.
         RevertingReceiver r2 =
             RevertingReceiver(payable(ext(address(rt)).predictConduit(transmitter2, bytes32(0), home())));
         r2.finalize(fine);
@@ -948,10 +936,8 @@ contract CommitFinalizeTest is Test {
         assertFalse(r.isSourceTransmitter(address(0)));
     }
 
-    /// @dev The deferred payload still works, and this is why: a receiver and its
-    ///      transmitter share one address, so the self-call an approving payload makes to
-    ///      its own `commit` arrives as the source transmitter. If those two addresses
-    ///      ever diverge, this assertion is what fails first.
+    /// @dev On a parity chain the receiver's self-call arrives from the same address
+    ///      as its source transmitter.
     function test_aSelfCallIsTheSourceTransmitter() public {
         (MockReceiver r,) = _deployedReceiver();
         assertEq(r.sourceTransmitter(), address(r));
@@ -1005,7 +991,7 @@ contract CommitFinalizeTest is Test {
 
     /// @dev Zero is the sentinel for cancelled and absent alike, so it can never be an
     ///      approval.
-    function test_receiverStillRefusesAZeroCommitment() public {
+    function test_receiverRejectsAZeroCommitment() public {
         (MockReceiver r,) = _deployedReceiver();
 
         vm.prank(address(r));
@@ -1013,8 +999,7 @@ contract CommitFinalizeTest is Test {
         r.commit(bytes32(0));
     }
 
-    /// @dev Consecutive payloads reuse the same receiver, each pinned and discharged in
-    ///      turn. The clone is created once; every later commitment goes through `commit`.
+    /// @dev The bootstrapped receiver accepts multiple commitments over its lifetime.
     function test_consecutivePayloadsReuseTheReceiver() public {
         (MockReceiver r,) = _deployedReceiver();
 

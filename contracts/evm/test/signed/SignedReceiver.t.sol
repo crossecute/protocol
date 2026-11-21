@@ -58,8 +58,7 @@ contract Sink {
     }
 }
 
-/// @dev The receiver in signed mode (#108): created by the transceiver's two-step arming, then
-///      fed hand-built deliveries through its provider and by direct submission.
+/// @dev Exercises signed receiver initialization, provider delivery, and direct submission.
 contract SignedReceiverTest is Test {
     uint32 constant HOME_DOMAIN = 10;
     uint256 constant SOURCE_CHAIN = 10;
@@ -77,16 +76,12 @@ contract SignedReceiverTest is Test {
         return Records.list(Records.record(SAFE, 2, Records.eoaOwners(Records.pks(1, 2, 3))));
     }
 
-    /// @notice Hash the fixture authority records.
-    /// @dev Initialization tests bind the carried authority to the expected signed-address
-    ///      commitment.
+    /// @notice Compute the expected hash of the fixture's authority graph.
     function _graph() internal pure returns (bytes32) {
         return Records.graphHash(SOURCE_CHAIN, _records());
     }
 
-    /// @notice Deploy a provider receiver with plain initialization but no setup calls.
-    /// @dev Tests can exercise the second signed-initialization step and ensure it is properly
-    ///      restricted.
+    /// @notice Arm a Hyperlane receiver with no setup calls or signed authority.
     function _plainReceiver() internal returns (address r) {
         r = deployConduit(
             address(new HyperlaneReceiver(address(mailbox), address(0x1234), address(0x5678))),
@@ -134,9 +129,7 @@ contract SignedReceiverTest is Test {
         return Records.bootstrap(address(0x1234), _records(), setup);
     }
 
-    /// @notice Call signed initialization as the configured parent transceiver.
-    /// @dev Ordinary setup helpers must satisfy the caller restriction so tests isolate other
-    ///      validation rules.
+    /// @notice Seed signed authority as the receiver's configured parent transceiver.
     function _initialize(address r, bytes memory body) internal {
         SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, SAFE, body);
     }

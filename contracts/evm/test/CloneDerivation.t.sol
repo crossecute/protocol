@@ -28,9 +28,7 @@ contract Impl {
     }
 }
 
-/// @notice Predicting a receiver address on a destination chain. Receivers are EIP-1167
-///         clones, so this is what closes the gap between "we know where the transceiver
-///         is" and "we know where the receiver will be".
+/// @notice Verifies EIP-1167 address derivation against OpenZeppelin and deployed clones.
 contract CloneDerivationTest is Test {
     VmDeriver deriver;
     Impl impl;
@@ -40,10 +38,7 @@ contract CloneDerivationTest is Test {
         impl = new Impl();
     }
 
-    /// @dev The load-bearing check. The 55-byte EIP-1167 layout is hardcoded in
-    ///      `AddressDerive.cloneInitCodeHash`. If OpenZeppelin's proxy bytecode ever differs
-    ///      from it (including a future optimized variant) every predicted receiver
-    ///      address is silently wrong. So it is checked against OZ, not against itself.
+    /// @dev The clone address depends on the exact 55-byte EIP-1167 initcode.
     function test_cloneInitCodeHashMatchesOpenZeppelin() public view {
         bytes32 salt = keccak256("transmitter-x");
         address ozPredicted = Clones.predictDeterministicAddress(address(impl), salt, address(this));
@@ -414,7 +409,7 @@ contract DivergenceIsNotConfigurableTest is Test {
     function test_theParityTransceiverCannotBeToldToDiverge() public {
         LzTransceiver s = new LzTransceiver(ENDPOINT, transceiverExtension());
         TransceiverConfig memory c = _config();
-        ConfigWithFlag memory old = ConfigWithFlag(
+        ConfigWithFlag memory invalidConfig = ConfigWithFlag(
             c.gateways,
             c.transmitterImplementation,
             c.receiverImplementation,
@@ -426,7 +421,7 @@ contract DivergenceIsNotConfigurableTest is Test {
         );
         bytes4 withFlag =
             bytes4(keccak256("initialize((address[],address,address,address,bytes32,bytes32,address,bool))"));
-        (bool ok,) = address(s).call(abi.encodeWithSelector(withFlag, old));
+        (bool ok,) = address(s).call(abi.encodeWithSelector(withFlag, invalidConfig));
         assertFalse(ok, "no initializer takes the flag");
 
         s.initialize(_config(), 0, address(0));

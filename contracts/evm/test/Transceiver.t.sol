@@ -304,9 +304,8 @@ contract TransceiverTest is Test {
         assertEq(ReceiverBase(payable(receiver)).sourceTransmitter(), transmitter, "and answers to it");
     }
 
-    /// @dev The same path from the transmitter's one entry point: the conduit holds no route,
-    ///      counterpart or receiver for Ethereum, and the payload alone names the destination,
-    ///      pays its quote and creates the receiver there.
+    /// @dev The bootstrap payload names the destination. Dispatch records its chain
+    ///      identifier on the conduit and delivery deploys the receiver.
     function test_theTransmittersBootstrapCreatesAReceiverWhereNoRouteExists() public {
         uint256 world = vm.snapshotState();
 
