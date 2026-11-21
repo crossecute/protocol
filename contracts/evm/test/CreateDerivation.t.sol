@@ -16,19 +16,8 @@ contract CreateHarness {
     }
 }
 
-/// @notice Covers `AddressDerive.create`, and specifically the RLP nonce encoding, which
-///         had no test of any kind.
-///
-/// @dev The untested branch was the interesting one. `create3` is the only production
-///      caller and it passes a hardcoded nonce of 1, so the `nonce <= 0x7f` arm was the
-///      only one anything exercised. The arm above it is the one that reaches for a
-///      minimal big-endian encoder, which is exactly the code that was merged with
-///      `Erc7930.minimalBigEndian` rather than kept as a private second copy: an
-///      unverified merge of two byte-identical bodies is still an unverified merge.
-///
-/// @dev The expected values are not computed here. They come from `cast compute-address`,
-///      an independent implementation in another language, so this asserts agreement with
-///      Ethereum rather than agreement with itself.
+/// @notice Checks both RLP nonce encoding branches in `AddressDerive.create`.
+/// @dev Expected addresses come from the independent implementation in `cast compute-address`.
 contract CreateDerivationTest is Test {
     CreateHarness h;
 

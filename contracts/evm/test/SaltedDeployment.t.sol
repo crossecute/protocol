@@ -163,9 +163,7 @@ contract SaltedDeploymentTest is Test {
         );
     }
 
-    /// @dev One salt, one address everywhere. This is the property the whole
-    ///      default-counterpart argument rests on, now stated as inputs rather than
-    ///      assumed from a local deployment.
+    /// @dev Matching CREATE2 inputs give the same counterparty address across parity chains.
     function test_oneSaltGivesOneAddressOnEveryParityChain() public {
         _record(keccak256("initcode"));
 

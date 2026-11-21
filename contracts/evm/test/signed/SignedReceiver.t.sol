@@ -58,11 +58,6 @@ contract Sink {
     }
 }
 
-struct LegacySignedBootstrap {
-    SafeAuthorityRecord[] records;
-    bytes setupCalls;
-}
-
 /// @dev The receiver in signed mode (#108): created by the transceiver's two-step arming, then
 ///      fed hand-built deliveries through its provider and by direct submission.
 contract SignedReceiverTest is Test {
@@ -173,10 +168,11 @@ contract SignedReceiverTest is Test {
         assertTrue(r.isAuthorizedCaller(receiver));
     }
 
-    function test_bootstrapEncodingStatesItsSizeIncrease() public view {
+    function test_bootstrapEncodingSize() public view {
         bytes memory setup = abi.encode(new Call[](0));
         for (uint256 count = 1; count <= 3; ++count) {
             SafeAuthorityRecord[] memory records = new SafeAuthorityRecord[](count);
+            uint256 ownerCount;
             for (uint256 i; i < count; ++i) {
                 address sourceSafe = i == 0 ? SAFE : address(uint160(0xB000 + i));
                 if (i + 1 == count) {
@@ -187,9 +183,12 @@ contract SignedReceiverTest is Test {
                     owners[0] = SafeOwner(address(uint160(0xB001 + i)), OWNER_SAFE);
                     records[i] = Records.record(sourceSafe, 1, owners);
                 }
+                ownerCount += records[i].owners.length;
             }
-            bytes memory legacy = abi.encode(LegacySignedBootstrap(records, setup));
-            assertEq(Records.bootstrap(address(0x1234), records, setup).length - legacy.length, 160 + 64 * count);
+            assertEq(
+                Records.bootstrap(address(0x1234), records, setup).length,
+                320 + 224 * count + 64 * ownerCount + setup.length
+            );
         }
     }
 

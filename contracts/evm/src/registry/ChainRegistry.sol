@@ -79,7 +79,7 @@ contract ChainRegistry is Ownable {
     /// messageProvider => the CREATE2 inputs its transceiver and conduits deploy from.
     mapping(bytes32 => ProviderDeployment) private _deployment;
 
-    /// The deployer a provider added from now on is recorded under. See `setCurrentDeployer`.
+    /// The deployer recorded when a provider is added to a chain. See `setCurrentDeployer`.
     address public currentDeployer;
     /// chainKey => messageProvider => who deployed that provider's transceiver there, and whether
     /// sends may reach it. Packs into one slot.

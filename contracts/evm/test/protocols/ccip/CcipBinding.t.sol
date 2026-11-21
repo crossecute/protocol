@@ -60,7 +60,7 @@ contract CcipTransceiverSendTest is
         assertEq(router.sent(0).receiver, abi.encode(REMOTE_COUNTERPART));
     }
 
-    /// @dev Previously a short body failed inside `abi.decode` and a long one was truncated.
+    /// @dev The binding rejects both shorter and longer attribute bodies with the same error.
     function test_extraArgsOfTheWrongLengthAreRefused() public {
         bytes[] memory attrs = new bytes[](1);
         attrs[0] = abi.encodePacked(CcipMessage.EXTRA_ARGS_ATTRIBUTE, uint256(1));

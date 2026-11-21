@@ -2,9 +2,8 @@
 pragma solidity ^0.8.0;
 
 /// @notice One call in a payload.
-/// @dev The ERC-7579 `Execution` tuple, also used by ERC-7821, so existing payload builders
-///      work unchanged. Target and value are in the approved array, so a payload cannot be
-///      redirected or re-priced at execution.
+/// @dev The ERC-7579 `Execution` tuple, also used by ERC-7821. Target and value are in the
+///      approved array and cannot be changed at execution.
 struct Call {
     address target;
     uint256 value;

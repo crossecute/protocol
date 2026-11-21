@@ -521,7 +521,7 @@ def generate():
              'selectedRootThreshold': 1, 'sourceRootThreshold': 2,
              'result': 'stored threshold 1 remains eligible until update installation; A must update relevant receivers before further signing; accepted operational risk'},
             {'id': 'root-ordering-policy-retained',
-             'result': 'linked predecessor ordering supersedes D93; no numeric authority counter or source freshness check introduced'},
+             'result': 'destinations order updates by signed predecessor hash; source freshness is an operator responsibility'},
             {'id': 'explicit-parent-replacement', 'selectedA': 'A-with-B-old',
              'authorization': 'current A quorum signs exact predecessor update/authority hashes and replacement graph in a recognized source guard call',
              'result': 'install A-with-B-new only after B updates from the stored B position verify'},

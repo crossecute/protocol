@@ -72,13 +72,9 @@ contract ExecutionTest is Test {
 
     /* ================================ allowlist ================================ */
 
-    /// @dev The default allows everything, and that is not a missing check. A receiver is
-    ///      a full-power conduit answering to one owner, the same way a Safe is: anything
-    ///      that can deliver an authenticated message to it can already make it do
-    ///      anything. A `(target, selector)` gate was never what stood between a forged
-    ///      message and execution: a compromised bridge could forge a commitment hash
-    ///      just as easily as a call array. The policy is a restriction an owner opts
-    ///      into.
+    /// @dev Receivers without an owner-configured call policy execute any authenticated
+    ///      call. Message authentication and the optional target/selector policy are
+    ///      separate checks.
     function test_aReceiverWithNoPolicyExecutesEverything() public {
         SilentReceiver s = new SilentReceiver();
         s.initialize(transmitter, ChainKey.forEvm(1), new Call[](0));

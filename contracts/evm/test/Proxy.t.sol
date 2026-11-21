@@ -147,8 +147,8 @@ contract ProxyTest is Test {
         assertTrue(p1.codehash != p2.codehash, "the admin is embedded in the runtime code");
     }
 
-    /// @dev R8.3: every chain's build must derive the same conduits, and the transceiver now
-    ///      computes the hash from its own build, so this is what catches a settings change.
+    /// @dev R8.3: the transceiver uses its own build's initcode hash. Pinning the hash
+    ///      catches builds that would derive different conduit addresses.
     ///      Coverage builds unoptimized and is exempt.
     function test_theInitCodeHashIsPinned() public {
         if (vm.isContext(VmSafe.ForgeContext.Coverage)) vm.skip(true);

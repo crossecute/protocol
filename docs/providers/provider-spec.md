@@ -204,7 +204,7 @@ the transmitter and the transceiver.
 | `addressesDiverge` | not an argument | A binding MUST NOT take it from the caller. It has to agree with `_conduitAt`, so the plain init stores false and the divergent init true, alongside the conduit bytecode hash its compiler produces. See `LzTransceiver` against `LzZkSyncTransceiver`. |
 | `_conduitInitializer(owner, salt, homeChainKey, sourceTransmitter, calls)` | `TransceiverBase._conduitInitializer` | Override to fold provider setup into the transmitter's or receiver's initializer, and to carry the owner if the SDK needs one. `sourceTransmitter` is the address the bootstrap carried, which the receiver must authenticate. There is no second chance: `Proxy` locks in the same call that arms it. |
 | the provider id table | `ProviderChainId`, via `ProviderTransceiver` | Each binding's `setProviderId`, typed to its provider's id (eid, selector, domain, Wormhole chain id or messenger address), over `_setProviderId`, write-once. The inbound callback maps the delivery's origin id back to a route with `_onProviderInbound`, so an unmapped origin reverts and a mapped one goes through the base's counterpart check. |
-| nothing for routing | | The base's `setRoute(chainKey, identifier)` is already typed for what a route now holds, and `routeFor` / `chainKeyOfRoute` / `hasRoute` / `routeTo` are the reads. |
+| nothing for routing | | The base's `setRoute(chainKey, identifier)` stores an ERC-7930 chain identifier. `routeFor` / `chainKeyOfRoute` / `hasRoute` / `routeTo` read the routing state. |
 | the receiver report | `_reportReceiver`, in the base | Nothing to override. The base sends it from `_bootstrapInbound` when `addressesDiverge` is set, through the same `_sendMessage` the binding already implements. What a binding owes it is [R7.3](#r7-fees-and-value): the nested send is funded from the transceiver's float. |
 
 **Why the receiver's initializer is the shape it is.** `__ReceiverBase_init` is
@@ -259,13 +259,12 @@ one, saying which in its NatSpec ([§9](#9-worked-skeleton-an-erc-7786-gateway-b
 
 **R1.1 The recipient arrives built, and the binding MUST NOT re-derive it.** It is a
 binary interoperable address naming its own chain, so there is no chain id to resolve and
-no route table to consult inside `_sendMessage`. The route table still exists, but it holds
-each chain's ERC-7930 identifier now rather than a provider's private id, and it is read by
-`OutboundBase._recipientOn` on the way in.
+no route table to consult inside `_sendMessage`. `OutboundBase._recipientOn` builds
+the recipient from the stored ERC-7930 chain identifier and counterpart address.
 
-**R1.2** A conduit MUST NOT hold a route table of its own: a user adding a destination is
-a governance configuration change, not a per-conduit migration. `IConduitTransceiver.routeTo` is
-the read, on the transceiver a conduit already stores.
+**R1.2** Governance configures the transceiver's routes. A transmitter records its own
+destination identifiers during bootstrap, with no per-conduit route setter. `routeTo`
+returns the identifier stored by the contract being queried.
 
 **R1.2.1** Every `bytes` argument on the conduit's own surface MUST have a public builder
 that produces it, and a binding MUST NOT remove one. `Erc7930` is a library of `internal`

@@ -107,8 +107,8 @@ exclude_lints = [
     "uninitialized-local",
     # A revert inside a loop is how an all-or-nothing check over an array is written.
     "require-revert-in-loop",
-    # The three value transfers it found now emit first; every other hit follows no call,
-    # or only a call into this protocol's own conduit proxy.
+    # Value transfer paths emit before sending. Other flagged sites have no prior call
+    # or call only the protocol's own conduit proxy.
     "reentrancy-events",
     # Detector heuristics. They flag what tests and mocks do on purpose (an unread return, a
     # mock that refunds its caller), so they are enforced on src/ alone, by the profile below.

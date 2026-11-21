@@ -295,12 +295,7 @@ contract ReceiverReportTest is WiresHome {
         assertEq(ext(address(s)).predictConduit(owner, SALT, home()).code.length, 0, "no conduit");
     }
 
-    /// @notice The report is priced, not handed the balance.
-    ///
-    /// @dev It used to send `address(this).balance`, which told the provider "take what you
-    ///      like" and left a transceiver unable to hold a float for anything else. Quoting first
-    ///      means the provider charges what it charges and the rest stays put, which is what
-    ///      lets one float fund many reports.
+    /// @dev Reports send the quoted fee and leave the remainder in the float.
     function test_theReportSendsTheQuotedFeeAndNotTheBalance() public {
         ReportingTransceiver s = _remote(true);
         s.setReportFee(0.1 ether);
@@ -323,7 +318,7 @@ contract ReceiverReportTest is WiresHome {
         address receiver = ext(address(s)).predictConduit(owner, SALT, home());
         bytes memory expected = ext(address(s)).reportPayload(owner, SALT, receiver);
 
-        // Priced through the surface `OutboundBase` now exposes, before anything is sent.
+        // Quote the report before sending it.
         uint256 quoted = s.quoteMessage(Erc7930.encodeEvm(1, address(s)), expected, new bytes[](0));
 
         s.inbound(owner, SALT, new Call[](0));
@@ -440,10 +435,7 @@ contract HomeTransceiver is SharedAddressTransceiver {
     }
 }
 
-/// @notice The report crossing both halves. Every other test of this path builds the
-///         message by hand on one side or the other, which cannot catch the two sides
-///         drifting apart. An encoder change on the reporting side, and a decoder that still
-///         expects the old shape, would leave both files green.
+/// @notice Exercises the report encoder and decoder together to catch wire format mismatches.
 contract ReceiverReportRoundTripTest is WiresHome {
     HomeTransceiver homeSide;
     ReportingTransceiver remote;
@@ -510,14 +502,8 @@ contract ReceiverReportRoundTripTest is WiresHome {
 
     /* ======================== bootstrapped vs reachable ======================== */
 
-    /// @notice Regression: a chain that reports is not sendable until it has reported.
-    ///
-    /// @dev The gap this closes. `bootstrap` used to record a counterpart at dispatch on every
-    ///      chain, and on a reporting chain that value was a guess: `address(this)`, which is
-    ///      exactly what `recipientOn` builds. So a send made before the report landed matched
-    ///      the guess, passed the recipient check, and was addressed at an address holding no
-    ///      receiver. It was paid for, and undeliverable. Now nothing is recorded until the report
-    ///      arrives.
+    /// @dev Dispatching a bootstrap to a reporting chain leaves it unreachable until
+    ///      the report supplies its receiver address.
     function test_aReportingChainIsNotSendableUntilItHasReported() public {
         assertTrue(conduit.isBootstrapped(remoteKey), "the bootstrap went");
         assertFalse(conduit.isReachable(remoteKey), "but the receiver is not known yet");
@@ -611,10 +597,8 @@ contract ReceiverReportRoundTripTest is WiresHome {
         assertEq(conduit.destinationReceiverOn(remoteKey), abi.encodePacked(created));
     }
 
-    /// @dev And it reaches the send path, which is the reason the report moved off the
-    ///      registry. The recorded address is the one `sendMessage` will accept, so a chain
-    ///      whose receiver cannot be derived is addressable once its report lands, and was
-    ///      not before.
+    /// @dev After the report arrives, the transmitter accepts the recorded receiver
+    ///      address as the destination.
     function test_theReportedAddressIsWhatTheSendPathAccepts() public {
         bytes memory produced = _report();
         address created = ext(address(remote)).predictConduit(owner, SALT, home());
@@ -627,7 +611,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
         conduit.sendMessage(recipient, payload, new bytes[](0));
     }
 
-    /// @dev A replayed report is refused by the conduit now, not by the registry slot.
+    /// @dev The conduit refuses a replayed report.
     function test_aReplayedReportIsRefused() public {
         bytes memory produced = _report();
         homeSide.arrive(Erc7930.encodeEvmChain(REMOTE_CHAIN), abi.encodePacked(address(remote)), produced);
@@ -905,8 +889,7 @@ contract BootstrapFeeTest is Test {
         assertEq(address(t).balance, 0, "and the transceiver holds none of it");
     }
 
-    /// @dev The treasury is `Ownable`, so the msig moves it onward from there, which is the
-    ///      only place a fee is ever withdrawn from now.
+    /// @dev The multisig withdraws fees as the treasury owner.
     function test_theMsigMovesFeesOnFromTheTreasury() public {
         vm.prank(owner);
         conduit.bootstrap(bootstrapPayload(DIVERGING, new Call[](0)), new bytes[](0));

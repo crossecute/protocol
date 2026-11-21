@@ -30,9 +30,8 @@ contract DestinationNamingTest is Test {
 
     address ENDPOINT = address(new MockLzEndpoint());
 
-    /// @dev The route slot holds a chain's ERC-7930 identifier now, not a provider's id
-    ///      for it: an ERC-7786 recipient names its own chain, so there is nothing left to
-    ///      translate. `keccak256(BASE_ROUTE)` is `baseKey`, by definition.
+    /// @dev The route stores the ERC-7930 chain identifier used in the ERC-7786
+    ///      recipient. Its hash is the chain key.
     bytes BASE_ROUTE = Erc7930.encodeEvmChain(8453);
     bytes ARB_ROUTE = Erc7930.encodeEvmChain(42161);
 
