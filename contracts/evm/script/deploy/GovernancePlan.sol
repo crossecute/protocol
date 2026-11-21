@@ -244,12 +244,14 @@ library GovernancePlan {
 
     function _idSetter(string memory provider, bytes32 key, uint256 id) private pure returns (bytes memory) {
         // forge-lint: disable-start(unsafe-typecast) each id fits its provider's id_bits
-        if (_is(provider, "layerzero")) return abi.encodeCall(LzTransceiverBase.setEid, (key, uint32(id)));
-        if (_is(provider, "ccip")) return abi.encodeCall(CcipTransceiverBase.setSelector, (key, uint64(id)));
-        if (_is(provider, "hyperlane")) return abi.encodeCall(HyperlaneTransceiverBase.setDomain, (key, uint32(id)));
-        if (_is(provider, "wormhole")) return abi.encodeCall(WormholeTransceiver.setWormholeChain, (key, uint16(id)));
+        if (_is(provider, "layerzero")) return abi.encodeCall(LzTransceiverBase.setProviderId, (key, uint32(id)));
+        if (_is(provider, "ccip")) return abi.encodeCall(CcipTransceiverBase.setProviderId, (key, uint64(id)));
+        if (_is(provider, "hyperlane")) {
+            return abi.encodeCall(HyperlaneTransceiverBase.setProviderId, (key, uint32(id)));
+        }
+        if (_is(provider, "wormhole")) return abi.encodeCall(WormholeTransceiver.setProviderId, (key, uint16(id)));
         if (_is(provider, "op-stack-l1-l2")) {
-            return abi.encodeCall(OpStackTransceiver.setMessenger, (key, address(uint160(id))));
+            return abi.encodeCall(OpStackTransceiver.setProviderId, (key, address(uint160(id))));
         }
         // forge-lint: disable-end(unsafe-typecast)
         revert DeployCheck("the provider has an id setter");

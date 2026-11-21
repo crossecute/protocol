@@ -170,7 +170,7 @@ contract DestinationNamingTest is Test {
         assertEq(t.counterpartOn(key), abi.encodePacked(address(t)), "the transceiver still resolves it");
 
         vm.expectRevert(ChainRegistry.UnknownChainKey.selector);
-        registry.validateLocation(key, Erc7930.encodeEvm(10, address(0xBEEF)));
+        registry.requireLocation(key, Erc7930.encodeEvm(10, address(0xBEEF)));
         vm.stopPrank();
     }
 

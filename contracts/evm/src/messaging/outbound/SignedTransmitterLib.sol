@@ -83,7 +83,11 @@ library SignedTransmitterLib {
 
     /// @notice Check the supplied bootstrap against the guard's current selection.
     /// @param typed Whether the destination executes `Call[]`, as `_decodeBootstrap` reports.
-    function bootstrapBody(bytes32 chainKey, bool typed, bytes memory body) external view returns (bytes memory) {
+    function requireBootstrapBody(bytes32 chainKey, bool typed, bytes memory body)
+        external
+        view
+        returns (bytes memory)
+    {
         ISignedTransmitterView self = ISignedTransmitterView(address(this));
         IConduitTransceiver t = IConduitTransceiver(self.transceiver());
         if (!typed || t.reportsReceiver(chainKey)) revert SignedReceiverNotDerivable(chainKey);

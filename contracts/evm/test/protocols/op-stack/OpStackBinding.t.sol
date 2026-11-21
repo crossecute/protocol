@@ -64,7 +64,7 @@ contract OpStackTransceiverSendTest is
         deployCodeTo("MockCrossDomainMessenger.sol:MockCrossDomainMessenger", second);
         address owner = TransceiverBase(payable(address(harness))).owner();
         vm.prank(owner);
-        OpStackTransceiver(payable(address(harness))).setMessenger(ChainKey.forEvm(10), second);
+        OpStackTransceiver(payable(address(harness))).setProviderId(ChainKey.forEvm(10), second);
 
         harness.sendMessagePublic(Erc7930.encodeEvm(10, REMOTE_COUNTERPART), "to 10", new bytes[](0), 0);
         harness.sendMessagePublic(_configuredRecipient(), "to the remote", new bytes[](0), 0);

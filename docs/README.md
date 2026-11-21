@@ -5,6 +5,11 @@
 - [Message flow](architecture/message-flow.md) explains delivery, receiver bootstrap, and failure handling.
 - [Call encoding](architecture/encoding.md) defines the payload and commitment formats.
 
+## Naming
+
+- [Naming and function reference](naming-spec.md) states the naming rules for the protocol and the SDK and lists every function by file, with its callers.
+- [Foundry scripts reference](scripts-spec.md) lists the SDK's Foundry scripting files the same way.
+
 ## Message providers
 
 - [Operator guide](operator-guide.md) covers chain setup, provider configuration, and deployment assumptions.

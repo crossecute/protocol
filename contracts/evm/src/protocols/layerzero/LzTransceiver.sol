@@ -18,7 +18,7 @@ import {Call} from "src/messaging/Call.sol";
 ///
 /// @dev One OApp sends bootstraps and reports to any configured eid and receives both from
 ///      any. LayerZero delivers only from a set peer, so the owner sets one per eid, write-once
-///      (`LzWriteOncePeer`) and equal to the counterpart, as well as the eid itself (`setEid`).
+///      (`LzWriteOncePeer`) and equal to the counterpart, as well as the eid itself (`setProviderId`).
 ///
 /// @dev No `GATEWAY_ROLE` check on delivery: OApp already requires `msg.sender == endpoint`,
 ///      and a transceiver's gateways cannot be revoked, so the role would only restate it.
@@ -90,7 +90,7 @@ abstract contract LzTransceiverBase is ProviderTransceiver, OAppUpgradeable, LzW
     }
 
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape). An eid also needs its peer.
-    function setEid(bytes32 chainKey, uint32 eid) external onlyOwner {
+    function setProviderId(bytes32 chainKey, uint32 eid) external onlyOwner {
         _setProviderId(chainKey, eid);
     }
 

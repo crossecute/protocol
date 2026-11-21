@@ -663,7 +663,7 @@ contract ReceiverReportRoundTripTest is WiresHome {
     function test_aDerivableChainMayNotReport() public {
         vm.prank(msig);
         bytes32 derivedKey = registry.addChainKey(Erc7930.encodeEvmChain(42161), Provenance.Predetermined);
-        assertFalse(registry.requiresReceiverCallback(derivedKey));
+        assertFalse(registry.isReceiverCallbackRequired(derivedKey));
         vm.startPrank(homeSide.owner());
         ext(address(homeSide)).setRoute(derivedKey, Erc7930.encodeEvmChain(42161));
         vm.stopPrank();

@@ -225,7 +225,7 @@ bootstrap creates the governor's conduits there.
    chain that is only `Pending` is already authenticated inbound at its predicted address, so
    no route or peer to it before `markLive`):
    - `setRoute`;
-   - the provider's id setter (`setEid`, `setSelector`, `setDomain`, `setWormholeChain`),
+   - the provider's id setter (`setProviderId`),
      with the id from `providers/`;
    - `setCounterpart` or `resolveCounterpart` where the destination is not `Predetermined`;
    - LayerZero's `setPeer`, after the two above: it refuses a peer other than the counterpart

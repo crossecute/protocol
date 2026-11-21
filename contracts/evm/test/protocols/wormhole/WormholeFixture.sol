@@ -145,7 +145,7 @@ abstract contract WormholeFixture is ProviderGasFixture {
     }
 
     function _setProviderId(address t, bytes32 chainKey, uint256 providerId) internal override {
-        WormholeTransceiver(payable(t)).setWormholeChain(chainKey, uint16(providerId));
+        WormholeTransceiver(payable(t)).setProviderId(chainKey, uint16(providerId));
     }
 
     function _configureRemote(address t, address) internal override {

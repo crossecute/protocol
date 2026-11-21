@@ -39,17 +39,17 @@ library NestedOwnerManagerLib {
         internal
     {
         if (self.threshold != 0) revert SafeOwnerStateAlreadyInitialized();
-        _checkThreshold(threshold, owners.length);
+        _requireThreshold(threshold, owners.length);
 
         address next = SENTINEL;
         for (uint256 i = owners.length; i != 0; --i) {
             SafeOwner memory safeOwner = owners[i - 1];
-            _checkNewOwner(self, sourceSafe, safeOwner.owner, safeOwner.kind);
+            _requireNewOwner(self, sourceSafe, safeOwner.owner, safeOwner.kind);
             self.owners[safeOwner.owner] = OwnerLink(next, safeOwner.kind);
             next = safeOwner.owner;
         }
         self.owners[SENTINEL].next = next;
-        // forge-lint: disable-next-line(unsafe-typecast) `_checkThreshold` bounds both by uint32
+        // forge-lint: disable-next-line(unsafe-typecast) `_requireThreshold` bounds both by uint32
         (self.ownerCount, self.threshold) = (uint32(owners.length), uint32(threshold));
     }
 
@@ -62,26 +62,26 @@ library NestedOwnerManagerLib {
         uint256 threshold
     ) internal {
         _requireInitialized(self);
-        _checkNewOwner(self, sourceSafe, owner, kind);
+        _requireNewOwner(self, sourceSafe, owner, kind);
         uint256 count = uint256(self.ownerCount) + 1;
-        _checkThreshold(threshold, count);
+        _requireThreshold(threshold, count);
 
         self.owners[owner] = OwnerLink(self.owners[SENTINEL].next, kind);
         self.owners[SENTINEL].next = owner;
-        // forge-lint: disable-next-line(unsafe-typecast) `_checkThreshold` bounds both by uint32
+        // forge-lint: disable-next-line(unsafe-typecast) `_requireThreshold` bounds both by uint32
         (self.ownerCount, self.threshold) = (uint32(count), uint32(threshold));
     }
 
     /// @notice Unlink an owner behind its predecessor and set the threshold.
     function removeOwner(SafeOwnerState storage self, address prevOwner, address owner, uint256 threshold) internal {
         _requireInitialized(self);
-        _checkPredecessor(self, prevOwner, owner);
+        _requirePredecessor(self, prevOwner, owner);
         uint256 count = uint256(self.ownerCount) - 1;
-        _checkThreshold(threshold, count);
+        _requireThreshold(threshold, count);
 
         self.owners[prevOwner].next = self.owners[owner].next;
         delete self.owners[owner];
-        // forge-lint: disable-next-line(unsafe-typecast) `_checkThreshold` bounds both by uint32
+        // forge-lint: disable-next-line(unsafe-typecast) `_requireThreshold` bounds both by uint32
         (self.ownerCount, self.threshold) = (uint32(count), uint32(threshold));
     }
 
@@ -95,8 +95,8 @@ library NestedOwnerManagerLib {
         uint8 newKind
     ) internal {
         _requireInitialized(self);
-        _checkNewOwner(self, sourceSafe, newOwner, newKind);
-        _checkPredecessor(self, prevOwner, oldOwner);
+        _requireNewOwner(self, sourceSafe, newOwner, newKind);
+        _requirePredecessor(self, prevOwner, oldOwner);
 
         self.owners[newOwner] = OwnerLink(self.owners[oldOwner].next, newKind);
         self.owners[prevOwner].next = newOwner;
@@ -105,8 +105,8 @@ library NestedOwnerManagerLib {
 
     function changeThreshold(SafeOwnerState storage self, uint256 threshold) internal {
         _requireInitialized(self);
-        _checkThreshold(threshold, self.ownerCount);
-        // forge-lint: disable-next-line(unsafe-typecast) `_checkThreshold` bounds it by uint32
+        _requireThreshold(threshold, self.ownerCount);
+        // forge-lint: disable-next-line(unsafe-typecast) `_requireThreshold` bounds it by uint32
         self.threshold = uint32(threshold);
     }
 
@@ -125,21 +125,21 @@ library NestedOwnerManagerLib {
         if (self.threshold == 0) revert SafeOwnerStateNotInitialized();
     }
 
-    function _checkNewOwner(SafeOwnerState storage self, address sourceSafe, address owner, uint8 kind) private view {
+    function _requireNewOwner(SafeOwnerState storage self, address sourceSafe, address owner, uint8 kind) private view {
         if (owner == address(0) || owner == SENTINEL || owner == sourceSafe || self.owners[owner].next != address(0)) {
             revert InvalidOwner(owner);
         }
         if (kind > OWNER_SAFE) revert InvalidOwnerKind(owner);
     }
 
-    function _checkPredecessor(SafeOwnerState storage self, address prevOwner, address owner) private view {
+    function _requirePredecessor(SafeOwnerState storage self, address prevOwner, address owner) private view {
         if (owner == address(0) || owner == SENTINEL || self.owners[prevOwner].next != owner) {
             revert InvalidPredecessor(prevOwner, owner);
         }
     }
 
     /// @dev Count and threshold share 32-bit fields, so this runs before either is narrowed.
-    function _checkThreshold(uint256 threshold, uint256 count) private pure {
+    function _requireThreshold(uint256 threshold, uint256 count) private pure {
         if (threshold == 0 || threshold > count || count > type(uint32).max) {
             revert InvalidThreshold(threshold, count);
         }

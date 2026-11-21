@@ -48,7 +48,7 @@ contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver {
     }
 
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape).
-    function setWormholeChain(bytes32 chainKey, uint16 wormholeChain) external onlyOwner {
+    function setProviderId(bytes32 chainKey, uint16 wormholeChain) external onlyOwner {
         _setProviderId(chainKey, wormholeChain);
     }
 
@@ -87,7 +87,7 @@ contract WormholeTransceiver is ProviderTransceiver, IVaaV1Receiver {
     ///      unmapped emitter chain reverts in the table.
     function executeVAAv1(bytes calldata multiSigVaa) external payable override {
         (uint16 emitterChain, address emitter, bytes calldata payload) =
-            WormholeMessage.verify(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
+            WormholeMessage.consumeVaa(coreBridge, hasRole(GATEWAY_ROLE, coreBridge), multiSigVaa);
         _onProviderInbound(emitterChain, emitter, payload);
     }
 

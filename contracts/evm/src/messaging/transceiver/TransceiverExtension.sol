@@ -155,7 +155,7 @@ contract TransceiverExtension is TransceiverCore {
     ///      moment the chain is graded, so a counterpart recorded later must equal it: otherwise
     ///      `hasCounterpart` being false would let the owner repoint a lane in use.
     function _recordCounterpart(bytes32 chainKey, bytes memory interop) private {
-        _chainRegistry.validateLocation(chainKey, interop);
+        _chainRegistry.requireLocation(chainKey, interop);
         bytes memory addr = Erc7930.parseStrict(interop).addr;
         if (
             _chainRegistry.provenanceFor(chainKey) == Provenance.Predetermined

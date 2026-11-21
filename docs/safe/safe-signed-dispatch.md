@@ -638,7 +638,7 @@ How the pieces fit:
   `submission` is `abi.encode(SafeTxEvidence, AuthorityGraph, ChildUpdate[])`.
   Each route recognizes its signed source call before applying authorization.
 - **Quotes.** In signed mode `quoteMessage` and `quoteMessageBreakdown` require the signed quote API.
-  `quoteSignedMessage`, `quoteBootstrap`, `quoteRelay` and `quoteAuthority` price the same bytes
+  `quoteMessageSigned`, `quoteBootstrap`, `quoteRelay` and `quoteAuthority` price the same bytes
   as their send paths (Q6.10). The standalone quote includes the [outbound Crossecute fee](../providers/provider-spec.md#r7-fees-and-value)
   paid to the treasury. Bootstrap, leaf relay and authority relay quote provider fees.
 - **Size.** `ReceiverAuthority`, `AuthorityRecognition` and `SignedTransmitterLib` are linked

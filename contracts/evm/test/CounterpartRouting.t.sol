@@ -152,8 +152,8 @@ contract CounterpartRoutingTest is Test {
         bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
         vm.stopPrank();
 
-        assertTrue(registry.requiresReceiverCallback(snKey), "Pedersen: not derivable here");
-        assertFalse(registry.requiresReceiverCallback(baseKey), "parity: derived locally");
+        assertTrue(registry.isReceiverCallbackRequired(snKey), "Pedersen: not derivable here");
+        assertFalse(registry.isReceiverCallbackRequired(baseKey), "parity: derived locally");
     }
 
     /// @dev It is derived from the caps rather than declared, so it cannot disagree with
@@ -165,8 +165,8 @@ contract CounterpartRoutingTest is Test {
         bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);
         bytes32 zkKey = registry.addChainKey(Erc7930.encodeEvmChain(324), Provenance.Unique);
         vm.stopPrank();
-        assertFalse(registry.requiresReceiverCallback(baseKey), "eip155, Predetermined");
-        assertTrue(registry.requiresReceiverCallback(zkKey), "eip155, graded below Predetermined");
+        assertFalse(registry.isReceiverCallbackRequired(baseKey), "eip155, Predetermined");
+        assertTrue(registry.isReceiverCallbackRequired(zkKey), "eip155, graded below Predetermined");
     }
 
     /// @dev This chain is never a counterpart: sends and inbound authentication both resolve

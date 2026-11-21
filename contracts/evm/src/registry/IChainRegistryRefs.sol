@@ -68,7 +68,7 @@ interface IChainRegistryRefs {
     function chainIdentifier(bytes32 chainKey) external view returns (bytes memory);
 
     /// @notice Reverts unless `interop` is a well-formed address on `chainKey`.
-    function validateLocation(bytes32 chainKey, bytes calldata interop) external view;
+    function requireLocation(bytes32 chainKey, bytes calldata interop) external view;
 
     /// @notice The derivation inputs recorded for `chainKey`. Hash this to build the
     ///         `paramsCommitment` a `resolveCounterpart` transaction must carry.
@@ -77,5 +77,5 @@ interface IChainRegistryRefs {
     /// @notice Whether conduits on `chainKey` must report their own address home, which is
     ///         the only thing this directory says about receivers. Where one actually landed
     ///         is held by the transmitter that sends to it.
-    function requiresReceiverCallback(bytes32 chainKey) external view returns (bool);
+    function isReceiverCallbackRequired(bytes32 chainKey) external view returns (bool);
 }

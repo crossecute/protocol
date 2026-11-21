@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 library CcipConfig {
     error InvalidCcipVerifiers();
 
-    function validateCCVs(address[] memory ccvs) internal pure {
+    function requireCCVs(address[] memory ccvs) internal pure {
         if (ccvs.length > type(uint8).max) revert InvalidCcipVerifiers();
         for (uint256 i; i < ccvs.length; ++i) {
             for (uint256 j; j < i; ++j) {

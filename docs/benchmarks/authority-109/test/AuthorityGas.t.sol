@@ -22,8 +22,8 @@ contract GasAuthorityHarness {
         state.store(records, 1);
     }
 
-    function verify(bytes32 hash, bytes memory signatures) external view {
-        state.verify(hash, signatures, new NestedSafeApproval[](0));
+    function requireQuorum(bytes32 hash, bytes memory signatures) external view {
+        state.requireQuorum(hash, signatures, new NestedSafeApproval[](0));
     }
 }
 
@@ -107,7 +107,7 @@ contract AuthorityGasBench is Test {
         );
         // Negative control: benchmark must actually authenticate signatures.
         vm.expectRevert();
-        harness.verify(bytes32(uint256(HASH) ^ 1), signatures);
+        harness.requireQuorum(bytes32(uint256(HASH) ^ 1), signatures);
     }
 
     // ABI size fixture only: the proof was authenticated over HASH, not this

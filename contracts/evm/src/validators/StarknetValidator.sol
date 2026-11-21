@@ -11,10 +11,10 @@ import {IRefValidator} from "src/registry/IRefValidator.sol";
 /// @dev This is the constraint the 7930 envelope structurally cannot catch: length is
 ///      correct, framing is canonical, and the value is still impossible.
 contract StarknetValidator is IRefValidator {
-    function validateRef(bytes calldata interop) external pure override {
+    function requireRef(bytes calldata interop) external pure override {
         Erc7930.Interop memory io = Erc7930.parseStrict(interop);
         // A zero-length address is a Chain Identifier, which has no felt to bound.
         if (io.addr.length == 0) return;
-        StarknetDerive.validateAddress(StarknetDerive.toFelt(io.addr));
+        StarknetDerive.requireAddress(StarknetDerive.toFelt(io.addr));
     }
 }

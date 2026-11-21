@@ -37,7 +37,7 @@ abstract contract HyperlaneTransceiverBase is ProviderTransceiver, IMessageRecip
     }
 
     /// @dev Write-once-if-unset (`ProviderChainId`'s shape).
-    function setDomain(bytes32 chainKey, uint32 domain) external onlyOwner {
+    function setProviderId(bytes32 chainKey, uint32 domain) external onlyOwner {
         _setProviderId(chainKey, domain);
     }
 

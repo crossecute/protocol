@@ -27,7 +27,7 @@ abstract contract CcipPolicy {
             ccvs[i] = i < required ? policy.requiredCCVs[i] : policy.optionalCCVs[i - required];
             if (i >= required && ccvs[i] == address(0)) revert InvalidCcipPolicy();
         }
-        CcipConfig.validateCCVs(ccvs);
+        CcipConfig.requireCCVs(ccvs);
         CcipConfig.layout().policies[CcipConfig.policyKey(source, sender)] = policy;
         emit CcipPolicySet(source, sender, policy);
     }

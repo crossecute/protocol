@@ -28,7 +28,7 @@ function providerIdOf(address transceiver, bytes memory recipient) view returns 
 ///      `op-stack-l1-l2` the id is the address of the messenger that reaches the chain.
 ///
 /// @dev Storage is `uint256` so one mapping backs every provider's narrower id type; each
-///      binding's typed setter (`setEid`, `setSelector`, `setDomain`, `setWormholeChain`)
+///      binding's typed `setProviderId`
 ///      bounds it on the way in, and readers narrow it back.
 ///
 /// @dev Write-once-if-unset, same shape as `OutboundBase._setRoute`: re-declaring the same id

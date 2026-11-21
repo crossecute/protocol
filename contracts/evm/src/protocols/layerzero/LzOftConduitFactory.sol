@@ -156,7 +156,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
         returns (address conduit)
     {
         uint32 homeEid = _homeEid(homeOft);
-        bytes32[] memory hashes = _checkLeaves(homeOft, homeEid, leaves);
+        bytes32[] memory hashes = _requireLeaves(homeOft, homeEid, leaves);
         bytes32 destRoot = LzOftMessage.root(hashes);
 
         bool signed = SafeViewer.signedAuthority(msg.sender).length != 0;
@@ -414,7 +414,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
         return endpoint.eid();
     }
 
-    function _checkLeaves(address homeOft, uint32 homeEid, Leaf[] calldata leaves)
+    function _requireLeaves(address homeOft, uint32 homeEid, Leaf[] calldata leaves)
         private
         view
         returns (bytes32[] memory hashes)

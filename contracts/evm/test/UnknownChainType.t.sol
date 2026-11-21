@@ -17,7 +17,7 @@ import {VmDeriver} from "src/derivation/VmDeriver.sol";
 contract WidthValidator is IRefValidator {
     error BadWidth(uint256 got);
 
-    function validateRef(bytes calldata interop) external pure {
+    function requireRef(bytes calldata interop) external pure {
         uint256 n = Erc7930.parseStrict(interop).addr.length;
         if (n != 8) revert BadWidth(n);
     }
@@ -77,7 +77,7 @@ contract UnknownChainTypeTest is Test {
 
         assertEq(uint8(registry.provenanceFor(chainKey)), uint8(Provenance.Unique));
         assertTrue(
-            registry.requiresReceiverCallback(chainKey),
+            registry.isReceiverCallbackRequired(chainKey),
             "nothing here can derive an address on a chain type it does not know"
         );
     }
@@ -100,13 +100,13 @@ contract UnknownChainTypeTest is Test {
         vm.stopPrank();
 
         // The validator is enforced wherever a location is checked, which is now the
-        // transceiver's setter calling back into `validateLocation`.
+        // transceiver's setter calling back into `requireLocation`.
         bytes memory wrongWidth = Erc7930.encode(CT_UNKNOWN, hex"cafe", hex"00112233");
         vm.expectRevert(abi.encodeWithSelector(WidthValidator.BadWidth.selector, 4));
-        registry.validateLocation(chainKey, wrongWidth);
+        registry.requireLocation(chainKey, wrongWidth);
 
         // And a well-formed one passes.
-        registry.validateLocation(chainKey, conduit);
+        registry.requireLocation(chainKey, conduit);
     }
 
     /* =============================== what does not ============================= */

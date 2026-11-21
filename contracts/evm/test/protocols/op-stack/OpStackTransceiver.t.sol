@@ -29,7 +29,7 @@ contract OpStackTransceiverInboundTest is ProviderInboundSpec, OpStackFixture {
         bytes32 remote = ChainKey.forEvm(REMOTE_CHAIN_ID);
         address owner = TransceiverBase(payable(transceiver)).owner();
         vm.prank(owner);
-        OpStackTransceiver(payable(transceiver)).setMessenger(remote, REMOTE_MESSENGER);
+        OpStackTransceiver(payable(transceiver)).setProviderId(remote, REMOTE_MESSENGER);
         bytes memory message = _bootstrap();
         vm.expectRevert(abi.encodeWithSelector(OutboundBase.NoRouteFor.selector, remote));
         _deliverTo(transceiver, ORIGIN_TRANSCEIVER, message);

@@ -581,7 +581,7 @@ abstract contract TransceiverBase is TransceiverCore {
     ///
     /// @dev Written to the conduit, not the registry, because the transmitter is what
     ///      addresses that receiver and the registry is out of the send path. The registry
-    ///      still decides which chains may report (`requiresReceiverCallback`), so a chain this
+    ///      still decides which chains may report (`isReceiverCallbackRequired`), so a chain this
     ///      one derives cannot replace a `Predetermined` fact with a reported one.
     ///
     /// @dev The destination cannot choose the conduit: `chainKey` is authenticated and the
@@ -595,7 +595,7 @@ abstract contract TransceiverBase is TransceiverCore {
     function _onDestinationReceiver(bytes32 chainKey, address owner, bytes32 salt, bytes memory interop) internal {
         if (address(_chainRegistry) == address(0)) revert NoChainRegistry();
         if (owner == address(0)) revert ZeroOwner();
-        if (!_chainRegistry.requiresReceiverCallback(chainKey)) {
+        if (!_chainRegistry.isReceiverCallbackRequired(chainKey)) {
             revert ChainDoesNotReport(chainKey);
         }
 
@@ -626,6 +626,6 @@ abstract contract TransceiverBase is TransceiverCore {
     function reportsReceiver(bytes32 chainKey) public view returns (bool) {
         if (chainKey == localChainKey) revert IsLocalChain(chainKey);
         if (address(_chainRegistry) == address(0)) return false;
-        return _chainRegistry.requiresReceiverCallback(chainKey);
+        return _chainRegistry.isReceiverCallbackRequired(chainKey);
     }
 }

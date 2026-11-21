@@ -88,7 +88,7 @@ contract LzOftSignedForkTest is LzOftForkBase {
             )
         );
         bytes32 digest = _digest(evidence);
-        packet = _send(evidence, conduit.quoteSignedMessage(evidence), address(conduit));
+        packet = _send(evidence, conduit.quoteMessageSigned(evidence), address(conduit));
 
         vm.selectFork(fork);
         assertFalse(receiver.isMessageExecuted(digest));

@@ -57,7 +57,7 @@ library SafeAuthority {
     ///         approvals.
     /// @dev This is the receiver's authorization check, independent of who delivered the
     ///      message. Duplicate child/message approvals revert; unused approvals are ignored.
-    function verify(
+    function requireQuorum(
         SafeAuthorityState storage self,
         bytes32 dataHash,
         bytes memory signatures,
@@ -67,7 +67,7 @@ library SafeAuthority {
         assembly ("memory-safe") {
             context := self.slot
         }
-        SafeQuorum.verify(
+        SafeQuorum.requireQuorum(
             OwnerSource(context, self.sourceChainId, _openStored, _isStoredOwner),
             self.root,
             dataHash,

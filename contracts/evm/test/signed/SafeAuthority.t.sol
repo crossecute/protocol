@@ -24,8 +24,8 @@ contract AuthorityHarness {
     /// @notice Expose the stored-authority verifier through an external call.
     /// @dev Tests can exercise signature acceptance and exact failures independently of
     ///      transport and payload decoding.
-    function verify(bytes32 hash, bytes memory signatures, NestedSafeApproval[] memory approvals) external view {
-        authority.verify(hash, signatures, approvals);
+    function requireQuorum(bytes32 hash, bytes memory signatures, NestedSafeApproval[] memory approvals) external view {
+        authority.requireQuorum(hash, signatures, approvals);
     }
 
     /// @notice Return the harness's canonical stored authority records.
@@ -82,13 +82,13 @@ contract SafeAuthorityTest is Test {
     /// @dev This establishes the basic acceptance path before testing malformed or nested
     ///      evidence.
     function test_twoEoaOwnersVerify() public view {
-        h.verify(H, SafeSigs.blob(SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(2)), H), _none());
+        h.requireQuorum(H, SafeSigs.blob(SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(2)), H), _none());
     }
 
     /// @notice Verify a quorum mixing direct and Ethereum-prefixed EOA signatures.
     /// @dev Both Safe-supported ECDSA formats must work together in one ordered blob.
     function test_mixedPrefixedAndDirectSignaturesVerify() public view {
-        h.verify(H, SafeSigs.blob(SafeSigs.two(SafeSigs.prefixed(1), SafeSigs.eoa(2)), H), _none());
+        h.requireQuorum(H, SafeSigs.blob(SafeSigs.two(SafeSigs.prefixed(1), SafeSigs.eoa(2)), H), _none());
     }
 
     /// @notice Read the stored authority back and compare its owner order.
@@ -107,7 +107,7 @@ contract SafeAuthorityTest is Test {
     function test_oneSignatureShortRefuses() public {
         bytes memory blob = SafeSigs.blob(SafeSigs.one(SafeSigs.eoa(1)), H);
         vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.SignaturesTooShort.selector, ROOT));
-        h.verify(H, blob, _none());
+        h.requireQuorum(H, blob, _none());
     }
 
     /// @notice Verify against an authority that stored no Safe.
@@ -115,7 +115,7 @@ contract SafeAuthorityTest is Test {
     function test_anUnknownSafeRefuses() public {
         AuthorityHarness empty = new AuthorityHarness();
         vm.expectRevert(abi.encodeWithSelector(SafeQuorum.UnknownSafe.selector, address(0)));
-        empty.verify(H, "", _none());
+        empty.requireQuorum(H, "", _none());
     }
 
     /// @notice Sign with an EOA absent from the stored owner list.
@@ -123,7 +123,7 @@ contract SafeAuthorityTest is Test {
     function test_aStrangerRefuses() public {
         bytes memory blob = SafeSigs.blob(SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(9)), H);
         vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, ROOT, vm.addr(9)));
-        h.verify(H, blob, _none());
+        h.requireQuorum(H, blob, _none());
     }
 
     /// @notice Submit otherwise valid signers in the wrong order.
@@ -134,7 +134,7 @@ contract SafeAuthorityTest is Test {
         bytes memory b = SafeSigs.blob(SafeSigs.one(SafeSigs.eoa(2)), H);
         (bytes memory lo, bytes memory hi) = vm.addr(1) < vm.addr(2) ? (a, b) : (b, a);
         vm.expectRevert(abi.encodeWithSelector(SafeQuorum.SignersNotAscending.selector, ROOT));
-        h.verify(H, abi.encodePacked(hi, lo), _none());
+        h.requireQuorum(H, abi.encodePacked(hi, lo), _none());
     }
 
     /// @notice Repeat one authorized signer in the blob.
@@ -142,7 +142,7 @@ contract SafeAuthorityTest is Test {
     function test_theSameSignerTwiceRefuses() public {
         bytes memory a = SafeSigs.blob(SafeSigs.one(SafeSigs.eoa(1)), H);
         vm.expectRevert(abi.encodeWithSelector(SafeQuorum.SignersNotAscending.selector, ROOT));
-        h.verify(H, abi.encodePacked(a, a), _none());
+        h.requireQuorum(H, abi.encodePacked(a, a), _none());
     }
 
     /// @notice Submit a `v = 1` approved-hash entry.
@@ -152,7 +152,7 @@ contract SafeAuthorityTest is Test {
         bytes memory approved = abi.encodePacked(bytes32(uint256(uint160(vm.addr(1)))), bytes32(0), uint8(1));
         bytes memory blob = abi.encodePacked(approved, SafeSigs.blob(SafeSigs.one(SafeSigs.eoa(2)), H));
         vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.ApprovedHashUnsupported.selector, ROOT));
-        h.verify(H, blob, _none());
+        h.requireQuorum(H, blob, _none());
     }
 
     /// @notice Submit an unsupported signature-type byte.
@@ -162,7 +162,7 @@ contract SafeAuthorityTest is Test {
         bytes memory blob = SafeSigs.blob(SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(2)), H);
         blob[64] = bytes1(uint8(29));
         vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.InvalidSignatureType.selector, uint8(29)));
-        h.verify(H, blob, _none());
+        h.requireQuorum(H, blob, _none());
     }
 
     /// @notice Verify an inline child quorum as one owner of the parent Safe.
@@ -170,7 +170,7 @@ contract SafeAuthorityTest is Test {
     ///      votes.
     function test_anInlineNestedSignatureCountsOnceWithTheChildsThreshold() public view {
         bytes memory childBlob = SafeSigs.blob(SafeSigs.one(SafeSigs.eoa(4)), _childHash());
-        h.verify(H, SafeSigs.blob(SafeSigs.two(SafeSigs.nested(CHILD, childBlob), SafeSigs.eoa(1)), H), _none());
+        h.requireQuorum(H, SafeSigs.blob(SafeSigs.two(SafeSigs.nested(CHILD, childBlob), SafeSigs.eoa(1)), H), _none());
     }
 
     /// @notice Sign the nested payload over a different hash.
@@ -179,7 +179,7 @@ contract SafeAuthorityTest is Test {
         bytes memory childBlob = SafeSigs.blob(SafeSigs.one(SafeSigs.eoa(4)), H);
         bytes memory blob = SafeSigs.blob(SafeSigs.two(SafeSigs.nested(CHILD, childBlob), SafeSigs.eoa(1)), H);
         vm.expectPartialRevert(SafeQuorum.NotAnOwner.selector);
-        h.verify(H, blob, _none());
+        h.requireQuorum(H, blob, _none());
     }
 
     /// @notice Encode an EOA owner as a nested contract entry.
@@ -187,7 +187,7 @@ contract SafeAuthorityTest is Test {
     function test_aNestedEntryForAnEoaOwnerRefuses() public {
         bytes memory blob = SafeSigs.blob(SafeSigs.two(SafeSigs.nested(vm.addr(1), hex"00"), SafeSigs.eoa(2)), H);
         vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, ROOT, vm.addr(1)));
-        h.verify(H, blob, _none());
+        h.requireQuorum(H, blob, _none());
     }
 
     /// @notice Build a child's signed approval using the selected private key.
@@ -209,21 +209,21 @@ contract SafeAuthorityTest is Test {
     /// @dev The receiver must support source-cached approvals without querying source-chain
     ///      storage.
     function test_anEmptyNestedSignatureCountsWithASignedApproval() public view {
-        h.verify(H, _emptyNested(), _approvalFor(5));
+        h.requireQuorum(H, _emptyNested(), _approvalFor(5));
     }
 
     /// @notice Leave an empty nested payload without matching approval evidence.
     /// @dev A claimed child address alone must not count as authorization.
     function test_anEmptyNestedSignatureWithoutAnApprovalRefuses() public {
         vm.expectRevert(abi.encodeWithSelector(SafeQuorum.MissingNestedSafeApproval.selector, CHILD, _childHash()));
-        h.verify(H, _emptyNested(), _none());
+        h.requireQuorum(H, _emptyNested(), _none());
     }
 
     /// @notice Back an empty payload with an approval signed by a nonowner.
     /// @dev Cached-looking evidence must still satisfy the child's stored quorum.
     function test_anApprovalSignedByAStrangerRefuses() public {
         vm.expectRevert(abi.encodeWithSelector(SafeQuorum.NotAnOwner.selector, CHILD, vm.addr(8)));
-        h.verify(H, _emptyNested(), _approvalFor(8));
+        h.requireQuorum(H, _emptyNested(), _approvalFor(8));
     }
 
     /// @notice Change the message approved by the child transaction.
@@ -233,7 +233,7 @@ contract SafeAuthorityTest is Test {
         nestedApprovals[0].approval.safeTx.data =
             abi.encodeWithSelector(bytes4(0x85a5affe), abi.encode(keccak256("other")));
         vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.NotANestedSafeApprovalOf.selector, CHILD, H));
-        h.verify(H, _emptyNested(), nestedApprovals);
+        h.requireQuorum(H, _emptyNested(), nestedApprovals);
     }
 
     /// @notice Change the approval operation from DELEGATECALL to CALL.
@@ -243,7 +243,7 @@ contract SafeAuthorityTest is Test {
         NestedSafeApproval[] memory nestedApprovals = _approvalFor(5);
         nestedApprovals[0].approval.safeTx.operation = 0;
         vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.NotANestedSafeApprovalOf.selector, CHILD, H));
-        h.verify(H, _emptyNested(), nestedApprovals);
+        h.requireQuorum(H, _emptyNested(), nestedApprovals);
     }
 
     /// @notice Put a `v = 1` entry inside the approval's own signatures.
@@ -253,7 +253,7 @@ contract SafeAuthorityTest is Test {
         nestedApprovals[0].approval.signatures =
             abi.encodePacked(bytes32(uint256(uint160(vm.addr(5)))), bytes32(0), uint8(1));
         vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.ApprovedHashUnsupported.selector, CHILD));
-        h.verify(H, _emptyNested(), nestedApprovals);
+        h.requireQuorum(H, _emptyNested(), nestedApprovals);
     }
 
     /// @notice Supply an unused approval, then duplicate the required child/message entry.
@@ -263,11 +263,11 @@ contract SafeAuthorityTest is Test {
         NestedSafeApproval[] memory nestedApprovals = new NestedSafeApproval[](2);
         nestedApprovals[0] = SafeSigs.approval(CHILD, keccak256("unrelated"), CHAIN, SafeSigs.one(SafeSigs.eoa(4)), LIB);
         nestedApprovals[1] = _approvalFor(5)[0];
-        h.verify(H, _emptyNested(), nestedApprovals);
+        h.requireQuorum(H, _emptyNested(), nestedApprovals);
 
         nestedApprovals[0] = nestedApprovals[1];
         vm.expectRevert(abi.encodeWithSelector(SafeQuorum.DuplicateNestedSafeApproval.selector, CHILD, _childHash()));
-        h.verify(H, _emptyNested(), nestedApprovals);
+        h.requireQuorum(H, _emptyNested(), nestedApprovals);
     }
 
     /// @notice Point a nested payload offset into the required fixed signature entries.
@@ -280,7 +280,7 @@ contract SafeAuthorityTest is Test {
             blob[entry + 32 + i] = 0;
         }
         vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.MalformedContractSignature.selector, ROOT));
-        h.verify(H, blob, _approvalFor(5));
+        h.requireQuorum(H, blob, _approvalFor(5));
     }
 
     /// @notice Cut bytes from an inline child signature payload.
@@ -293,7 +293,7 @@ contract SafeAuthorityTest is Test {
             mstore(blob, sub(mload(blob), 1))
         }
         vm.expectRevert(abi.encodeWithSelector(SafeSignaturesUtils.MalformedContractSignature.selector, ROOT));
-        h.verify(H, blob, _none());
+        h.requireQuorum(H, blob, _none());
     }
 
     /// @notice Append unused bytes to a complete EOA quorum.
@@ -301,6 +301,6 @@ contract SafeAuthorityTest is Test {
     ///      authority to trailing data.
     function test_bytesAfterTheThresholdEntriesAreIgnored() public view {
         bytes memory blob = SafeSigs.blob(SafeSigs.two(SafeSigs.eoa(1), SafeSigs.eoa(2)), H);
-        h.verify(H, abi.encodePacked(blob, hex"deadbeef"), _none());
+        h.requireQuorum(H, abi.encodePacked(blob, hex"deadbeef"), _none());
     }
 }

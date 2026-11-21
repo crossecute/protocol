@@ -203,7 +203,7 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
         (bytes memory recipient, bytes memory payload,) =
             SignedDispatchCalls.sendMessageArgs(evidence.signedSafeTx.safeTx.data);
         SignedDispatchCalls.requireDestination(recipient, address(this));
-        bytes32 safeTxHash = _verify(evidence);
+        bytes32 safeTxHash = _requireEvidence(evidence);
 
         SignedReceiverStorage storage $ = _signedStorage();
         if ($.messages[safeTxHash]) {
@@ -227,7 +227,7 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
         bytes32 root = SignedDispatchCalls.registeredRoot(registrationEvidence.signedSafeTx.safeTx);
         SignedDispatchCalls.requireDestination(leaf.destination, address(this));
         DispatchLeaves.requireProof(proof, root, DispatchLeaves.hash(leaf));
-        _verify(registrationEvidence);
+        _requireEvidence(registrationEvidence);
 
         SignedReceiverStorage storage $ = _signedStorage();
         bytes32 id = DispatchLeaves.executionId(leaf);
@@ -248,9 +248,9 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
 
     /// @dev The source Safe address and chain domain bind the evidence to its original signer
     ///      context; the delivery caller does not grant authorization.
-    function _verify(SafeTxEvidence memory evidence) private view returns (bytes32 safeTxHash) {
+    function _requireEvidence(SafeTxEvidence memory evidence) private view returns (bytes32 safeTxHash) {
         SafeAuthorityState storage authority = _signedStorage().authority;
-        safeTxHash = _authority().verify(authority.sourceChainId, authority.root, evidence);
+        safeTxHash = _authority().requireEvidence(authority.sourceChainId, authority.root, evidence);
     }
 
     /* =================================== access ================================= */

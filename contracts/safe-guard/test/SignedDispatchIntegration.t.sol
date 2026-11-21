@@ -139,7 +139,7 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
     function _route(HyperlaneTransceiver t, uint256 chain) internal {
         vm.startPrank(t.owner());
         TransceiverExtension(address(t)).setRoute(ChainKey.forEvm(chain), Erc7930.encodeEvmChain(chain));
-        t.setDomain(ChainKey.forEvm(chain), uint32(chain));
+        t.setProviderId(ChainKey.forEvm(chain), uint32(chain));
         vm.stopPrank();
     }
 
