@@ -31,7 +31,7 @@ declare `pragma ^0.8.28`, so `contracts/evm/` can import them under its own comp
 | Dependency | Source | Commit |
 | --- | --- | --- |
 | Safe | [safe-fndn/safe-smart-account](https://github.com/safe-fndn/safe-smart-account) `v1.5.0` | `dc437e8` |
-| Policy engine | [crossecute/policy-engine](https://github.com/crossecute/policy-engine) `crossecute/safe-policy-timing-171` | `91bd2b8` |
+| Policy engine | [crossecute/policy-engine](https://github.com/crossecute/policy-engine) `crossecute/safe-policy-timing-171` | `115e1b6` |
 | forge-std | shared with `contracts/evm/lib/forge-std` | |
 | OpenZeppelin `MerkleProof` (tests only) | shared with `contracts/evm/lib/openzeppelin-contracts` | |
 
