@@ -1,7 +1,6 @@
 # Code review instructions
 
-These are for Copilot code review. `.claude/CLAUDE.md` covers how code here is written;
-this file covers what a review should look for.
+These instructions cover Copilot code review.
 
 ## What this repo is
 

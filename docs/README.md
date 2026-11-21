@@ -12,7 +12,7 @@
 
 ## Message providers
 
-- [Operator guide](operator-guide.md) covers chain setup, provider configuration, and deployment assumptions.
+- [Operator guide](operator-guide.md) covers setup and deployment assumptions, including [how to add a chain or provider](operator-guide.md#adding-a-chain-or-provider).
 - [Provider compliance](providers/provider-spec.md) defines the requirements and compliance tests for bindings.
 - [LayerZero OFT binding](providers/layerzero-oft-spec.md) specifies OFT prerequisites and transport behavior.
 - [CCIP 2.0 options](providers/ccip-v2.md) describes lane configuration, message options, and inbound policies. The [validation report](providers/ccip-v2-validation.md) records local test coverage.
