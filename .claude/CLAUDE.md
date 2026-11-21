@@ -18,6 +18,10 @@ This applies to every `.sol` file in `contracts/evm/`, including new provider bi
 their tests, not just files already in this style. Before committing a new file, check it
 against this rule the same way you'd check it builds.
 
+## Naming
+
+New functions follow the rules in Part 1 of `docs/naming-spec.md`: reverting checks are `require*`, booleans `is*` or `has*`, signed variants end in `Signed`, calldata builders end in `Calldata`. A change that adds, renames or removes a function updates its row in that file.
+
 ## When something changes, check everything that depends on it
 
 A change is not finished when the changed code is right. It is finished when everything that
