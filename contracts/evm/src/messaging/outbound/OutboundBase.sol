@@ -122,8 +122,7 @@ abstract contract OutboundBase {
 
     /// @notice Where the counterpart lives.
     /// @dev A transceiver overrides it to apply the registry's provenance bar, and to answer its
-    ///      own address on a `Predetermined` chain with no counterpart recorded; see
-    ///      `TransceiverBase`.
+    ///      registry-derived address on a `Predetermined` chain with no recorded counterpart.
     function _counterpartOn(bytes32 chainKey) internal view virtual returns (bytes memory counterpart) {
         counterpart = _counterparts[chainKey];
         if (counterpart.length == 0) revert NoCounterpartFor(chainKey);

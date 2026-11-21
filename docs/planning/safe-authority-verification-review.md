@@ -14,7 +14,7 @@ and witness integration are tracked in [sdk#14](https://github.com/crossecute/sd
 
 | Area | Implemented | Required before production |
 | --- | --- | --- |
-| Types/interfaces | The design's encodings: AuthoritySelection, AuthorityUpdate (previousUpdateHash, newAuthorityHash), AuthorityNode/AuthorityGraph/AuthorityEntry, ChildUpdate; guard activate(authorityHash), registerOwnershipChange(update), selectAuthority(update), stageUpdate(sourceSafe, currentGraph, newGraph, childUpdates, portableSignatures, nestedApprovals), executed; receiver submitAuthority(evidence, newGraph, childUpdates), submitAuthorityBatch(bytes[]), selection, graph, record. | Freeze the final ABI after review. No checkpoint-reuse API is part of this design. No migration from #108 fixed authority: nothing is deployed. |
+| Types/interfaces | The design's encodings: AuthoritySelection, AuthorityUpdate (previousUpdateHash, newAuthorityHash), AuthorityNode/AuthorityGraph/AuthorityEntry, ChildUpdate; guard activate(authorityHash), registerOwnershipChange(update), selectAuthority(update), stageUpdate(sourceSafe, currentGraph, newGraph, childUpdates, portableSignatures, nestedApprovals), executed; receiver submitAuthority(evidence, newGraph, childUpdates), submitAuthorityBatch(bytes[]), selection, graph, record. | Freeze the final ABI after review. No checkpoint-reuse API is part of this design. |
 | Receiver authority | SignedReceiver uses ReceiverAuthorityTemplate and the linked ReceiverAuthority library over ERC-7201 storage: one seed from the bootstrap's head and selected graph (root first at position zero, canonical, nonzero descendant positions), then submitAuthority for successors only, with activations rejected. AuthorityRecognition recognizes root and child source calls against constructor pins. Predecessor and graph hash checks precede atomic record and graph writes. Authentication checks canonical acyclic structure, the 16-owner cap, the root record per update kind and a flat pass over child updates from proven (Safe, position) records. Unused, repeated and activation child updates reject; an added Safe is taken as named. SafeQuorum checks root and child votes under the positions each update names. | Live provider validation. Offline archive/retrieval and atomic direct catch-up batches are implemented; operators must deploy backed-up archival storage. |
 | Source guard | `SourceAuthorityGuard`, inherited by CrossecuteGuard: selection hashes, executed-head record hashes and publication hashes per Safe. `stageUpdate` carries currentGraph, newGraph and portable evidence in transient storage under the per-Safe execution lock (X10). Activation checks both guard slots, pinned singleton and handler, no modules, live owners and threshold, and executed descendant positions (X11). Successors authenticate currentGraph against the selected hash before shared ReceiverAuthority transition verification; the post-hook checks final live ownership and the executed hash. Tests reject stale and altered witnesses, including stale child positions with unchanged root owners, and retry with the valid witness. The [guard build size check](../../contracts/safe-guard/README.md#build-and-chain-support) enforces EIP-170. | Automatic activation remains unadopted. SDK multicall tooling is tracked in [sdk#14](https://github.com/crossecute/sdk/issues/14). Deploy with the pins on each chain. Review the protected-call rules against every Safe 1.5.0 owner-changing path before enabling. |
 | Mutation encoding | ownershipBatchData packs the guard's registerOwnershipChange(update) call and then zero-value supported self-CALLs into MultiSendCallOnly calldata; decodeOwnershipBatch inverts it and accepts only data that re-encodes exactly. AuthorityMutations.applyMutations derives every intermediate owner list in Safe 1.5.0 order, checks predecessor/sentinel, threshold and the 16-owner cap at each step, and requires the result to equal the expected record; added owners take their kind from it. A differential fuzz test checks each step against a real Safe 1.5.0. The receiver authority library calls it for root and child ownership changes. SourceAuthority.t.sol covers a threshold change before later mutations under one pre-batch quorum, and fault-injects a post-state mismatch to check rollback of owners, nonce, head and publication. | Live source validation. |
@@ -87,12 +87,10 @@ provider conduits, including published authority relays, exact retries and direc
 updates, replay rejection, old-key rejection and accepted commitment finalization after
 rotation. Deployment tests check immutable pins across all six provider receivers.
 
-The EVM project, including authority code, uses its existing legacy compiler pipeline.
-Linked library calls bundle request context to stay within the compiler's stack limit.
-Bootstrap encodes its graph separately for the same reason. No authority path restriction
-changes a deployment helper to via-IR, which would change Proxy initcode and the factory's
-address. Clean-build comparisons keep Proxy, ProxyDeployer and transceiver artifacts
-unchanged; receiver and authority library changes are expected.
+The EVM project uses the legacy compiler pipeline. Linked library calls bundle
+request context and the bootstrap encodes its graph separately to stay within the
+compiler's stack limit. Deployment checks pin the Proxy initcode that determines
+deployment addresses.
 
 The [shared vectors](../vectors/safe-authority-updates-109.json) are generated with `cast`,
 independently of the Solidity encoders: Safe 1.5.0 SafeTx and SafeMessage hashes with
@@ -102,7 +100,6 @@ vector carries an encoded bootstrap, a full encoded submission (with child updat
 where that case uses them), readable fields and the expected verdict. `test/authority/AuthorityVectors.t.sol`
 seeds a real SignedReceiver from each, checks record and graph hashes, SafeTx hashes and
 ownership-batch calldata against the production encoders, and submits it. The 38 semantic
-cases stay prose expectations, covered by the acceptance matrix. Historical 43-case gas/wire benchmarks remain unchanged
-measurements of the existing verifier. Current source update execution and receiver
-measurements are documented in [the current benchmark report](../benchmarks/authority-109/updates.md). Run relevant source/receiver integration, both lint profiles, formatting,
+cases are prose expectations covered by the acceptance matrix. Source and receiver
+measurements are documented in [the authority update benchmark report](../benchmarks/authority-109/updates.md). Run relevant source/receiver integration, both lint profiles, formatting,
 size/selector checks and real Safe 1.5.0 fixtures before enabling any deployment.

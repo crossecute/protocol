@@ -318,7 +318,7 @@ Chains already `Live` keep their addresses: the deployer is write-once per (prov
    so nothing is sent there, but a `Pending` entry is still authenticated inbound (previous
    section), which is why the re-key should be scheduled with step 2 and routes to a `Pending`
    chain should wait. A `Live` entry cannot be re-keyed.
-4. For each chain added from now on, schedule `addProviderOnChain(chainKey, provider, new)`. A
+4. For each chain added after the rotation, schedule `addProviderOnChain(chainKey, provider, new)`. A
    registry that applied step 2 later than this reverts `DeployerMismatch` and can be retried
    once it has.
 5. Deploy each new chain's contracts with `--sender <new>`, verify them (previous section), then

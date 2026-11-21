@@ -136,12 +136,10 @@ and trust assumptions.
   LayerZero and CCIP, are a default to confirm: they must be two providers that reach every
   chain from the home, which rules out both OP Stack providers, and Wormhole until its
   deliverer exists.
-- **Dependency pins.** Decided 2026-10-19: Foundry stays at 1.8.1 (latest 1.8.5), and
-  OpenZeppelin at 5.4.0 (latest 5.7.0). Foundry does not set the bytecode; solc and its
-  settings are pinned in `foundry.toml`. From 5.5.0, OpenZeppelin's `Arrays` uses `mcopy`,
-  which `EnumerableSet` reaches, so `src/` no longer compiles at `paris` (README,
-  Assumptions). The one OpenZeppelin advisory since 5.2 (`Bytes.lastIndexOf`) is fixed in
-  5.4.0, and `src/` does not import `Bytes`.
+- **Dependency pins.** CI uses Foundry 1.8.1. The EVM project pins solc and Paris
+  compiler settings in `foundry.toml` and uses OpenZeppelin 5.4.0. Any OpenZeppelin
+  upgrade must keep the `EnumerableSet` dependency chain compatible with Paris. In
+  OpenZeppelin 5.5.0, `Arrays` uses the Cancun-only `mcopy` instruction.
 
 - **A check that a deployment is the one to mark live.** Before `markLive`, the proposers read
   code at the predicted address, the implementation's code hash, `owner()`, `chainRegistry()`,
@@ -156,8 +154,8 @@ and trust assumptions.
   would replace naming them.
 - **Gating inbound on `Live`, or binding `markLive` to a deployer.** Inbound authentication uses
   the registry's prediction for a `Pending` entry, and `markLive` marks whatever the entry holds
-  when it executes. Both are handled by procedure now (README, "Marking a chain live"); a
-  `isLive` check in the default-counterpart branch and a `markLive(chainKey, provider,
+  when it executes. Operators cover both in the deployment procedure (README, "Marking a
+  chain live"). An `isLive` check in the default-counterpart branch and a `markLive(chainKey, provider,
   expectedDeployer)` would handle them in code.
 - **A handshake in place of `markLive`.** The destination transceiver confirms itself with a
   message the source registry records. It needs a first message to a chain with no live
@@ -171,7 +169,7 @@ blocks it.
 - **`test/vectors/`.** [`encoding.md`](architecture/encoding.md) specifies the corpus and the
   "assert fields, not bytes" rule. Foundry can verify the commitment half for every VM with
   no non-EVM tooling: cheap, and the only defence on the execute-on-arrival path where
-  there is no commitment at all. **Now load-bearing for the scheme plugins**: an
+  there is no commitment at all. The vectors also validate scheme plugins. An
   `ICommitmentScheme` is only as good as the evidence that its primitive matches what the
   destination's own receiver applies, and a wrong one leaves an approval that can never be
   discharged. The corpus is what turns "we believe this is Blake2b" into a

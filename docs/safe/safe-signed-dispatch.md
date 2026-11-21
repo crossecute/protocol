@@ -176,9 +176,6 @@ Authority:
   waiting for source execution, subject to the destination's execution checks. Canceling
   the source Safe transaction at the same nonce does not invalidate the signed bundle or
   undo a root registration that already executed.
-- **C7. PR #115's draft of this file.** It describes a superseded design: `minimumNonce` with
-  gaps, no stored execution hash, leaves committing to the parent nonce, and evidence that must
-  delegatecall a supported signing library. This file replaces it.
 
 ## Protocol details
 
@@ -292,11 +289,9 @@ Cases:
 - **Q3.8** The root node is the transmitter's owner Safe.
 - **Q3.9** ReceiverAuthority stores content-addressed records and graph entries, selected
   separately by each receiver. SafeQuorum reads that selected graph for fresh dispatch.
-  A child mutation alone cannot alter a parent's graph. The original SignedReceiver
-  namespace retains its field offsets; its former owner mapping is unused, and its root
-  and source-chain fields identify the source. Authority data has its own ERC-7201 namespace.
-  No migration from an earlier deployed receiver is provided. The base's sequential
-  layout is unchanged ([R8.2](../providers/provider-spec.md#r8-storage-and-address-parity)).
+  A child mutation alone cannot alter a parent's graph. The SignedReceiver ERC-7201
+  namespace stores the source identity and replay state. ReceiverAuthority uses its
+  own ERC-7201 namespace (see [R8.2](../providers/provider-spec.md#r8-storage-and-address-parity)).
 - **Q3.10** Transmitter creation derives live owners to fail early for a graph that cannot
   derive, in every binding: the registry transceivers and `LzOftConduitFactory` both call
   `SafeViewer.signedAuthority`, so one owner is accepted or refused alike. Bootstrap instead takes a supplied selected graph and checks its hash and head
@@ -323,7 +318,7 @@ encoded selected graph and setup calls, which the destination takes on the provi
   creation-time user salt. Destination initialization checks the guard pin, source
   transmitter binding and canonical graph, requires its root to be owner, seeds the
   selection and runs setup atomically. It checks no Safe signature (D22). Failed sends
-  revert the source transaction. Plain bootstrap encoding is unchanged.
+  revert the source transaction.
 - **Q4.4** The guard stages the `bootstrap(bytes,bytes[])` selector for owner transactions
   and rejects it in the installed module guard
   ([#133](https://github.com/crossecute/protocol/pull/133)), so signed bootstrap consumes its
@@ -346,9 +341,11 @@ encoded selected graph and setup calls, which the destination takes on the provi
   envelope before initialization. Signed mode requires a derivable source. Derive the
   receiver with the same salt and the destination's deployment inputs. Both modes use the
   shared implementation.
-- **Q4.8** `SignedReceiver.test_bootstrapEncodingStatesItsSizeIncrease` checks the current
-  body-size formula. `SignedDispatchGas.t.sol` measures bootstrap fixtures. The retained
-  #134 report identifies its measured source snapshot; deployment requires simulation
+- **Q4.8** A signed bootstrap body occupies `320 + 224n + 64m + s` bytes, where
+  `n` is the graph's node count, `m` is the total number of owner entries across those nodes,
+  and `s` is the setup-call byte length rounded up to a multiple of 32.
+  `SignedReceiverTest.test_bootstrapEncodingSize` checks the formula.
+  `SignedDispatchGas.t.sol` measures bootstrap fixtures. Deployment requires simulation
   of the exact release payload and graph.
 
 ### Q5. Recursive signature verification

@@ -1,9 +1,9 @@
 # CCIP 2.0 options
 
-The binding supports optional CCIP 2.0 settings. Omitted attributes keep the existing
-GenericExtraArgsV2 encoding and protocol default gas. Unconfigured inbound policies use
-CCIP default verification and full finality. Upgrading the dependency does not activate
-V3 on a deployed lane.
+The binding supports optional CCIP 2.0 settings. Messages without attributes use
+GenericExtraArgsV2 encoding and protocol default gas. Unconfigured inbound policies
+use CCIP default verification and full finality. Outbound V3 requires explicit lane
+configuration.
 
 ## Enable an outbound lane
 
@@ -12,7 +12,6 @@ The selector must already be registered with `setProviderId`. Enabling requires 
 hash of the operator's recorded deployment/version checks. This hash records an
 attestation; the contract cannot verify the document or discover lane versions on-chain.
 Follow [the deployment checks](../../contracts/evm/deploy/CHECKS.md#ccip-20-options) first.
-No configured lane is asserted to support V3 by this change.
 
 `ccipV3LaneEnabled(selector)` is false until configured. Both transceiver and transmitter
 quotes and sends consult this same setting for V3. Transmitters read their creating
@@ -22,8 +21,8 @@ fallback to another format. Enabling a lane does not change messages without att
 
 ## Select message options
 
-Supply either the existing `CCIP_EXTRA_ARGS_ATTRIBUTE` with
-`abi.encode(uint256 gasLimit, bool allowOutOfOrderExecution)`, or the new
+Supply either `CCIP_EXTRA_ARGS_ATTRIBUTE` with
+`abi.encode(uint256 gasLimit, bool allowOutOfOrderExecution)`, or
 `CCIP_EXTRA_ARGS_V3_ATTRIBUTE` with `abi.encode(ExtraArgsCodec.GenericExtraArgsV3)`.
 Each attribute is its four-byte selector followed by the ABI-encoded body. At most one
 attribute is allowed, so V2 and V3 cannot be combined. CCIP 2.0 accepts the legacy encoding

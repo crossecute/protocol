@@ -99,8 +99,7 @@ contract UnknownChainTypeTest is Test {
         registry.setValidator(chainKey, new WidthValidator());
         vm.stopPrank();
 
-        // The validator is enforced wherever a location is checked, which is now the
-        // transceiver's setter calling back into `requireLocation`.
+        // The transceiver setter validates the location through the registry's `requireLocation`.
         bytes memory wrongWidth = Erc7930.encode(CT_UNKNOWN, hex"cafe", hex"00112233");
         vm.expectRevert(abi.encodeWithSelector(WidthValidator.BadWidth.selector, 4));
         registry.requireLocation(chainKey, wrongWidth);

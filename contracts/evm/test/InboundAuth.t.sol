@@ -33,7 +33,7 @@ contract MockReceiver is AnyGatewayReceiver {
 /// @dev Stands in for a protocol adapter: translates an SDK callback into the three
 ///      arguments `_onInbound` takes, and does nothing else. Authentication is not its job.
 /// @dev A transmitter with an inert send, so a conduit can be stood up on a destination
-///      without a provider behind it. A report has to land on a real conduit now.
+///      without a provider behind it. An inbound report writes to the deployed conduit.
 contract Transmitter is AnyGatewayTransmitter {
     function _sendMessage(bytes memory, bytes memory, bytes[] memory, uint256)
         internal
@@ -187,8 +187,7 @@ contract InboundAuthTest is Test {
         );
     }
 
-    /// @dev The conduit is what the report writes to now, so it has to exist and to have
-    ///      been stood up on that destination.
+    /// @dev The report recipient must be a deployed conduit.
     function _standUpConduit(uint256 chainId) internal returns (Transmitter acct) {
         vm.startPrank(transmitter);
         acct = Transmitter(payable(node.createTransmitter(bytes32(0))));

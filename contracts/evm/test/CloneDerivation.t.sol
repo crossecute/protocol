@@ -387,7 +387,7 @@ contract AddressAliasTest is Test {
     }
 }
 
-/// @dev `TransceiverConfig` as it was before #26.
+/// @dev Invalid initializer shape with a caller-supplied divergence flag.
 struct ConfigWithFlag {
     address[] gateways;
     address transmitterImplementation;
@@ -399,9 +399,8 @@ struct ConfigWithFlag {
     bool addressesDiverge;
 }
 
-/// @dev The flag and the formula cannot disagree, because neither is an argument any more.
-///      A transceiver that reported divergence while deriving addresses Ethereum's way, or the
-///      reverse, was the one state that cannot be right; picking the contract picks both.
+/// @dev The transceiver implementation selects both its address formula and whether
+///      receivers must report their addresses.
 contract DivergenceIsNotConfigurableTest is Test {
     address owner = address(0xA11CE);
     bytes32 constant HASH = keccak256("artifact");
@@ -411,9 +410,7 @@ contract DivergenceIsNotConfigurableTest is Test {
         return transceiverConfig(address(new MinimalConduit()));
     }
 
-    /// @dev #26: the flag was a config field, so a plain transceiver could be initialized to
-    ///      report every receiver while deriving Ethereum's way. The field is gone, and with it
-    ///      the initializer that took it: the old shape, well formed, finds no function.
+    /// @dev The initializer rejects a caller-supplied divergence flag.
     function test_theParityTransceiverCannotBeToldToDiverge() public {
         LzTransceiver s = new LzTransceiver(ENDPOINT, transceiverExtension());
         TransceiverConfig memory c = _config();

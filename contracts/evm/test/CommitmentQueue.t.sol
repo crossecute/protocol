@@ -34,10 +34,9 @@ contract QueueReceiver is AnyGatewayReceiver {}
 
 /// @notice The approval map: unordered discharge, duplicate approvals, and cancellation.
 ///
-/// @dev The property that replaced FIFO. An array names its own approval by hashing to it,
-///      so nothing executes by position and nothing can block: a payload nobody relays sits
-///      outstanding while every other approval discharges around it. What is given up is
-///      ordering, which the payloads themselves now have to express.
+/// @dev Each array selects its own approval by hash. An unrelayed payload leaves its
+///      approval outstanding without blocking others. Payloads express any ordering
+///      dependencies themselves.
 contract CommitmentQueueTest is Test {
     QueueReceiver r;
     Ledger ledger;

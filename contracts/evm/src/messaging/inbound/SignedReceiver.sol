@@ -45,7 +45,7 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
 
     /// @custom:storage-location erc7201:crossecute.storage.SignedReceiver
     struct SignedReceiverStorage {
-        // Retain the namespace layout; only root and sourceChainId identify the source here.
+        // Only root and sourceChainId are used here. ReceiverAuthority stores the selected graph.
         SafeAuthorityState authority;
         // Initial graph hash, nonzero exactly in signed mode. selection() holds the current graph.
         bytes32 graph;

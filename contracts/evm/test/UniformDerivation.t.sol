@@ -43,8 +43,7 @@ contract UniformDerivationTest is Test {
     }
 
     /// @dev Wire one destination end to end and return its chainKey.
-    /// @dev The transceiver is what records a counterpart now; the registry recomputes it and says
-    ///      what it is worth. Both halves are exercised together.
+    /// @dev The transceiver records the counterpart and the registry checks its claimed derivation.
     OwnedTransceiver transceiver;
 
     function _wire(bytes memory chainIdentifier, bytes memory params, bytes32) internal returns (bytes32 chainKey) {

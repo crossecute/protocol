@@ -75,7 +75,7 @@ In this repo:
 When the same logic appears, or is about to appear, in two or more contracts, put it in one
 place and inherit or call it: a base contract under `src/messaging/`, a shared `<P>Message`
 library within a provider, or a cross-provider file under `src/protocols/` (for example
-`ProviderAttribute`, which replaced five per-provider copies of attribute parsing, and
+`ProviderAttribute` for shared attribute parsing and
 `ProviderChainId`). The plain, zkSync, and Tron variants of one provider's transceiver are
 the usual place this shows up: a check added to one must not be pasted into the other two.
 Tests follow the same rule. A property every binding must satisfy goes in
