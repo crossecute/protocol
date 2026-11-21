@@ -2,7 +2,7 @@
 pragma solidity =0.8.30;
 
 import {PolicyEngine} from "policy-engine/core/PolicyEngine.sol";
-import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {SafePolicyGuardBase} from "policy-engine/SafePolicyGuardBase.sol";
 import {IPolicy} from "policy-engine/interfaces/IPolicy.sol";
 import {IPolicyEngine} from "policy-engine/interfaces/IPolicyEngine.sol";
 import {Operation} from "policy-engine/interfaces/Operation.sol";
@@ -10,6 +10,7 @@ import {AccessSelector} from "policy-engine/libraries/AccessSelector.sol";
 import {AllowedModulePolicy} from "policy-engine/policies/AllowedModulePolicy.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
+import {CrossecuteGuard} from "../src/CrossecuteGuard.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
 import {Collider, IUnstagedBootstrap, Sink, TestTransmitter} from "./TestTransmitter.sol";
@@ -100,17 +101,17 @@ contract ModuleTest is GuardTestBase {
         guarded = _newEoaSafe();
         guardedTransmitter = new TestTransmitter(address(guarded), sink);
 
-        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](8);
+        SafePolicyGuardBase.Configuration[] memory configs = new SafePolicyGuardBase.Configuration[](8);
         configs[0] = _config(address(guarded), guarded.enableModule.selector, Operation.CALL, address(ownerOnly));
         configs[1] = _config(address(guarded), guarded.setGuard.selector, Operation.CALL, address(ownerOnly));
         configs[2] = _config(address(guardedTransmitter), bytes4(_stagedData()), Operation.CALL, address(allowPolicy));
         configs[3] = _config(address(collider), bytes4(_stagedData()), Operation.CALL, address(allowPolicy));
-        configs[4] = SafePolicyGuard.Configuration(
+        configs[4] = SafePolicyGuardBase.Configuration(
             address(sink), Sink.hit.selector, Operation.CALL, address(modulePolicy), abi.encode(address(module), true)
         );
         configs[5] =
             _config(address(multiSend), multiSend.multiSend.selector, Operation.DELEGATECALL, address(ownerOnly));
-        configs[6] = SafePolicyGuard.Configuration(
+        configs[6] = SafePolicyGuardBase.Configuration(
             address(guardedTransmitter),
             IUnstagedBootstrap.bootstrap.selector,
             Operation.CALL,
@@ -183,9 +184,20 @@ contract ModuleTest is GuardTestBase {
     }
 
     function test_moduleGuardConfiguration_denied() public {
-        bytes memory data = abi.encodeCall(SafePolicyGuard.requestConfiguration, (bytes32(uint256(1))));
+        bytes memory data = abi.encodeCall(SafePolicyGuardBase.requestConfiguration, (bytes32(uint256(1))));
         vm.expectRevert(PolicyEngine.ModuleConfigurationDenied.selector);
         module.exec(guarded, address(guard), data, Enum.Operation.Call);
+    }
+
+    function test_moduleCannotApplyMatureTimingRequest() public {
+        bytes32 root = guard.timingConfigurationRoot(1 days, 2 days);
+        bytes memory request = abi.encodeCall(SafePolicyGuardBase.requestConfiguration, (root));
+        assertTrue(_exec(guarded, _signers(), address(guard), 0, request, Enum.Operation.Call));
+
+        bytes memory applyTiming = abi.encodeCall(CrossecuteGuard.applyConfigurationTiming, (1 days, 2 days));
+        vm.expectRevert(PolicyEngine.ModuleConfigurationDenied.selector);
+        module.exec(guarded, address(guard), applyTiming, Enum.Operation.Call);
+        assertTrue(_exec(guarded, _signers(), address(guard), 0, applyTiming, Enum.Operation.Call));
     }
 
     function test_ownerSendMessage_stillWorks() public {
@@ -212,7 +224,7 @@ contract ModuleTest is GuardTestBase {
 
     function test_crossSafePolicyCheck_rejected() public {
         Safe checked = _newEoaSafe();
-        SafePolicyGuard.Configuration[] memory configs = new SafePolicyGuard.Configuration[](2);
+        SafePolicyGuardBase.Configuration[] memory configs = new SafePolicyGuardBase.Configuration[](2);
         configs[0] = _config(address(0), bytes4(0), Operation.CALL, address(new CrossSafePolicy(address(safe))));
         configs[1] =
             _config(address(multiSend), multiSend.multiSend.selector, Operation.DELEGATECALL, address(allowPolicy));

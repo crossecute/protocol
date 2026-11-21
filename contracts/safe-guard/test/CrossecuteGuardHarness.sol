@@ -7,7 +7,7 @@ import {CrossecuteGuard} from "../src/CrossecuteGuard.sol";
 ///      Transient storage only survives within one transaction, so a test reads it from inside the
 ///      same `Batch` that ran the execution.
 contract CrossecuteGuardHarness is CrossecuteGuard {
-    constructor(uint256 delay, uint256 expiry, Pins memory pins) CrossecuteGuard(delay, expiry, pins) {}
+    constructor(Pins memory pins) CrossecuteGuard(pins) {}
 
     function recordWords(address safe, uint256 signatureWords) external view returns (uint256[] memory words) {
         bytes32 safeId = _safeId(safe);

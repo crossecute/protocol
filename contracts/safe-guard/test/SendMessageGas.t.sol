@@ -3,6 +3,7 @@ pragma solidity =0.8.30;
 
 import {console2} from "forge-std/console2.sol";
 import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {SafePolicyGuardBase} from "policy-engine/SafePolicyGuardBase.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {GuardTestBase} from "./GuardTestBase.sol";
@@ -11,7 +12,7 @@ import {Collider} from "./TestTransmitter.sol";
 /// @dev Measures what staging and clearing a staged record adds to an owner transaction, by signature
 ///      blob size and by calldata size.
 ///      The target never consumes, so the figure is staging plus cleanup. The baseline is the same
-///      Safe and policy under an unmodified SafePolicyGuard. Reported in contracts/safe-guard/README.md.
+///      Safe and policy under a fixed-timing SafePolicyGuard. Reported in contracts/safe-guard/README.md.
 contract SendMessageGasTest is GuardTestBase {
     function test_gas_sendMessageStaging() public {
         uint256[4] memory sizes = [uint256(0), 1024, 10_240, 102_400];
@@ -36,11 +37,11 @@ contract SendMessageGasTest is GuardTestBase {
         }
     }
 
-    function _sendMessageGas(SafePolicyGuard guard_, uint256 extension) internal returns (uint256 used) {
+    function _sendMessageGas(SafePolicyGuardBase guard_, uint256 extension) internal returns (uint256 used) {
         return _sendMessageGas(guard_, _sendMessageData(), extension);
     }
 
-    function _sendMessageGas(SafePolicyGuard guard_, bytes memory data, uint256 extension)
+    function _sendMessageGas(SafePolicyGuardBase guard_, bytes memory data, uint256 extension)
         internal
         returns (uint256 used)
     {

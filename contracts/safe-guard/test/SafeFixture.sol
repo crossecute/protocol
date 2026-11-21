@@ -2,7 +2,7 @@
 pragma solidity =0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {SafePolicyGuardBase} from "policy-engine/SafePolicyGuardBase.sol";
 import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {AllowPolicy} from "policy-engine/policies/AllowPolicy.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
@@ -46,7 +46,7 @@ abstract contract SafeFixture is Test {
         multiSend = new MultiSendCallOnly();
         signMessageLib = new SignMessageLib();
         allowPolicy = new AllowPolicy();
-        guard = new CrossecuteGuardHarness(0, 1 days, _pins());
+        guard = new CrossecuteGuardHarness(_pins());
     }
 
     function _pins() internal view returns (SourceAuthorityGuard.Pins memory) {
@@ -190,12 +190,14 @@ abstract contract SafeFixture is Test {
     function _install(
         Safe safe,
         Signer[] memory signers,
-        SafePolicyGuard guard_,
-        SafePolicyGuard.Configuration[] memory configurations,
+        SafePolicyGuardBase guard_,
+        SafePolicyGuardBase.Configuration[] memory configurations,
         bool moduleGuard
     ) internal {
         bytes memory batch = abi.encodePacked(
-            _multiSendEntry(address(guard_), abi.encodeCall(SafePolicyGuard.configureImmediately, (configurations))),
+            _multiSendEntry(
+                address(guard_), abi.encodeCall(SafePolicyGuardBase.configureImmediately, (configurations))
+            ),
             _multiSendEntry(address(safe), abi.encodeCall(safe.setGuard, (address(guard_))))
         );
         if (moduleGuard) {
@@ -218,8 +220,8 @@ abstract contract SafeFixture is Test {
     }
 
     /// @dev Owner-side policy only: any CALL, and the two delegatecall targets the tests use.
-    function _defaultConfig() internal view returns (SafePolicyGuard.Configuration[] memory configs) {
-        configs = new SafePolicyGuard.Configuration[](3);
+    function _defaultConfig() internal view returns (SafePolicyGuardBase.Configuration[] memory configs) {
+        configs = new SafePolicyGuardBase.Configuration[](3);
         configs[0] = _config(address(0), bytes4(0), Operation.CALL, address(allowPolicy));
         configs[1] =
             _config(address(multiSend), multiSend.multiSend.selector, Operation.DELEGATECALL, address(allowPolicy));
@@ -231,9 +233,9 @@ abstract contract SafeFixture is Test {
     function _config(address target, bytes4 selector, Operation operation, address policy)
         internal
         pure
-        returns (SafePolicyGuard.Configuration memory)
+        returns (SafePolicyGuardBase.Configuration memory)
     {
-        return SafePolicyGuard.Configuration(target, selector, operation, policy, "");
+        return SafePolicyGuardBase.Configuration(target, selector, operation, policy, "");
     }
 
     function _sortByOwner(Signer[] memory signers) private pure {

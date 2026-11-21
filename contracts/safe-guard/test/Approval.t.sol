@@ -2,7 +2,7 @@
 pragma solidity =0.8.30;
 
 import {Vm} from "forge-std/Vm.sol";
-import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {SafePolicyGuardBase} from "policy-engine/SafePolicyGuardBase.sol";
 import {Operation} from "policy-engine/interfaces/Operation.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
@@ -362,9 +362,9 @@ contract ApprovalTest is GuardTestBase {
         }
     }
 
-    function _childConfig() internal view returns (SafePolicyGuard.Configuration[] memory configs) {
-        SafePolicyGuard.Configuration[] memory base = _defaultConfig();
-        configs = new SafePolicyGuard.Configuration[](base.length + 1);
+    function _childConfig() internal view returns (SafePolicyGuardBase.Configuration[] memory configs) {
+        SafePolicyGuardBase.Configuration[] memory base = _defaultConfig();
+        configs = new SafePolicyGuardBase.Configuration[](base.length + 1);
         for (uint256 i = 0; i < base.length; ++i) {
             configs[i] = base[i];
         }

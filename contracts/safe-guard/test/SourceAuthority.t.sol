@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity =0.8.30;
 
+import {SafePolicyGuardBase} from "policy-engine/SafePolicyGuardBase.sol";
 import {ISafeTransactionGuard} from "policy-engine/interfaces/ISafeTransactionGuard.sol";
 import {ISafeModuleGuard} from "policy-engine/interfaces/ISafeModuleGuard.sol";
 import {Operation} from "policy-engine/interfaces/Operation.sol";
@@ -13,6 +14,7 @@ import {AuthorityMutations} from "crossecute/messaging/authority/AuthorityMutati
 import {SafeAuthorityRecord, SafeOwner} from "crossecute/messaging/signed/types/SafeAuthorityTypes.sol";
 import {NestedSafeApproval} from "crossecute/messaging/signed/types/SignedDispatchTypes.sol";
 import {ReceiverAuthority} from "crossecute/messaging/authority/ReceiverAuthority.sol";
+import {CrossecuteGuard} from "../src/CrossecuteGuard.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {AuthoritySelection, AuthorityUpdate} from "../src/authority/AuthorityUpdateTypes.sol";
 import {ISourceAuthorityGuard} from "../src/authority/ISourceAuthorityGuard.sol";
@@ -66,6 +68,19 @@ contract SourceAuthorityTest is SourceAuthorityBase {
     function _activated() internal returns (bytes32 head) {
         _activate(safe, _ab());
         head = _head(safe);
+    }
+
+    function testActivatedSafeCanChangePolicyTiming() public {
+        bytes32 head = _activated();
+        bytes32 root = guard.timingConfigurationRoot(1 days, 2 days);
+        bytes memory request = abi.encodeCall(SafePolicyGuardBase.requestConfiguration, (root));
+        bytes memory applyTiming = abi.encodeCall(CrossecuteGuard.applyConfigurationTiming, (1 days, 2 days));
+        assertTrue(_exec(safe, _ab(), address(guard), 0, request, Enum.Operation.Call));
+        assertTrue(_exec(safe, _ab(), address(guard), 0, applyTiming, Enum.Operation.Call));
+        (uint256 delay, uint256 expiry) = guard.configurationTiming(address(safe));
+        assertEq(delay, 1 days);
+        assertEq(expiry, 2 days);
+        assertEq(_head(safe), head);
     }
 
     function testOrdinaryBatchCannotForgeActivationHooksAndChangeOwners() public {

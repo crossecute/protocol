@@ -3,7 +3,7 @@ pragma solidity =0.8.30;
 import {GuardTestBase} from "./GuardTestBase.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
-import {SafePolicyGuard} from "policy-engine/SafePolicyGuard.sol";
+import {SafePolicyGuardBase} from "policy-engine/SafePolicyGuardBase.sol";
 import {SafeTx} from "../src/ICrossecuteGuard.sol";
 import {SafeHashes} from "../src/SafeHashes.sol";
 import {SafeBatchExecutor, ISafeExec} from "../src/SafeBatchExecutor.sol";
@@ -727,7 +727,9 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
     /// @notice Install the actual guard and permissive test policies through Safe execution.
     function _installGraph(Safe account) internal {
         bytes memory entries = abi.encodePacked(
-            _multiSendEntry(address(guard), abi.encodeCall(SafePolicyGuard.configureImmediately, (_defaultConfig()))),
+            _multiSendEntry(
+                address(guard), abi.encodeCall(SafePolicyGuardBase.configureImmediately, (_defaultConfig()))
+            ),
             _multiSendEntry(address(account), abi.encodeCall(account.setGuard, (address(guard))))
         );
         bytes memory data = abi.encodeCall(multiSend.multiSend, (entries));
