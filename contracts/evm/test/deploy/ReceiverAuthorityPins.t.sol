@@ -11,7 +11,8 @@ import {WormholeDeploy} from "script/deploy/WormholeDeploy.sol";
 import {OpStackDeploy} from "script/deploy/OpStackDeploy.sol";
 import {OpStackInteropDeploy} from "script/deploy/OpStackInteropDeploy.sol";
 import {LzOftDeploy} from "script/deploy/LzOftDeploy.sol";
-import {receiverAuthorityPins} from "script/deploy/TransceiverDeploy.sol";
+import {DeployLzOft} from "script/DeployLzOft.s.sol";
+import {checkReceiverAuthorityDeployment, receiverAuthorityPins} from "script/deploy/TransceiverDeploy.sol";
 
 contract ReceiverAuthorityPinsTest is Test {
     function deployReceivers() external returns (address[7] memory receivers) {
@@ -39,6 +40,24 @@ contract ReceiverAuthorityPinsTest is Test {
 
     function validatePins(address guard, address multiSend) external pure returns (address, address) {
         return receiverAuthorityPins(guard, multiSend);
+    }
+
+    function test_signedReceiverDeployRequiresLocalGuardCode() public {
+        (address guard,) = receiverAuthorityPins();
+        if (guard == address(0)) {
+            checkReceiverAuthorityDeployment();
+            return;
+        }
+
+        vm.chainId(1);
+        DeployLzOft script = new DeployLzOft();
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployCheck.selector, "deploy the source authority guard before signed receivers")
+        );
+        script.run();
+
+        vm.etch(guard, hex"00");
+        checkReceiverAuthorityDeployment();
     }
 
     function test_pinPairValidation() public {

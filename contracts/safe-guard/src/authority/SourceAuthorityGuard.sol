@@ -93,6 +93,11 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
         _FALLBACK_HANDLER = pins.fallbackHandler;
     }
 
+    /// @notice Safe contracts recognized by this guard, fixed at deployment.
+    function safePins() external view returns (Pins memory) {
+        return Pins(MULTISEND_CALL_ONLY, SIGN_MESSAGE_LIB, _SINGLETON, _SINGLETON_L2, _FALLBACK_HANDLER);
+    }
+
     /// @inheritdoc ISourceAuthorityGuard
     function selection(address sourceSafe) external view returns (AuthoritySelection memory) {
         return $authority[sourceSafe];
