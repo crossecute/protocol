@@ -283,11 +283,8 @@ contract CounterpartRoutingTest is Test {
         assertEq(transceiver.counterpartOn(zkKey), abi.encodePacked(address(0xACE5)));
     }
 
-    /// @dev The transceiver is its own fallback, so there is nothing to be missing. The
-    ///      registry used to answer the default out of `localTransceiver`, which meant a
-    ///      provider with none had no counterpart anywhere; the transceiver answers it from
-    ///      `address(this)`, which it always has. `localTransceiver` still names the
-    ///      transceiver that speaks for a provider, but nothing on the send path reads it.
+    /// @dev A predetermined chain that shares the local deployment inputs resolves to
+    ///      the transceiver's own address without a registered local transceiver.
     function test_theTransceiverIsItsOwnDefault() public {
         vm.prank(msig);
         bytes32 baseKey = registry.addChainKey(Erc7930.encodeEvmChain(8453), Provenance.Predetermined);

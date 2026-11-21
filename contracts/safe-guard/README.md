@@ -96,7 +96,7 @@ There is no persistent-storage fallback.
 
 Compiler settings follow the policy-engine: Solidity 0.8.30, which `SafePolicyGuardBase` pins exactly,
 and via-IR, without which it does not compile. The output and cache directories are this project's
-own. `contracts/evm/` keeps Solidity 0.8.28, Paris and the legacy compiler pipeline, importing
+own. `contracts/evm/` uses Solidity 0.8.28, Paris and the legacy compiler pipeline, importing
 only the compatible interfaces, types and hash helpers from this directory.
 
 ```bash
@@ -190,7 +190,7 @@ under the EIP-2929 schedule a fresh nonzero slot costs 22,100 gas and a zero wri
 and in this shape `value` and the three payment fields are zero. A replacement for the same child
 and message writes over existing slots and costs less. These measurements use no policy
 extension. Approvals with an extension additionally read the Safe's threshold and check each
-required signature's bounds before stripping it. The stored and returned formats are unchanged.
+required signature's bounds before stripping the extension.
 
 Reading a record back with `getApproval` loads every slot of the struct, the two unwritten ones
 included: 62 slots for both records, about 130,200 gas onchain at 2,100 per cold slot. An offchain
@@ -217,8 +217,7 @@ forge test --match-contract 'SendMessageGasTest|ApprovalGasTest|LeafPublicationG
 
 `test/SignedDispatchIntegration.t.sol` runs real Safe 1.5.0 proxies, the actual guard and
 actual signed Hyperlane transceivers/conduits with a mock transport. Context-specific
-remappings import EVM sources into this Cancun test project; the production Paris
-compiler settings remain unchanged. See
+remappings import EVM sources into this Cancun test project. See
 [the measured gas, sizes and test boundaries](../../docs/benchmarks/safe-signed-dispatch-measurements.md).
 
 ```bash

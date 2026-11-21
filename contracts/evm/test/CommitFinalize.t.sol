@@ -632,10 +632,7 @@ contract CommitFinalizeTest is Test {
         assertFalse(ok, "no clone initializer on a transceiver");
     }
 
-    /// @dev There is no setter. Changing the implementation does not move receivers that
-    ///      already exist (clone bytecode fixes the old address at creation), so a change
-    ///      silently forks the population into two logic versions. Removing the setter
-    ///      makes that a redeploy, which is what it always was.
+    /// @dev Each transceiver fixes its receiver implementation at initialization.
     function test_receiverImplementationCannotBeChanged() public {
         assertEq(ext(address(t)).receiverImplementation(), address(receiverImpl));
 
@@ -869,7 +866,7 @@ contract CommitFinalizeTest is Test {
         _r_transmitter.commit(hashOf(b));
         assertEq(r.pendingCount(), 2, "both recorded, neither blocked the other");
 
-        // The later approval goes first, which is now allowed rather than refused.
+        // Finalize the later approval first.
         r.finalize(b);
         assertTrue(r.isCommitted(hashOf(a)), "and the earlier one is untouched");
 
@@ -1037,10 +1034,8 @@ contract CommitFinalizeTest is Test {
         r.initialize(address(0xDEAD), home(), new Call[](0));
     }
 
-    /// @dev The chain-binding is the receiver's alone now. The transceiver has no array
-    ///      to hash, so a commitment built for the wrong destination is accepted on
-    ///      arrival, sits looking valid, and fails when someone tries to spend it. The
-    ///      check moved later; it did not disappear.
+    /// @dev The receiver checks the destination binding at finalization, when it has
+    ///      the call array needed to recompute the commitment.
     function test_wrongChainCommitmentIsAcceptedThenUnspendable() public {
         Call[] memory calls = _calls();
         MockReceiver r = _arrive(transmitter, calls);

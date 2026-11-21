@@ -307,14 +307,10 @@ own `commit`, which is the same mechanism every deferred payload uses.
 dispatches internally and is compiled into every conduit, but no transmitter entry point
 takes one.
 
-`commitmentFor`/`commitmentForChain` name an EVM destination, and every chain that executes
-`Call[]` hashes with keccak256, so both stay keccak-only and `pure`: exactly one primitive
-they can ever need, which is what makes it safe for them to be frozen with the conduit. The
-overload that took a `Scheme` is **gone**, because it was frozen in the worst possible place:
-the set of primitives it could name was fixed at the conduit's creation, so a chain onboarded
-later would be unpreviewable on every conduit already live. Non-EVM destinations are
-previewed through `ChainRegistry.commitmentFor`, where the primitive is an
-`ICommitmentScheme` bound per chainKey and the set grows with one owner transaction.
+`commitmentFor` and `commitmentForChain` are pure, keccak256-only previews for EVM
+destinations. For non-EVM destinations, `ChainRegistry.commitmentFor` uses the
+`ICommitmentScheme` configured for the destination chainKey. Governance can configure
+a scheme for a chain by calling `setCommitmentScheme` on the registry.
 
 **The plugin supplies the primitive, never the fold.** `ICommitmentScheme.hash(bytes)` is
 one function wide; the registry seeds with the chainKey and folds per element itself. So "the
@@ -327,7 +323,8 @@ lookup), that is the whole safety argument for letting the preview be swappable.
 Getting the primitive wrong therefore fails closed, the same way building a commitment with
 the local chainKey does. It is not free: an unmatched commitment sits outstanding until a
 `cancel` crosses, which is why no plugin is to be configured for a chain before it is checked
-against that chain's vectors (not built yet; [`todo.md` §4](../todo.md#4-post-launch-non-evm-destinations)). It no longer blocks anything else, since approvals are unordered.
+against that chain's vectors ([`todo.md` §4](../todo.md#4-post-launch-non-evm-destinations)).
+Unordered approvals let other commitments finalize independently.
 
 **The chainKey is a compile-time constant almost everywhere.** On EVM, `ChainKey.local()`
 derives it from `block.chainid` and nothing has to be configured, which is exactly why the
@@ -397,7 +394,7 @@ not execute. "Run this call array" has no referent. That needs a different recei
 entirely, and pretending otherwise by picking a container format for it would be solving the
 wrong layer.
 
-### What this changes elsewhere
+### Receiver design on Move chains
 
 Three claims argued in the contracts are EVM properties presented as protocol properties,
 and the Move case is where each of them breaks.
@@ -518,11 +515,10 @@ One element carrying 36 bytes: **44 bytes packed against 192 ABI-framed.** Most 
 overhead is zero-padding: cheap in EVM calldata gas, but several providers price by raw
 byte.
 
-**Deferring this costs nothing, which is why it is deferred rather than guessed at.** The
-commitment folds `keccak256(element)` one at a time and never sees the array framing. The
-container can therefore differ per destination without changing a preimage, invalidating a
-commitment, or touching anything on the approval path. ABI framing stays for now because
-EVM→EVM is the only path that exists and it is the natively cheap choice there.
+The commitment folds `keccak256(element)` one at a time, independent of array framing.
+Each destination can choose a container without changing commitment preimages. EVM
+destinations use ABI framing, which has native decoders and low calldata gas costs
+for zero padding.
 
 **Blocking for Starknet specifically:** the bytes↔felt packing convention. Bridges deliver
 Starknet payloads as `Array<felt252>`, not bytes, so before any container format can be
@@ -549,12 +545,12 @@ SafeMessage hashes and the #109 record, graph, ownership-batch, child-update, bo
 submission encodings, and `test/authority/AuthorityVectors.t.sol` replays them against the
 receiver. Freezing the final authority ABI remains a verification-plan gate.
 
-## Rejected
+## Wire format tradeoffs
 
 **`bytes[]` as the EVM wire format.** It costs an extra length word per call. It needs N+1
 decode passes against one for `Call[]`: the outer array, then each element again, copying
 every `data` field twice. It has no standard tooling. And it shows a signer opaque blobs
-where `Call[]` decodes to named fields in a signing UI. It remains the canonical
+where `Call[]` decodes to named fields in a signing UI. It is the canonical
 *commitment* form, since that layer must stay VM-agnostic, and the only form a non-EVM
 destination receives.
 
@@ -563,9 +559,8 @@ property of the destination and both sides know it in advance, so the byte would
 value neither side needs told. See above for the condition that would make one necessary.
 
 **Packed, Safe `MultiSend` style**: `to(20) | value(32) | len(2) | data`. Smallest by a
-wide margin, and reads straight from calldata with no memory copy. Rejected for now: it
-needs hand-written cursor parsing, has no standard tooling, and fixes the address at 20 bytes.
-Revisit if bridge fees show up in cost modelling.
+wide margin, with direct calldata reads. It needs custom cursor parsing and signing
+tooling, and fixes the address at 20 bytes.
 
 Wire bytes for comparison:
 

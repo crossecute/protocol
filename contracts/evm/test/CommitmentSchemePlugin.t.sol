@@ -139,11 +139,7 @@ contract CommitmentSchemePluginTest is Test {
         );
     }
 
-    /// @dev The two other primitives already in the enum, for the same reason. No
-    ///      transmitter can be asked for these any more (the overload that took a
-    ///      `Scheme` is gone), so the registry is the only surface that answers. Pinning
-    ///      it to the library keeps the enum honest as the reference implementation of a
-    ///      fold that non-EVM receivers are written against.
+    /// @dev Compare the registry previews with the library's SHA-256 and Blake2b paths.
     function test_pluginPathReproducesEveryEnumScheme() public view {
         bytes[] memory elements = _elements();
 
@@ -163,13 +159,9 @@ contract CommitmentSchemePluginTest is Test {
         registry.commitmentFor(evmKey, new bytes[](0));
     }
 
-    /// @dev The capability moved, it was not dropped. `TransmitterBase` used to answer
-    ///      this shape through `commitmentForChain(bytes, Scheme, bytes[])`, which was
-    ///      removed because a preview frozen with the conduit can only ever name
-    ///      primitives that already existed. For a destination the enum does cover, the
-    ///      registry returns the identical value, so nothing a signer could ask before
-    ///      has become unanswerable, it is asked somewhere that can still learn.
-    function test_theRegistryAnswersTheShapeTheTransmitterNoLongerDoes() public {
+    /// @dev A non-EVM destination can use the registry's Keccak scheme and match the
+    ///      reference fold for the same chain key and elements.
+    function test_theRegistryPreviewsKeccakForANonEvmDestination() public {
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
 
         vm.startPrank(owner);
@@ -181,7 +173,7 @@ contract CommitmentSchemePluginTest is Test {
         assertEq(
             registry.commitmentFor(solKey, elements),
             lib.enumPath(Scheme.Keccak256, solKey, elements),
-            "the value the removed overload returned"
+            "the reference keccak fold"
         );
     }
 

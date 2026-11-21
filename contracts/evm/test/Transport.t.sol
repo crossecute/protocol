@@ -191,11 +191,8 @@ contract TransportTest is Test {
     uint256 constant DEST = 8453;
     bytes32 constant SALT = keccak256("acct");
 
-    /// @dev The conduit sits at the address its transceiver derives for it, because
-    ///      `bootstrap` refuses any caller that is not that address. Sending now requires
-    ///      the destination to have been bootstrapped, so the fixture performs the real
-    ///      sequence rather than reaching into storage: stand the conduit up on dest, then
-    ///      send to it.
+    /// @dev Bootstrap authenticates the conduit address. The fixture bootstraps the
+    ///      destination before exercising the send path.
     function setUp() public {
         transceiver = new MockTransceiver();
         transceiver.initialize(address(this), address(new MockTransmitter()));
@@ -249,8 +246,7 @@ contract TransportTest is Test {
         return Erc7930.encodeEvm(chainId, address(transmitter));
     }
 
-    /// @dev One `sendMessage` now, so the tests spell the destination the way the ERC does:
-    ///      an interoperable address the conduit builds for itself.
+    /// @dev ERC-7786 sends use an interoperable recipient address.
     function _sendCalls(uint256 chainId, Call[] memory calls) internal {
         transmitter.sendMessage(_recip(chainId), Payload.encodeCalls(calls), NONE);
     }
@@ -317,9 +313,8 @@ contract TransportTest is Test {
         transmitter.sendMessage(_recip(DEST), payload, NONE);
     }
 
-    /// @dev ERC-7786 requires `MessageSent`, and it superseded our own event. `Dispatched`
-    ///      carried two hashes; this carries the recipient, the payload, the value, and the
-    ///      attributes. `CrossecuteFeePaid` records the treasury's share separately.
+    /// @dev `MessageSent` carries the recipient, payload, value and attributes.
+    ///      `CrossecuteFeePaid` records the treasury's share separately.
     function test_theSendEmitsTheStandardEvent() public {
         Call[] memory calls = _calls();
 
@@ -434,10 +429,7 @@ contract TransportTest is Test {
         assertEq(transmitter.sentPayload(), Payload.encodeCalls(calls));
     }
 
-    /// @dev A conduit's peer is itself, and the recipient is checked against that. Taking
-    ///      the destination as an argument reopened something that used to be structural,
-    ///      so a recipient naming anything else on an EVM chain is refused here rather than
-    ///      arriving at a contract that is not this conduit's receiver.
+    /// @dev On a parity chain the receiver shares the transmitter's address.
     function test_aRecipientThatIsNotThisConduitIsRefused() public {
         bytes memory notUs = Erc7930.encodeEvm(DEST, address(0xBEEF));
 
@@ -446,11 +438,7 @@ contract TransportTest is Test {
         transmitter.sendMessage(notUs, Payload.encodeCalls(_calls()), NONE);
     }
 
-    /// @dev The check binds on EVM and only there, deliberately. On a non-EVM chain the
-    ///      conduit is not a 20-byte address and is not derivable from here, so there is
-    ///      nothing to compare against; the same is true on zkSync and Tron, which is what
-    ///      `addressesDiverge` names from the other end. The recipient is the caller's to
-    ///      get right there, and this test records that rather than hiding it.
+    /// @dev A non-EVM send must name the receiver recorded for that chain.
     function test_aNonEvmRecipientIsCheckedAgainstTheRecordedReceiver() public {
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
         bytes[] memory elements = new bytes[](1);
@@ -464,11 +452,8 @@ contract TransportTest is Test {
         assertEq(transmitter.sentRecipient(), _solRecipient(sol), "the recorded receiver, exactly");
     }
 
-    /// @dev The check is universal now, which it could not be while it was derived. A
-    ///      derived check had to be skipped wherever the conduit's address is not
-    ///      `address(this)`, which left every non-EVM recipient unchecked. Comparing against
-    ///      the recorded receiver binds on every chain, so the 32-byte pubkey of somebody
-    ///      else's conduit is refused here rather than on arrival.
+    /// @dev Recipient validation compares the full interoperable address, including
+    ///      the recorded receiver bytes for a non-EVM destination.
     function test_aNonEvmRecipientThatIsNotTheRecordedReceiverIsRefused() public {
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
         _bootstrapTo(sol);
@@ -482,19 +467,13 @@ contract TransportTest is Test {
         transmitter.sendMessage(impostor, payload, NONE);
     }
 
-    /// @dev The pairing check is gone, and this is where that is recorded. The six
-    ///      overloads knew whether they held `Call[]` or `bytes[]`, so a typed payload
-    ///      bound for a non-EVM chain and an opaque one bound for an EVM chain were both
-    ///      refused before they cost a fee. `bytes payload` cannot be asked which it is, so
-    ///      that pairing is now the caller's, and `payloadForCalls` / `payloadForElements`
-    ///      exist so it is at least spelled once. This test asserts the loss so nobody
-    ///      rediscovers it as a bug.
-    function test_aMismatchedPayloadIsNoLongerRefusedLocally() public {
+    /// @dev The transmitter treats payload bytes as opaque. The caller chooses the
+    ///      builder that matches the destination's decoder.
+    function test_aMismatchedPayloadCanBeSent() public {
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
 
         _bootstrapTo(sol);
         vm.prank(owner);
-        // `Call[]` bound for a chain that cannot decode it. This used to revert.
         transmitter.sendMessage(_solRecipient(sol), Payload.encodeCalls(_calls()), NONE);
 
         assertEq(transmitter.sentCount(), 1, "it left, and will fail on arrival instead");
@@ -784,13 +763,9 @@ contract TransportTest is Test {
 
     /* ================================= preview ================================= */
 
-    /// @dev The transmitter previews EVM destinations and nothing else. The portable
-    ///      overload that took a `Scheme` is gone: a preview frozen with the conduit can
-    ///      only answer for primitives that existed when the conduit was created, so
-    ///      non-EVM destinations are previewed through `ChainRegistry.commitmentFor`
-    ///      instead. What remains still refuses a shape it cannot answer for, rather than
-    ///      guessing: a preview you can compute for a message you cannot send is a trap.
-    function test_previewRefusesTheShapeItNoLongerAnswersFor() public {
+    /// @dev The transmitter's typed preview accepts EVM chain identifiers only.
+    ///      Non-EVM previews use `ChainRegistry.commitmentFor`.
+    function test_typedPreviewRefusesANonEvmDestination() public {
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
 
         vm.expectRevert(TransmitterBase.TypedPayloadToNonEvmDestination.selector);
@@ -1114,12 +1089,8 @@ contract TransportTest is Test {
         );
     }
 
-    /// @dev A conduit records its own destinations rather than being configured with them,
-    ///      which is the property the old "a conduit holds no route table" test was really
-    ///      protecting. It does hold one now, but every row is written by `bootstrap` from
-    ///      the identifier the caller already supplied: there is no admin surface on the
-    ///      conduit, nothing a msig has to migrate when a destination is added, and no
-    ///      provider vocabulary in it.
+    /// @dev Bootstrap records the supplied chain identifier on the conduit. Governance
+    ///      configures routes on the transceiver.
     function test_theConduitRecordsItsDestinationsRatherThanBeingConfigured() public view {
         assertEq(
             transmitter.routeTo(ChainKey.forEvm(DEST)),
@@ -1175,10 +1146,7 @@ contract DivergingDestinationTest is Test {
         transmitter.sendMessage(recipient, payload, new bytes[](0));
     }
 
-    /// @dev And after it, the real receiver is addressable. This is what the old derived
-    ///      check made impossible: it enforced `address(this)` on every `eip155` chain, so
-    ///      the only accepted recipient on zkSync was an address holding no code and the
-    ///      real one could never be named.
+    /// @dev Once zkSync reports its receiver, the transmitter can send to that address.
     function test_afterCorrectionTheDivergedReceiverIsReachable() public {
         bytes32 key = ChainKey.forEvm(ZKSYNC);
         bytes memory recipient = Erc7930.encodeEvm(ZKSYNC, address(bytes20(DIVERGED)));

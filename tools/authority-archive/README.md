@@ -5,8 +5,8 @@
 codec for in-process encoding/decoding and Foundry `cast` for selectors and Keccak
 (tested with the repository's CI version, 1.8.1). Hash inputs stream through stdin;
 full graphs and submissions never enter process arguments. Evidence size is limited
-by available resources, without an extra command-line argument ceiling. The archive
-format and on-chain encodings are unchanged. It performs no RPC calls and sends no
+by available resources, without a command-line argument ceiling. The utility performs
+no RPC calls and sends no
 transactions.
 
 ## Setup

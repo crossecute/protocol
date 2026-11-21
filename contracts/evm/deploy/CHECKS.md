@@ -133,7 +133,7 @@ cast call 0x0000000000000000000000000000000000000009 --rpc-url $RPC 0x0000000c28
 
 The first 32 bytes of the 64 returned must equal the digest.
 
-Results, rerun on 2026-10-25 with this 213-byte input (an earlier one was 211 bytes, #93):
+Results measured on 2026-10-25 with the 213-byte input above:
 correct on Ethereum, Base, Arbitrum, and OP Mainnet. zkSync Era reverts. On Tron,
 `0x09` is `BatchValidateSign`; java-tron puts BLAKE2F at `0x020009`, behind
 `allowTvmCompatibleEvm`, which is off on mainnet. `Blake2b256` fails closed on both, because

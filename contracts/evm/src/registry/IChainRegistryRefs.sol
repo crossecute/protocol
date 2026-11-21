@@ -61,7 +61,7 @@ interface IChainRegistryRefs {
     ///         where it was never added.
     function deployedBy(bytes32 chainKey, bytes32 messageProvider) external view returns (address);
 
-    /// @notice The deployer a provider added on a chain from now on is recorded under.
+    /// @notice The deployer recorded when a provider is added to a chain.
     function currentDeployer() external view returns (address);
 
     /// @notice The canonical ERC-7930 chain identifier `chainKey` hashes from.

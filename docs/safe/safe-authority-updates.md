@@ -53,11 +53,9 @@ abi.encode(authorityGraph), setupCalls))`, where setupCalls is `abi.encode(Call[
 Both quote and send require guard to be the Safe's installed transaction guard and
 the head and graph hash to equal its selection. Destination initialization checks guard
 against the receiver implementation's immutable pin. An encoded graph byte string keeps
-the legacy compiler's bootstrap decoder within its stack limit; its extra 64 bytes avoid
-changing the compiler pipeline and Proxy initcode. Relative to #108's record-only body,
-the body grows by `160 + 64n` bytes for n graph nodes with the same records and setup calls.
-The graph remains variable-size because every reachable Safe and selected child position
-must be authenticated. Plain bootstrap encoding is unchanged.
+the legacy compiler's bootstrap decoder within its stack limit at a cost of 64 bytes
+for the offset and length words. The graph is variable-size because it authenticates
+every reachable Safe and selected child position.
 
 updateHead identifies the last accepted signed update, not the owner graph. There is
 no independently advancing global child authority and no authority counter. A
@@ -118,12 +116,9 @@ first head is its [activation](#activation) SafeTx hash; the activation signs on
 initial graph hash, as it has no predecessor. Destinations never receive activations:
 a receiver starts from the head its bootstrap carries.
 
-This linked chain supersedes D93's numeric management nonce watermark. There is no
-maximum-forward-gap rule: the proposed 2^16 gap was paused before adoption and is
-unnecessary for linked ordering. Safe nonces remain signed and enforced on source,
-but destination ordering compares predecessor hashes, not numeric magnitudes. A
-very large signed nonce cannot numerically freeze subsequent lower-nonce linked
-updates. A graph returning to an earlier hash has a different update head.
+Source Safes enforce the signed SafeTx nonce. Destinations order authority updates by
+predecessor hash, so a linked update can follow one with a higher SafeTx nonce. A graph
+returning to an earlier hash has a different update head.
 
 To accept a destination update:
 

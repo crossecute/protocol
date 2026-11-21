@@ -6,12 +6,8 @@ import {Call} from "src/messaging/Call.sol";
 /// @title Envelope
 /// @notice The message bodies that cross between transceivers, each led by its kind.
 ///
-/// @dev Tagged: once every transceiver both sends and receives bootstraps and reports, the
-///      direction no longer decides the shape, and decoding the wrong shape can misread
-///      silently. A decoder checks the tag before it reads anything else.
-///
-/// @dev Kinds start at 1, so a zero word, or the leading owner word of an untagged v1 body,
-///      is refused rather than read as a kind.
+/// @dev Transceivers send and receive both bootstraps and reports, so each decoder
+///      checks the kind tag before reading the body. Zero is reserved as an invalid kind.
 ///
 /// @dev `abi.encode`, not `encodePacked`, so no two messages share a byte string.
 library Envelope {

@@ -67,7 +67,7 @@ Every check on that path, in the order a message meets them:
   payment and `MessageSent.value` records the total. A provider revert rolls both payments
   back; a later delivery failure does not. Provider refunds return to the transmitter.
   Bootstrap, reports, destination execution, local execution/finalization and delivery retries
-  do not charge this fee. The payload format and `sendMessage` selector are unchanged.
+  do not charge this fee.
 - `receiveMessage(receiveId, sender, payload)` is `onlyRole(GATEWAY_ROLE)`, granted at
   arming, and the sender's address must equal `sourceTransmitter`.
 - `_onMessage` is `nonReentrant`. It decodes with `Payload.decodeCalls` and `_execute`s
@@ -252,17 +252,15 @@ per destination with `setPeer`, and it cannot be changed after.
 ## Wire formats
 
 A conduit's channel carries exactly one shape, so its payload needs no tag. A transceiver's
-envelope leads with its kind (`Envelope.BOOTSTRAP` 1, `BOOTSTRAP_ELEMENTS` 2,
-`RECEIVER_REPORT` 3), and each decoder refuses a kind it does not act on before reading the
-rest, so a wrong shape is refused by name rather than misread. Kinds start at 1, so an
-untagged body, which leads with the owner, is refused too. A recipient is a binary
-interoperable address (ERC-7930) carrying its own chain, so no channel names a destination
-separately from its message.
+envelope leads with its kind (`BOOTSTRAP` 1, `BOOTSTRAP_ELEMENTS` 2,
+`RECEIVER_REPORT` 3, `SIGNED_BOOTSTRAP` 4). Each decoder checks the kind before
+reading the body. An ERC-7930 recipient carries its own chain identifier.
 
 | Channel | Payload |
 | --- | --- |
 | transmitter → receiver | `abi.encode(Call[] calls)` on EVM, `abi.encode(bytes[] elements)` elsewhere |
 | home → destination transceiver | `abi.encode(uint8 1, address owner, bytes32 salt, bytes32 transmitter, Call[] calls)` on EVM, `abi.encode(uint8 2, address owner, bytes32 salt, bytes32 transmitter, bytes[] elements)` elsewhere |
+| home → destination transceiver (Safe-signed) | [Signed bootstrap envelope and body](../safe/safe-signed-dispatch.md#q4-authenticated-receiver-bootstrap) |
 | destination → home transceiver | `abi.encode(uint8 3, address owner, bytes32 salt, bytes interop)` |
 
 **Both transceiver channels identify the conduit by owner and salt rather than by its

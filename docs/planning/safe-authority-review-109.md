@@ -4,8 +4,7 @@ Security review register for [#109](../safe/safe-authority-updates.md). This fil
 finding status and unresolved choices, not duplicate design text or implementation
 instructions. [Acceptance coverage](safe-authority-verification-review.md) maps
 requirements to tests. The original reviews are preserved in Git commits 9181da8
-(round 1) and 5a18cd6 (round 2); superseded worksheets and the long conversation
-tracker are removed from the current tree.
+(round 1) and 5a18cd6 (round 2).
 
 ## Round 2
 
@@ -28,9 +27,9 @@ tracker are removed from the current tree.
 | --- | --- |
 | X1 | Portable signature validation remains mandatory in the pre-hook, before the update executes on source. |
 | X2 | Addressed with Y6: registration and mutation are one SafeTx, so no registration can wait for its mutation. |
-| X3/X5/X8/X9/X12 | Former global-history/refresh/counter mechanisms removed; no such active requirements remain. |
+| X3/X5/X8/X9/X12 | Each receiver orders updates through its own selected head and stores the graph it verifies against. |
 | X4/X14 | The root authenticates an update under its stored record; each descendant votes under the position the update names, proven by child updates from the stored position. Lagging/new-chain risks are Y2/Y3 and accepted snapshot staleness is D94/D96. |
-| X6/X7 | Old commitment invalidation questions superseded by D92 permanent accepted authorization subject to explicit cancellation/consumption. |
+| X6/X7 | D92 keeps accepted authorizations valid until explicit cancellation or consumption. |
 | X10 | Same-Safe nested execution/staging overwrite. Implemented: every owner execution holds a per-Safe lock that rejects stageUpdate and same-Safe owner or guarded module reentry until its matching post-hook, and staged data is consumed by one transaction. |
 | X11 | Activation must name/verify singleton, both guards, handler and enabled modules; slot installation alone is insufficient. Implemented at activation: both slots hold the guard, the singleton and handler are pinned, and no module is enabled; self-calls are refused afterwards, so none can be enabled later. |
 | X13 | Default/helper/configuration governance must not gain an unreviewed way to replace authenticated owner authority. Decided: helper, singleton and handler pins are fixed at guard deployment, with no setter and no owner or governance override. Changing one means a new guard; guard migration is out of scope. Enforced through constructor immutables. No executor pin: with the one-transaction ownership change no executor holds an invariant. |
@@ -42,8 +41,8 @@ tracker are removed from the current tree.
 | Child transition proofs | A retained child stays at its stored position or moves through valid forward links supplied with the update. Intermediate positions are scoped to that verification, with no checkpoint reuse or backward traversal through cached authority. A later position may repeat an earlier owner record, including its threshold, but has its own authenticated update head. |
 | Pre-activation restrictions | Implemented: ordinary calls remain policy-controlled, subject to the per-Safe owner-execution lock. The pinned MultiSend executor is restricted to recognized authority-change batches before and after activation; module batches reject. Explicit activation reads live state. |
 | Freeze and equivocation (#109 criterion) | Rejected. No freeze leaf, equivocation-evidence submission or unfreeze role. A freeze below the selected quorum is a new authority, on a lagging destination the freezing quorum may be a retired one, and unfreezing needs a recovery role that is out of scope. Conflicting successors are handled by first-accepted. |
-| Nested example (#109) | A alone updates its authority regarding its children. B has no global identity inside A and there is no default to B's state. After B rotates, A's selectAuthority carrying B's child updates is required before A dispatches under B's new owners; issue #109 now states explicit parent adoption, with a real-Safe end-to-end regression. |
-| Other home-contract authority (DAO) | No signed mode; no adapter in this PR. A later one needs portable proof support, not a bridge assertion. |
+| Nested example (#109) | A alone updates its authority regarding its children. B has no global identity inside A and there is no default to B's state. After B rotates, A's selectAuthority carrying B's child updates is required before A dispatches under B's new owners; the real-Safe integration suite covers explicit parent adoption. |
+| Other home-contract authority (DAO) | Signed mode requires portable Safe evidence. A DAO adapter would need its own portable proof support. |
 | Ordered child positions | Decided. A's graph stores each descendant's position: the head hash of that Safe's own update list. A new graph keeps a position or moves it forward through that Safe's signed updates, verified against records proven from A's graph and never against the descendant's own receivers' state. A height is not an identity, because a child can sign two updates after one head. |
 | Whose owners vote | Decided. A descendant's signatures on an update count under the position that update names for it. The root votes under its stored record. Adoption never depends on a child's removed owners. |
 | Removed Safe owner's vote | Decided: it does not count, for the root and child updates, on source and destinations. An update that removes a Safe owner names no position for it. Counting it under its predecessor position would need the child's predecessor graph entries in every child update, with their own proof. Removed EOA owners still vote. Removing a Safe owner whose vote is needed takes two updates: lower the threshold, then remove it. |
@@ -59,7 +58,6 @@ tracker are removed from the current tree.
 | Encoding simplifications | Decided, each at no security cost: no rootSafe field (nodes[0] is the root and its record hash commits to it); no previousAuthorityHash (previousUpdateHash already commits to the previous graph); activate(authorityHash) without zero predecessors; one receiver entry point for updates. portableSignatures is always supplied separately, with no empty shortcut and no implicit copy of the execution blob. The guard verifies and publishes the supplied bytes; unused trailing bytes grant no authority. Records and positions travel as AuthorityNode, so no parallel arrays. |
 | Execution path | Decided. Updates execute through our tooling as multicall([stageUpdate, execTransaction]) via any multicall contract, unpinned: the multicall holds no invariant, the single SafeTx makes registration and mutation atomic and the guard enforces every check. Owners can sign in the Safe UI, but its plain execTransaction reverts because nothing is staged. SafeBatchExecutor cannot serve, as it only calls execTransaction. |
 | Graph hash and storage | Decided. The graph hash covers (recordHash, position) per Safe. The source guard keeps only selection, executed-head record and publication hashes, with full graphs supplied in staging calldata and published submissions. Receivers store each record once under its hash and each graph as its entry list, so updates write only changed records and ordinary messages need no authority witness. Both paths share transition and quorum verification. |
-| Migration from #108 fixed authority | None. Nothing from #108 is deployed; receivers hold their authority directly. |
 | Stored cycles | Decided: rejected, with #108's SafeAuthorityGraph rule and traversal. The guard checks every activation and update graph on source and every receiver checks it, with stored owner kinds. Stored graphs therefore never hold a cycle; a live source cycle only blocks the adoption that would store it. |
 | Undeployed owner address | Decided: an owner added with no code is EOA-kind and stays so after a Safe is deployed there, until its Safe removes or swaps it out; its contract signatures never count (Y10). Not a security issue: the portable check runs on source too, so source and destinations agree. The guard cannot distinguish it from an EOA; tooling should warn. No guard check on EOA-kind owners with code. |
 | Re-added owner kind | Decided. An owner removed and added again, even within one ownership batch, takes the kind the new record names. An owner that stays keeps its kind. A Safe-kind owner still needs a proven position. |
@@ -72,17 +70,3 @@ tracker are removed from the current tree.
 | Pre-emptive capture | Decided (#148): authority is per receiver, seeded by the bootstrap's head and selected graph. No shared registry and no registration from the public activation, so a retired creation quorum cannot seed or drive a receiver. The bootstrap trusts the provider and source transceiver. |
 | Two signature sets on source | Decided. Safe's check counts live child owners; the guard's portable check is the destination check. When a child rotates between its vote and A's quorum, live owners execute and the earlier set is handed to the guard outside the signed SafeTx. The guard must verify and emit it. |
 | Automatic activation | Evaluated and not adopted (#148): the guard would derive the initial graph, so a Safe owner that has not activated would block an unrelated transaction or be recorded EOA-kind, and the first head would be an arbitrary transaction's hash. A signed activation costs one transaction and keeps the graph the owners' statement. |
-
-## Decision lineage
-
-D79 keeps registration/mutation atomic, now as one SafeTx, D87 fixes 16 immediate owners without an
-aggregate cap, D90 makes the root control its selected descendants, D91 scopes
-selections to the source Safe, held per receiver, D92 preserves accepted commitments, D94/D96 assign
-freshness responsibility to A, and D95 adds no depth/evidence/work caps.
-D93 numeric nonce ordering is superseded by the linked-head design. The paused
-2^16 forward-gap proposal was not adopted. Final interface discussion selects
-universal source-signed evidence, guard operations for activation, ownership change
-and selection, one-SafeTx ownership batches through pinned MultiSendCallOnly, and a
-zero-hash sentinel, now signed by the activation. Historical
-global authority/counter/pinning and implicit-child-adoption alternatives are not
-active requirements.

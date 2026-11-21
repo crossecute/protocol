@@ -7,9 +7,8 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 /// @notice Deterministic address derivation across EVM and non-EVM chains, computed
 ///         on-chain inside an Ethereum transaction. Pure where possible, no chain state.
 ///
-/// @dev Formerly ForeignCreate2. EVM derivations are now a real path rather than a
-///      test-only comparison, because on an EVM destination the registry can resolve
-///      locally and skip the round trip entirely.
+/// @dev The registry can derive addresses locally for EVM destinations that meet its
+///      derivation requirements.
 ///
 /// @dev Scope. Everything here bottoms out in `keccak256` (native) or `sha256` (0x02).
 ///      Bitcoin's `ripemd160` lives in BitcoinDerive.sol, because
