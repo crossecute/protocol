@@ -63,8 +63,8 @@ These are settled. The sections below describe each in full.
   reads without consuming.
 - **Installation.** Fresh and already-guarded Safes install through the standard entry points
   in one owner-approved batch, with no migration-specific API.
-- **Chains and build.** Cancun is required for EIP-1153 and is documented, with no installation
-  preflight. The guard is a separate Foundry project; `contracts/evm/` keeps its Paris
+- **Chains and build.** The signed home Safe [installation preflight](../../contracts/safe-guard/README.md#prepare-a-signed-home-safe)
+  checks EIP-1153 on the target RPC. The guard is a separate Foundry project; `contracts/evm/` keeps its Paris
   target and legacy compiler pipeline.
 - **Dependencies and license.** The patched policy engine is vendored from the
   `crossecute/policy-engine` fork, not applied as a patch at build time. Crossecute's guard
@@ -314,13 +314,14 @@ measures the size and storage cost of this evidence for one nested Safe shape.
 ## Installation
 
 A fresh Safe and a Safe that already has a transaction guard use the same entry points,
-with no migration-specific API. Submit the following calls in one owner-approved MultiSend batch.
+with no migration-specific API. For signed mode, use the [installation preflight](../../contracts/safe-guard/README.md#prepare-a-signed-home-safe)
+to prepare one owner-approved MultiSend batch.
 
 1. Call `configureImmediately` on `CrossecuteGuard` with its policies and, if desired,
    `configureTimingImmediately(delay, expiry)` with its configuration timing, before this
    guard occupies either of the Safe's guard slots.
 2. Call `setGuard(CrossecuteGuard)`.
-3. Optionally call `setModuleGuard(CrossecuteGuard)`.
+3. Call `setModuleGuard(CrossecuteGuard)` for signed mode. Activation requires both slots.
 
 On an already guarded Safe, the batch runs under the existing guard, which must permit it.
 Safe 1.5.0 calls the post-hook on the guard it read before execution, so the old guard

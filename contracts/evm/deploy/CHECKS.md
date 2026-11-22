@@ -424,6 +424,12 @@ chain with an id in the LayerZero, CCIP and Hyperlane files and its messenger in
 and Base, so `ccip.toml` blocks the four pairs with Arbitrum and Optimism. LayerZero is pinned on
 every Fraxtal pathway (#94).
 
+The [signed-mode check](https://github.com/crossecute/protocol/issues/169) found no canonical
+Safe 1.5.0 code at the release pins. Fraxtal can verify signed operations from a supported
+home at the receiver level. The current deployment scripts require local guard code before
+deploying that receiver. A Fraxtal Safe requires the canonical contracts to serve as a
+signed home.
+
 | Check | Result |
 | --- | --- |
 | §1 Arachnid's factory | same code hash as Ethereum (`0x2fa86add…e4989`); `ProxyDeployer`'s address is empty: parity |
