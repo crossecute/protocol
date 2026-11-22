@@ -118,7 +118,7 @@ it has one address on every parity chain.
 
 ### Source guard for signed mode
 
-Deploy `CrossecuteGuard` before running a signed receiver deployment on the chain.
+The Safe's signed home chain runs `CrossecuteGuard` and the canonical Safe 1.5.0 contracts.
 [`safe-guard.toml`](safe-guard.toml) records the release address, all five canonical Safe 1.5.0
 addresses and runtime hashes. Each Safe has zero policy configuration delay and no expiry
 by default. A Safe can choose its own timing at the shared address. See
@@ -149,6 +149,9 @@ cast call "$GUARD" 'safePins()((address,address,address,address,address))' --rpc
 The tuple contains MultiSendCallOnly, SignMessageLib, Safe, SafeL2 and
 CompatibilityFallbackHandler, in that order.
 
+Use [the signed home Safe preflight](../../safe-guard/README.md#prepare-a-signed-home-safe)
+to check EIP-1153 and the Safe configuration before preparing the installation transaction.
+
 ### Signed receiver implementations
 
 Set `CROSSECUTE_AUTHORITY_GUARD` to the verified address from `safe-guard.toml` and
@@ -164,7 +167,10 @@ links, canonical treasury configuration and pins. Record the address and set
 `CROSSECUTE_OFT_FACTORY` to it on every chain.
 The script refuses to deploy at a different address. A signed bootstrap names
 its source guard and must match the destination implementation's guard pin; the helper
-address must be the one that source guard recognizes. Before enabling a signed route,
+address must be the one that source guard recognizes. Receiver verification uses those two
+addresses as pins. See [signed chain roles](../../../docs/safe/safe-signed-dispatch.md#signed-chain-roles)
+for the distinction between receiver requirements and the current deployment script gate,
+including the Fraxtal case. Before enabling a signed route,
 compare the receiver implementation's `SOURCE_AUTHORITY_GUARD()` and `MULTISEND_CALL_ONLY()`
 with the release inputs. Source Safes must activate before signed bootstrap can be quoted or sent.
 

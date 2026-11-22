@@ -8,6 +8,31 @@ interfaces, types and verification libraries.
 The [deployment runbook](../evm/deploy/README.md#source-guard-for-signed-mode) covers predicting
 the release address, deploying the guard and verifying its immutable Safe pins.
 
+## Prepare a signed home Safe
+
+From this project, point `RPC` at the Safe's home chain and set `SAFE` to its address.
+Supply `POLICIES` as a Foundry CLI tuple array of `(target, selector, operation, policy, data)`
+entries. Set the delay and expiry in seconds. This example uses zero delay and no expiry.
+
+```sh
+forge script script/DeploySafeGuard.s.sol --rpc-url "$RPC" \
+  --sig 'prepareInstallation(address,(address,bytes4,uint8,address,bytes)[],uint256,uint256)' \
+  "$SAFE" "$POLICIES" 0 "$(cast max-uint)"
+```
+
+The script requires the target RPC to execute both transient storage opcodes in a read-only
+call against the latest state. It checks the deployed guard and canonical Safe 1.5.0
+contracts, the Safe's singleton, initialization and fallback handler, the absence of enabled
+modules, and both existing guard slots. If the RPC cannot simulate contract creation with
+`eth_call`, use another endpoint for the same chain.
+
+The output includes the chain ID, Safe address, current guards and unsigned Safe transaction
+at the observed nonce. The transaction configures policies and timing, then installs the
+release guard in both slots. Any existing transaction guard must permit the batch. Review
+the output against the current Safe state and simulate the signed transaction before submitting it.
+After installation, [activate the Safe's authority](../../docs/safe/safe-authority-updates.md#activation)
+before bootstrapping a signed conduit.
+
 ## Layout
 
 | Path | What it holds |
@@ -91,8 +116,8 @@ again under the Safe's current timing.
 The guard uses EIP-1153 transient storage (`TSTORE`/`TLOAD`), so it targets Cancun
 (`evm_version = "cancun"`). Every owner transaction reads transient storage in the pre-hook, so
 installing the guard on a chain without EIP-1153 would make every owner transaction revert,
-including one that tries to remove it. Check that the chain has activated Cancun before installing.
-There is no persistent-storage fallback.
+including one that tries to remove it. Use the [installation preflight](#prepare-a-signed-home-safe)
+to confirm support on the home chain before installing.
 
 Compiler settings follow the policy-engine: Solidity 0.8.30, which `SafePolicyGuardBase` pins exactly,
 and via-IR, without which it does not compile. The output and cache directories are this project's

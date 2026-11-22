@@ -21,6 +21,22 @@ describe protocol details, and O items record operational notes and remaining wo
 (D3, C2, Q4.6, R10) remain stable for discussion. Outstanding tooling and deployment
 work is identified explicitly.
 
+## Signed chain roles
+
+A signed home runs the owner's Safe 1.5.0, its canonical Safe helpers and the release
+`CrossecuteGuard`. It must support EIP-1153. Use the [installation preflight](../../contracts/safe-guard/README.md#prepare-a-signed-home-safe)
+to prepare the Safe, then activate its authority before bootstrapping a receiver.
+
+A signed destination verifies against the authority recorded by its receiver. Receiver
+verification uses the source guard and MultiSendCallOnly addresses as immutable pins. The
+current deployment scripts also check for guard code on the destination chain before
+deploying a signed receiver.
+
+The [Fraxtal check](https://github.com/crossecute/protocol/issues/169) found no canonical
+Safe 1.5.0 release at the pinned addresses. A Fraxtal Safe therefore cannot serve as a signed
+home with those pins. The receiver protocol can verify signed operations on Fraxtal from a
+supported home, subject to the deployment script check above and provider route validation.
+
 ## Authority-update integration (#109)
 
 `SignedReceiver` inherits the

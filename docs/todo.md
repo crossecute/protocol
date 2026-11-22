@@ -102,10 +102,6 @@ and trust assumptions.
   and the guard tests check the same three-leaf publication vector. An indexer can recover
   ordered leaves from the guard call input and use the SDK to build proofs. See
   [Merkle leaf publication](safe/safe-guard-design.md#merkle-leaf-publication) for trace requirements.
-- **Nothing checks for Cancun before the Safe guard is installed.** The guard reads transient
-  storage in every owner pre-hook, so on a chain without EIP-1153 it would make every owner
-  transaction revert, including its own removal. Installation tooling should confirm the chain
-  supports `TLOAD`/`TSTORE` first; there is no such tooling yet.
 - **`_ownerSignatures` coverage lives in the guard project.** Its child approval tests cover the
   policy-engine fork's signature helper. See the [guard dependency pins](../contracts/safe-guard/README.md#pins).
 - **Wormhole publish-only messages need a deliverer.** A multisig cannot carry a relay

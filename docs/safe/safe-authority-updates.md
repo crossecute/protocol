@@ -319,8 +319,10 @@ SignMessageLib, the Safe and SafeL2 singletons and the fallback handler. Destina
 implementations take the guard and MultiSendCallOnly addresses as constructor immutables,
 with no setter. These pins apply to every receiver using that implementation. Both pins
 unset permit unsigned mode only; setting just one is rejected. There is no destination registry
-contract. A chain without the canonical MultiSendCallOnly is unsupported until a new
-generation.
+contract. The canonical MultiSendCallOnly runs on the Safe's home chain. Destination
+verification uses its pinned address to recognize the target of the source transaction.
+See [signed chain roles](safe-signed-dispatch.md#signed-chain-roles)
+for the source requirements and destination deployment checks.
 
 The guard keeps only an `AuthoritySelection` per Safe. Each update supplies currentGraph,
 whose source-chain graph hash must equal the selected authority hash before any supplied
