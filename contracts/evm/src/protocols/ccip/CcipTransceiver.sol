@@ -12,7 +12,7 @@ import {IAny2EVMMessageReceiver} from "@chainlink/contracts-ccip/contracts/inter
 import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-/// @notice CCIP on `TransceiverBase`, shared by the plain, zkSync, and Tron variants, which
+/// @notice CCIP on `TransceiverBase`, shared by the standard EVM, zkSync, and Tron variants, which
 ///         differ only in address derivation.
 ///
 /// @dev One Router serves both directions (`ccipSend`/`getFee` and inbound `ccipReceive`), so

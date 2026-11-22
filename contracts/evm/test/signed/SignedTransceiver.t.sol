@@ -76,7 +76,7 @@ contract SignedTransceiverTest is HyperlaneFixture {
     /* ============================ mode at creation ============================= */
 
     /// @notice Create a transmitter for a Safe advertising the Crossecute guard interface.
-    /// @dev Creation must select signed mode at the address a plain conduit of the same owner and
+    /// @dev Creation must select signed mode at the address an unsigned conduit of the same owner and
     ///      salt would have.
     function test_aSafeWithACompatibleGuardGetsASignedTransmitter() public {
         safe.setGuard(address(guard));
@@ -102,8 +102,8 @@ contract SignedTransceiverTest is HyperlaneFixture {
     }
 
     /// @notice Independently derive the signed conduit salt and address.
-    /// @dev A signed conduit uses the plain three-field preimage: no address commits to authority.
-    function test_aSignedConduitUsesThePlainSalt() public {
+    /// @dev A signed conduit uses the shared three-field preimage: no address commits to authority.
+    function test_aSignedConduitUsesTheSharedSalt() public {
         safe.setGuard(address(guard));
         vm.prank(address(safe));
         address conduit = t.createTransmitter(SALT);
@@ -119,9 +119,9 @@ contract SignedTransceiverTest is HyperlaneFixture {
     }
 
     /// @notice Create conduits for unsupported guard and owner cases.
-    /// @dev Capability discovery must fail safely to plain mode rather than assuming signed
+    /// @dev Capability discovery must fail safely to unsigned mode rather than assuming signed
     ///      compatibility.
-    function test_noGuardAnIncompatibleGuardOrAnEoaGetPlain() public {
+    function test_noGuardAnIncompatibleGuardOrAnEoaGetUnsignedMode() public {
         vm.prank(address(safe));
         assertEq(SignedTransmitter(payable(t.createTransmitter(SALT))).isSigned(), false);
 
@@ -219,7 +219,7 @@ contract SignedTransceiverTest is HyperlaneFixture {
     }
 
     /// @notice Carry a source transmitter other than the one derived for the owner and salt.
-    /// @dev The destination binds the signed receiver to the plain derivation of its transmitter.
+    /// @dev The destination binds the signed receiver to the shared derivation of its transmitter.
     function test_aBootstrapNamingAnotherTransmitterRefuses() public {
         address r = _receiver();
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.SourceTransmitterMismatch.selector, r, address(0xBAD)));
@@ -237,7 +237,7 @@ contract SignedTransceiverTest is HyperlaneFixture {
         vm.prank(address(safe));
         address signedConduit = t.createTransmitter(SALT);
         vm.prank(address(0xE0A));
-        address plainConduit = t.createTransmitter(SALT);
+        address unsignedConduit = t.createTransmitter(SALT);
 
         vm.prank(signedConduit);
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.BootstrapModeMismatch.selector, signedConduit));
@@ -247,8 +247,8 @@ contract SignedTransceiverTest is HyperlaneFixture {
         vm.expectRevert(abi.encodeWithSelector(TransceiverCore.BootstrapModeMismatch.selector, signedConduit));
         t.bootstrapElements(remote, address(safe), SALT, new bytes[](0), new bytes[](0));
 
-        vm.prank(plainConduit);
-        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.BootstrapModeMismatch.selector, plainConduit));
+        vm.prank(unsignedConduit);
+        vm.expectRevert(abi.encodeWithSelector(TransceiverCore.BootstrapModeMismatch.selector, unsignedConduit));
         t.bootstrapSigned(remote, address(0xE0A), SALT, hex"", new bytes[](0));
     }
 

@@ -28,7 +28,7 @@ on its chain and receivers for conduits homed elsewhere. Everything below reads 
 "destination" rather than "Ethereum" and "elsewhere" for that reason.
 
 1. **A transmitter is its own message-provider endpoint.** It sends to its receiver
-   directly, so the transceiver is not in the path of a normal message.
+   directly, so the transceiver is not in the application message path.
 2. **The wire carries a payload, not a commitment.** A message is a call array, executed on
    arrival.
 3. **Committing is a call, not a message kind.** A transmitter that wants approve-now and
@@ -40,7 +40,7 @@ receiver on a chain that has none, and reporting back where it landed.
 
 ## The two paths
 
-### A. Normal send: transmitter to its own receiver
+### A. Application send: transmitter to its own receiver
 
 ```mermaid
 flowchart LR
@@ -49,7 +49,8 @@ flowchart LR
     Rx -->|"call(target, value, data)"| Target[target contract]
 ```
 
-Every check on that path, in the order a message meets them:
+These checks apply in unsigned mode. Safe-signed receivers also verify Safe evidence
+against their stored authority. See [Safe-signed dispatch](../safe/safe-signed-dispatch.md).
 
 - `sendMessage(recipient, payload, attributes)` is `onlyConduitOwner`. The recipient is
   checked against the stored counterpart, not trusted, and the destination must already be
@@ -169,7 +170,7 @@ advance each receiver independently, through direct submission or provider deliv
 The [signed dispatch design](../safe/safe-signed-dispatch.md) defines those checks.
 
 For `layerzero-oft`, the factory builds the bootstrap and the conduit sends it through its
-own OFT, so `composeFrom` remains the conduit. Plain and signed conduits use the same salt
+own OFT, so `composeFrom` remains the conduit. Unsigned and signed conduits use the same salt
 binding the owner, user salt, home chain/eid/OFT and destination root. The receiving factory
 checks the route proof, endpoint, eid, peer and conduit derivation; signed bootstrap also
 binds the source-chain domain and the receiver's authority guard pin. After bootstrap,
@@ -195,7 +196,7 @@ authenticated `(owner, salt)` pair, and the receiver it just created.
 **`addressesDiverge` decides whether the report fires.** Where Ethereum's CREATE2 formula
 holds, the home computed the receiver's address before the first message left, so a report
 would spend a message to restate a derivation it already has. The flag is fixed by the
-contract: false on a plain transceiver, true on the zkSync and Tron variants.
+contract: false on a standard EVM transceiver, true on the zkSync and Tron variants.
 `TransceiverBase._bootstrapInbound` argues the rest.
 
 **A failed report takes the conduit creation with it.** The send is nested inside the

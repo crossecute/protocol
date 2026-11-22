@@ -80,14 +80,14 @@ them for a candidate.
   (`LzOftMessage.sendParam`).
 - **L2.3** Every send and quote MUST refuse a destination its home OFT no longer peers as the
   conduit recorded or created it (`LzOftMessage.requirePeer`).
-- **L2.4** A plain bootstrap MUST be sent to the factory, and carry
+- **L2.4** An unsigned bootstrap MUST be sent to the factory, and carry
   `LzOftMessage.Bootstrap(owner, salt, homeChainKey, homeEid, homeOft, destRoot, proof, calls)` as the
   home factory's `conduitBootstrap` builds it from the stored leaves, for the conduit its
   `(owner, salt)` derive. A message MUST be sent to the
   receiver, with the payload as `composeMsg`.
 - **L2.5** The only attribute MUST be `LzMessage.OPTIONS_ATTRIBUTE`, which replaces the
   default lzCompose option whole.
-- **L2.6** Signed mode MUST use the same route-bound salt as plain mode and be fixed by the
+- **L2.6** Signed mode MUST use the same route-bound salt as unsigned mode and be fixed by the
   source Safe's guard capability at creation, checked as the registry bindings check it
   (`SafeViewer.signedAuthority`: an owner graph that does not derive is refused). Before sending or quoting a signed bootstrap,
   the transmitter MUST validate its head and graph against the source guard's activated selection.
@@ -120,7 +120,7 @@ this factory's fixed treasury. Bootstrap still pays only its provider quote.
 - **L4.3** The receiver MUST be armed with the conduit as its source transmitter, the source
   eid as its home, the home OFT, and `_from` as its local OFT.
 - **L4.4** A signed bootstrap MUST bind `sourceChainId` to `homeChainKey` and pass the
-  same endpoint, route proof, peer, eid and `composeFrom` checks as a plain bootstrap. The
+  same endpoint, route proof, peer, eid and `composeFrom` checks as an unsigned bootstrap. The
   receiver MUST be armed with no calls, then initialize its signed authority and setup
   atomically on the provider's authentication. Its guard and MultiSend pins MUST match the
   source guard and the helper it recognizes. A duplicate bootstrap MUST revert `ConduitExists`.
@@ -164,7 +164,7 @@ the conduit).
 | L2.2 | the same two, which compare the value paid with the quote |
 | L2.3 | `test_aRePeeredHomeOftRefusesTheBootstrapAndItsQuote`, `test_aRePeerAfterTheBootstrapRefusesMessages` |
 | L2.5 | `test_theOptionsAttributeReplacesTheDefaultWhole`, `test_aSecondAttributeIsRefused`, `test_anotherBindingsAttributeIsRefused`, `test_onlyTheOptionsAttributeIsSupported` |
-| L2.6 | `test_signedCreationUsesThePlainDerivation`, `test_quoteAndSendRejectUnselectedBootstrapAuthority`, `test_realSafeGuardBootstrapAndComposeShareDirectReplay` |
+| L2.6 | `test_signedCreationUsesSharedDerivation`, `test_quoteAndSendRejectUnselectedBootstrapAuthority`, `test_realSafeGuardBootstrapAndComposeShareDirectReplay` |
 | L3.1 | `test_aSendMovesNoTokensAndCarriesTheDefaultCompose`, `LzOftForkTest` |
 | L4.1 | `test_aCallerOtherThanTheOftsEndpointIsRefused`, `test_anOftOutsideTheRootIsRefused`, `test_aLeafForAnotherChainIsRefused`, `test_aComposeFromAnotherEidThanTheHomesIsRefused`, `test_anOftThatNoLongerPeersTheHomeIsRefused`, `test_aSenderOtherThanTheConduitIsRefused`, `test_aForgedRootCreatesAnotherConduit`, `test_aSecondBootstrapIsRefused` |
 | L4.2, L4.3 | `test_valueReachesTheConduit`, `test_theBootstrapCreatesTheReceiverAtTheConduitsAddress` |

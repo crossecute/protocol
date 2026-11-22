@@ -208,7 +208,7 @@ What an operator or integrator has to know:
   true for `IAny2EVMMessageReceiver`, the off-ramp marks each message executed without ever
   calling `ccipReceive`. The message is lost silently rather than reverted.
   `CcipInterfaceSupportTest` pins the receiver's answer and `CcipTransceiver.t.sol` the
-  transceiver's, on the plain and zkSync versions, so any inheritance change to the CCIP
+  transceiver's, on the standard EVM and zkSync versions, so any inheritance change to the CCIP
   contracts has to keep them.
 - **Wormhole delivery is permissionless.** Anyone may submit a VAA. Automatic delivery needs
   a relay provider's signed quote, fetched off-chain and passed with each send, which
@@ -234,7 +234,7 @@ What an operator or integrator has to know:
   or libraries, which nothing here detects; for a proxied OFT, its upgrade admin, who can
   change how `composeFrom` is encoded; LayerZero's endpoint; and the factory, logic and
   `Proxy`, all immutable at one address everywhere. It is meant for an OFT the conduit's
-  own team operates. A plain conduit needs the OFT channel to execute repair or migration
+  own team operates. An unsigned conduit needs the OFT channel to execute repair or migration
   calls. A signed receiver accepts valid message, leaf and authority submissions directly,
   so an OFT outage does not stop those paths after bootstrap. Its initial authority still
   relies on authenticated OFT delivery. Both modes use the same route-bound address;

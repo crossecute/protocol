@@ -45,7 +45,7 @@ it in the comment. If you could not write or run one, say so.
 
 Read the shared code before the bindings: `src/messaging/` and `src/conduit/`, then the
 shared files in `src/protocols/`, then each provider. When the same change repeats across
-bindings or across a provider's plain, zkSync, and Tron variants, review one copy in full and
+bindings or across a provider's standard EVM, zkSync, and Tron variants, review one copy in full and
 compare the rest against it.
 
 1. **Address parity and storage.** No change to `Proxy`'s initcode or constructor, to
@@ -67,7 +67,7 @@ compare the rest against it.
 6. **Fees and value.** Who pays, who is refunded, and where `msg.value` can be stranded or
    double-counted (R7). A payload size change is a cost change on LayerZero, CCIP, and
    Hyperlane.
-7. **Variant drift.** A check added to one of a provider's plain, zkSync, or Tron variants
+7. **Variant drift.** A check added to one of a provider's standard EVM, zkSync, or Tron variants
    must be in the others, ideally through a shared base. Same for a check added to one
    provider that the spec requires of all of them.
 8. **Cross-chain agreement.** Values that must match across chains (a route and its chainKey,

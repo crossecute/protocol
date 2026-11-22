@@ -30,7 +30,7 @@ The integration tests cover default-CCV resolution, required and optional verifi
 invalid attestations, finality acceptance/rejection, policy changes with pending messages,
 an unsatisfiable receiver policy blocking its own reset, wrong senders, gateway revocation,
 reentrancy rejection, gas overrides, receiver funding, failed execution and retry, replay rejection, custom execution and permissionless later
-execution of a No Exec message. A second suite drives the plain transceiver, whose
+execution of a No Exec message. A second suite drives the standard EVM transceiver, whose
 `ccipReceive` and policy do not come from the upstream helper: a counterpart's bootstrap
 creates the receiver, a non-counterpart's is refused, and a transceiver policy requiring
 an additional verifier blocks the bootstrap until that verifier attests. They do not simulate source consensus reorganizations,

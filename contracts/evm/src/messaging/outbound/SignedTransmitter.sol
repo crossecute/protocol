@@ -15,7 +15,7 @@ import {SignedTransmitterLib} from "src/messaging/outbound/SignedTransmitterLib.
 ///         the owner Safe's signed transaction, a bootstrap carries its selected authority,
 ///         and anyone can relay registered leaves or published authority updates.
 ///
-/// @dev Plain until `initializeSigned`, which the transceiver calls in `createTransmitter` when
+/// @dev Unsigned until `initializeSigned`, which the transceiver calls in `createTransmitter` when
 ///      the owner's guard advertises `ICrossecuteGuard`. In signed mode the owner Safe is the
 ///      creation-time owner (`deployer`), and ownership cannot move: the receivers hold that
 ///      Safe's authority.
@@ -78,7 +78,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     /* ================================ owner calls =============================== */
 
     /// @notice In signed mode, consume the Safe's staged call and transmit its signed evidence
-    ///         with nested approvals; plain mode uses the base path.
+    ///         with nested approvals; unsigned mode uses the base path.
     /// @dev Fees are paid from the conduit's balance.
     function sendMessage(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)
         public
@@ -112,10 +112,10 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     }
 
     /// @notice In signed mode, consume the Safe's staged call and send the setup calls with the
-    ///         guard's selected head and graph; plain mode uses the base path.
+    ///         guard's selected head and graph; unsigned mode uses the base path.
     /// @dev Consuming the guard's record admits only a signed owner transaction, so a module
     ///      cannot bootstrap. Nothing from the record is sent: the destination stores the graph
-    ///      on the provider's authentication. A failed send reverts, as in plain mode.
+    ///      on the provider's authentication. A failed send reverts, as in unsigned mode.
     function bootstrap(bytes calldata payload, bytes[] calldata attributes)
         public
         payable
@@ -259,7 +259,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
 
     /* =================================== quotes ================================= */
 
-    /// @notice Quote the plain send path, reverting when this transmitter is in signed mode.
+    /// @notice Quote the unsigned send path, reverting when this transmitter is in signed mode.
     /// @dev Signed transport fees depend on signatures absent from these arguments, so signed
     ///      callers must use `quoteMessageSigned` instead.
     function quoteMessageBreakdown(bytes calldata recipient, bytes calldata payload, bytes[] calldata attributes)

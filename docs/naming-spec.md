@@ -27,7 +27,7 @@ What the tables do not cover:
 1. **A check that fails is `require*`.** Solidity functions revert and TypeScript functions throw. A `require*` function may return the value it checked or derived: `requireBootstrapBody` returns the body and `requireEvidence` returns the Safe transaction hash. Private helpers are `_require*`. The words `check`, `validate` and `verify` do not name a reverting check.
 2. **A boolean is `is*` or `has*`.** `verify*` is also a boolean, for signature and proof checks that report instead of failing (the SDK's `verifyDispatchProof`, OpenZeppelin's `MerkleProof.verify`). A name that starts with `requires` is never a boolean.
 3. **A function that records its input as used says so.** `consumeVaa` marks the VAA consumed and returns its payload, so it is not a check.
-4. **A signed variant ends in `Signed`.** `bootstrapSigned`, `quoteBootstrapSigned`, `quoteMessageSigned`, `bootstrapCalldataSigned`, `sendMessageCalldataSigned`. The word is a suffix, never a prefix, and signed and plain mode are separate names, not overloads.
+4. **A signed variant ends in `Signed`.** `bootstrapSigned`, `quoteBootstrapSigned`, `quoteMessageSigned`, `bootstrapCalldataSigned`, `sendMessageCalldataSigned`. The word is a suffix, never a prefix, and signed and unsigned variants have separate names, not overloads.
 5. **A calldata builder ends in `Calldata`** and is named after the protocol function it encodes. A builder that returns a Safe transaction ends in `Tx`: `createLzOftTransmitterCalldata` returns calldata, and `lzOftCreateTx` wraps it in a Safe transaction. Encoders of values and wire bodies start with `encode`.
 6. **A provider's chain id is set with `setProviderId`**, on the CCIP, Hyperlane, LayerZero, OP Stack and Wormhole transceivers. The parameter keeps the provider's own term (eid, selector, domain, Wormhole chain id, messenger address). The getters are `providerIdFor` and `hasProviderId`.
 7. **Authority names.** `selectAuthority` replaces a Safe's authority graph and `selection` returns the selected update head and graph hash. The SDK's authority action is `select`.
@@ -43,14 +43,14 @@ Not yet covered by a rule: the lookup suffixes (`For`, `Of`, `On`, `At`, `To`), 
 |---|---|
 | Chain key | The `bytes32` the protocol uses to name a chain, computed by hashing its canonical ERC-7930 chain identifier. `ChainKey.forEvm` takes an EVM chain id, and `Erc7930.chainKey` takes an ERC-7930 envelope. Both yield the same key for the same EVM chain. |
 | Provider id | A provider's own id for a chain: an eid, selector, domain, Wormhole chain id, or on OP Stack the messenger address. Written once per chain key by `ProviderChainId`. |
-| Plain mode, signed mode | In plain mode the conduit owner sends a message directly. In signed mode the owner Safe's signed transaction authorizes each send or Merkle leaf, through the guard. |
+| Unsigned mode, Safe-signed mode | In unsigned mode the home transmitter checks the conduit owner and the destination receiver authenticates delivery through its messaging provider. In Safe-signed mode the receiver also verifies Safe authorization for each message or Merkle leaf. |
 | Bootstrap payload, body | The payload is `(destinationChainIdentifier, body)`. The body is what the destination receiver runs when it is created. |
 | Selection | An `AuthoritySelection`: the selected update head and the hash of the selected authority graph. |
 | Authority graph | The owner groups and thresholds of a source Safe that a receiver stores, committed to by the graph hash in the selection. |
 | Staged record | The guard's record of an owner-signed Safe transaction, held until the signed target consumes it once. |
 | Execution leaf | A Merkle leaf with the fields destination, nonce, `validAfter`, deadline, calls and attributes. `executionId` is its replay identity and leaves out the attributes. |
 | Dispatch leaf hash | `dispatchLeafHash`: the double keccak of a leaf's encoded fields. `executionLeafHash` applies it to an execution leaf. |
-| Plan | The plain-mode plan file: batches of home calls and the Safe transactions that carry them. `parsePlan` reads it and `requirePlan` checks it. |
+| Plan | The unsigned-mode plan file: batches of home calls and the Safe transactions that carry them. `parsePlan` reads it and `requirePlan` checks it. |
 | Merkle package | The leaves behind a signed `registerRoot`, with their tree, root and proofs. `requireMerklePlan` rejects leaf sets the receiver would refuse. |
 | Delivery bundle | A signed Safe transaction together with its Merkle package. `requireDeliveryBundle` checks it offline, and calldata that submits it can be produced from it. |
 | Wire body | The standalone or Merkle encoding that a signed receiver consumes (`encodeStandaloneWire`, `encodeMerkleWire`). |
@@ -499,7 +499,7 @@ Interfaces for a receiver in signed mode: permissionless submission and nonce re
 | `submitMessage(evidence)`<br>_ISignedReceiver · external payable_ | Submits a signed standalone message directly to its receiver, sharing verification and replay tracking with provider delivery. Implemented in: SignedReceiver. | SignedDispatch.submitMessageCalldata, SDK ts/signed.submitMessageCalldata, SDK ABI trim list; also tests | Yes via interface (state-changing) |
 | `submitLeaf(registrationEvidence, leaf, proof)`<br>_ISignedReceiver · external payable_ | Submits a Merkle-authorized execution leaf with its signed root registration and proof. Implemented in: SignedReceiver. | SignedDispatch.submitLeafCalldata, SDK ts/signed.submitLeafCalldata, SDK ABI trim list; also tests | Yes via interface (state-changing) |
 | `nextNonce()`<br>_ISignedReceiver · external view_ | The nonce the next new execution leaf must carry. Implemented in: SignedReceiver. | SDK ABI trim list; also tests | Yes via interface (read-only) |
-| `initializeSigned(sourceChainId, owner, body)`<br>_ISignedReceiverInit · external_ | Stores the source authority the bootstrap carried and runs the receiver's setup, called by the transceiver right after plain initialization. Implemented in: SignedReceiver. | TransceiverBase._signedBootstrapInbound, LzOftConduitFactory._createSignedReceiver, SDK ABI trim list; also tests | Yes via interface (state-changing) |
+| `initializeSigned(sourceChainId, owner, body)`<br>_ISignedReceiverInit · external_ | Stores the source authority the bootstrap carried and runs the receiver's setup, called by the transceiver right after base initialization. Implemented in: SignedReceiver. | TransceiverBase._signedBootstrapInbound, LzOftConduitFactory._createSignedReceiver, SDK ABI trim list; also tests | Yes via interface (state-changing) |
 
 
 #### `contracts/evm/src/messaging/inbound/ReceiverBase.sol`
@@ -557,7 +557,7 @@ Receiver that can be created in signed mode: its bootstrap seeds the source auth
 | `_onMessage(payload)`<br>_internal_ | Signed-mode delivery: requires a recognized signed envelope and verified authorization before executing. Overrides or is overridden in: ReceiverBase. | ReceiverBase._onMessageFrom; also tests | No |
 | `_onMessageMemory(payload)`<br>_internal_ | Same as `_onMessage` for a payload in memory. Overrides or is overridden in: ReceiverBase. | ReceiverBase._onMessageFromMemory | No |
 | `isAuthorizedCaller(conduit)`<br>_public view_ | In signed mode, lets verified execution and finalization make self-calls; the transmitter address alone grants no authority. Overrides or is overridden in: ReceiverBase. | ReceiverBase.onlySourceTransmitter, CcipReceiver._authorizeCcipPolicyChange; also tests | Yes, anyone (read-only) |
-| `authorityGraph()`<br>_external view_ | The stored graph hash, or zero for a plain receiver. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `authorityGraph()`<br>_external view_ | The stored graph hash, or zero for an unsigned receiver. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `authorityRecords()`<br>_external view_ | The stored Safe authority records in canonical order. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `nextNonce()`<br>_external view_ | The nonce the next new execution leaf must carry. Declared in: ISignedReceiver. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `executionAt(nonce)`<br>_external view_ | The execution id recorded at a nonce, or zero. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
@@ -628,16 +628,16 @@ Transmitter that can be created in signed mode: every owner send carries the own
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
 | `initializeSigned()`<br>_external_ | Enables signed mode, once. Declared in: ISignedTransmitterInit. | TransceiverBase.createTransmitter, LzOftConduitFactory.createTransmitter, SDK ABI trim list; also tests | Yes, but the body gates it (caller vs transceiver) (state-changing) |
-| `sendMessage(recipient, payload, attributes)`<br>_public payable_ | In signed mode, consumes the Safe's staged call and sends its signed evidence with nested approvals; in plain mode takes the base path. Declared in: IERC7786GatewaySource. | SignedDispatchCalls.sendMessageArgs, OpStackInteropMessage.send, OpStackMessage.send, CrossecuteGuard._isStaged, SignedDispatch.sendMessageCalldataSigned, SDK ts/signed.sendMessageCalldataSigned, SDK ABI trim list; also tests | Yes, but the body gates it (owner check, super.sendMessage) (state-changing) |
-| `bootstrap(payload, attributes)`<br>_public payable_ | In signed mode, consumes the staged call and sends setup calls with the guard's head and graph; plain mode takes the base path. Declared in: ISignedTransmitter. | SignedReceiver.initializeSigned, CrossecuteGuard._isStaged, SignedDispatch.bootstrapCalldataSigned, SDK ts/signed.bootstrapCalldataSigned, SDK ABI trim list; also tests | Yes, but the body gates it (owner check, super.bootstrap) (state-changing) |
+| `sendMessage(recipient, payload, attributes)`<br>_public payable_ | In signed mode, consumes the Safe's staged call and sends its signed evidence with nested approvals; in unsigned mode takes the base path. Declared in: IERC7786GatewaySource. | SignedDispatchCalls.sendMessageArgs, OpStackInteropMessage.send, OpStackMessage.send, CrossecuteGuard._isStaged, SignedDispatch.sendMessageCalldataSigned, SDK ts/signed.sendMessageCalldataSigned, SDK ABI trim list; also tests | Yes, but the body gates it (owner check, super.sendMessage) (state-changing) |
+| `bootstrap(payload, attributes)`<br>_public payable_ | In signed mode, consumes the staged call and sends setup calls with the guard's head and graph; unsigned mode takes the base path. Declared in: ISignedTransmitter. | SignedReceiver.initializeSigned, CrossecuteGuard._isStaged, SignedDispatch.bootstrapCalldataSigned, SDK ts/signed.bootstrapCalldataSigned, SDK ABI trim list; also tests | Yes, but the body gates it (owner check, super.bootstrap) (state-changing) |
 | `registerRoot(root)`<br>_external_ | Owner registers a root for later permissionless leaf relays; only the root is stored. Declared in: ISignedTransmitter. | SignedDispatchCalls.registeredRoot, CrossecuteGuard._afterOwnerPolicyCheck, CrossecuteGuard._afterModulePolicyCheck, SignedDispatch.registerRootCalldata, SDK ts/signed.registerRootCalldata, SDK ABI trim list; also tests | Yes, gated by onlyConduitOwner (state-changing) |
-| `transferOwnership(newOwner)`<br>_public_ | Reverts `OwnershipFixed` in signed mode (the owner is the creation-time Safe); otherwise normal `Ownable` behavior. Overrides or is overridden in: LzTransmitter. | LzTransmitter.transferOwnership; also tests | Yes, but the body gates it (super.transferOwnership) (state-changing) |
-| `renounceOwnership()`<br>_public_ | Reverts `OwnershipFixed` in signed mode; otherwise normal `Ownable` behavior. Overrides or is overridden in: LzTransmitter. | LzTransmitter.renounceOwnership; also tests | Yes, but the body gates it (super.renounceOwnership) (state-changing) |
+| `transferOwnership(newOwner)`<br>_public_ | Transfers ownership via `Ownable` in unsigned mode. Signed mode fixes the owner to the creation-time Safe and reverts with `OwnershipFixed`. Overrides or is overridden in: LzTransmitter. | LzTransmitter.transferOwnership; also tests | Yes, but the body gates it (super.transferOwnership) (state-changing) |
+| `renounceOwnership()`<br>_public_ | Renounces ownership via `Ownable` in unsigned mode and reverts with `OwnershipFixed` in signed mode. Overrides or is overridden in: LzTransmitter. | LzTransmitter.renounceOwnership; also tests | Yes, but the body gates it (super.renounceOwnership) (state-changing) |
 | `_quoteSignedBootstrap(chainKey, bytes, body, attributes)`<br>_internal view_ | Hook that prices a signed bootstrap; bindings with their own transport override it. Overrides or is overridden in: LzOftTransmitter. | SignedTransmitter.bootstrap, SignedTransmitter.quoteBootstrap | No |
 | `_sendSignedBootstrap(chainKey, bytes, body, attributes, fee)`<br>_internal_ | Hook that sends a signed bootstrap through the transceiver by default; OFT conduits send from the conduit. Overrides or is overridden in: LzOftTransmitter. | SignedTransmitter.bootstrap | No |
 | `relayLeaf(registrationEvidence, leaf, proof)`<br>_external payable_ | Permissionless relay of one registered leaf, with a lock, used-leaf mark and balance check against reentrancy. Declared in: ISignedTransmitter. | SignedTransmitter._refundTo, SignedDispatch.relayLeafCalldata, SDK ts/signed.relayLeafCalldata, SDK ABI trim list; also tests | Yes, anyone (state-changing) |
 | `relayAuthority(recipient, submission, attributes)`<br>_external payable_ | Permissionless relay of a published authority update to the receiver. Declared in: ISignedTransmitter. | SignedTransmitter._refundTo, SDK ts/authority.buildAuthorityRelayProposal, SDK ABI trim list; also tests | Yes, anyone (state-changing) |
-| `quoteMessageBreakdown(recipient, payload, attributes)`<br>_public view_ | Quotes the plain send path, reverting in signed mode. Overrides or is overridden in: TransmitterBase. | TransmitterBase.sendMessage, TransmitterBase.quoteMessage; also tests | Yes, anyone (read-only) |
+| `quoteMessageBreakdown(recipient, payload, attributes)`<br>_public view_ | Quotes the unsigned send path, reverting in signed mode. Overrides or is overridden in: TransmitterBase. | TransmitterBase.sendMessage, TransmitterBase.quoteMessage; also tests | Yes, anyone (read-only) |
 | `quoteBootstrap(payload, attributes)`<br>_public view_ | Quotes a bootstrap in either mode, validating and pricing a signed one's graph. Overrides or is overridden in: TransmitterBase. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `quoteMessageSigned(evidence)`<br>_external view_ | Builds the signed standalone payload from supplied evidence and returns its fee. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `quoteRelay(registrationEvidence, leaf, proof)`<br>_external view_ | The fee for relaying a given registration, leaf and proof. | SignedTransmitter._refundTo, SDK ABI trim list; also tests | Yes, anyone (read-only) |
@@ -1131,7 +1131,7 @@ Private helpers: `_ccipReceive`, `_checkedRouter`.
 
 #### `contracts/evm/src/protocols/ccip/CcipTransceiver.sol`
 
-CCIP on `TransceiverBase`, shared by the plain, zkSync and Tron variants: sends bootstraps and reports through the router and accepts deliveries through `ccipReceive`.
+CCIP on `TransceiverBase`, shared by the standard EVM, zkSync and Tron variants: sends bootstraps and reports through the router and accepts deliveries through `ccipReceive`.
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
@@ -1207,7 +1207,7 @@ Per-user Hyperlane conduit on a non-home chain that implements `IMessageRecipien
 
 #### `contracts/evm/src/protocols/hyperlane/HyperlaneTransceiver.sol`
 
-Hyperlane on `TransceiverBase`, shared by the plain, zkSync and Tron variants: sends through the mailbox and accepts deliveries through `handle`.
+Hyperlane on `TransceiverBase`, shared by the standard EVM, zkSync and Tron variants: sends through the mailbox and accepts deliveries through `handle`.
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
@@ -1353,7 +1353,7 @@ A `layerzero-oft` conduit on its home that sends every message, bootstraps inclu
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
 | `initialize(owner, factory, salt, homeOft)`<br>_ILzOftTransmitterInit · external_ | The initializer the factory arms a transmitter with (owner, factory, salt, home OFT). Implemented in: LzOftTransmitter. | LzOftConduitFactory.createTransmitter; also tests | Yes via interface (state-changing) |
-| `initialize(address, address, bytes32)`<br>_LzOftTransmitter · external pure_ | Reverts: the plain shape would leave the home OFT unset. Declared in: ILzOftTransmitterInit. | LzOftConduitFactory.createTransmitter; also tests | Yes, anyone (read-only) |
+| `initialize(address, address, bytes32)`<br>_LzOftTransmitter · external pure_ | Reverts: the base initializer would leave the home OFT unset. Declared in: ILzOftTransmitterInit. | LzOftConduitFactory.createTransmitter; also tests | Yes, anyone (read-only) |
 | `initialize(owner_, factory_, salt_, homeOft_)`<br>_LzOftTransmitter · external_ | Initializes ownership and the transmitter base and stores the home OFT. Declared in: ILzOftTransmitterInit. | LzOftConduitFactory.createTransmitter; also tests | Yes, gated by initializer (state-changing) |
 | `destinationOf(chainKey)`<br>_LzOftTransmitter · external view_ | The eid and OFT a bootstrap recorded for a chain; zero before it. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `supportsAttribute(selector)`<br>_LzOftTransmitter · external pure_ | Accepts the LayerZero options attribute. Declared in: IERC7786GatewaySource. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
@@ -1367,7 +1367,7 @@ Private helpers: `_messageParam`.
 
 #### `contracts/evm/src/protocols/layerzero/LzReceiver.sol`
 
-Per-user plain LayerZero conduit on a non-home chain; receiver-only OApp that sets its one peer at initialization.
+Per-user native LayerZero conduit on a non-home chain; receiver-only OApp that sets its one peer at initialization.
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
@@ -1381,7 +1381,7 @@ Private helpers: `_lzReceive`.
 
 #### `contracts/evm/src/protocols/layerzero/LzTransceiver.sol`
 
-LayerZero on `TransceiverBase`, shared by the plain, zkSync and Tron variants: one OApp sends bootstraps and reports to any configured eid and receives them from any set peer.
+LayerZero on `TransceiverBase`, shared by the standard EVM, zkSync and Tron variants: one OApp sends bootstraps and reports to any configured eid and receives them from any set peer.
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
@@ -1403,7 +1403,7 @@ Private helpers: `_lzReceive`, `_pinDvn`.
 
 #### `contracts/evm/src/protocols/layerzero/LzTransmitter.sol`
 
-Per-user sender-only plain LayerZero transmitter; the owner sets one peer per destination before its first send.
+Per-user sender-only native LayerZero transmitter; the owner sets one peer per destination before its first send.
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
@@ -1934,12 +1934,12 @@ Library plus LayerZero interfaces that detect whether a sender's send config req
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
-| `messageProvider()`<br>_ILzConduitTransceiver · external view_ | The provider key the transceiver serves, compared with `keccak256("layerzero")` to detect a plain LayerZero conduit. | LzDvn.isDeadDvnRequired; also tests | LayerZero conduit's own function (read-only) |
+| `messageProvider()`<br>_ILzConduitTransceiver · external view_ | The provider key the transceiver serves, compared with `keccak256("layerzero")` to detect a native LayerZero conduit. | LzDvn.isDeadDvnRequired; also tests | LayerZero conduit's own function (read-only) |
 | `providerIdFor(chainKey)`<br>_ILzConduitTransceiver · external view_ | The LayerZero endpoint id for a chain key. | LzDvn.isDeadDvnRequired; also tests | LayerZero conduit's own function (read-only) |
 | `endpoint()`<br>_ILzConduit · external view_ | The conduit's LayerZero endpoint. | LzOftConduitFactory._authenticateBootstrap, LzOftConduitFactory._homeEid, LzOftReceiver.initialize, LzDvn.isDeadDvnRequired; also tests | LayerZero conduit's own function (read-only) |
 | `getSendLibrary(sender, eid)`<br>_ILzSendConfig · external view_ | The send library an OApp uses toward an endpoint id. | LzDvn.isDeadDvnRequired; also tests | LayerZero endpoint function (read-only) |
 | `getConfig(oapp, lib, eid, configType)`<br>_ILzSendConfig · external view_ | The send ULN config of an OApp, library and endpoint id. | LzDvn.isDeadDvnRequired; also tests | LayerZero endpoint function (read-only) |
-| `isDeadDvnRequired(transceiver, sender, chainId)`<br>_LzDvn · internal view_ | For a plain `layerzero` conduit, whether the sender's send ULN config toward a chain lists the dead DVN as required, and the destination's LayerZero eid. | tests only | Yes, from a Foundry script |
+| `isDeadDvnRequired(transceiver, sender, chainId)`<br>_LzDvn · internal view_ | For a native `layerzero` conduit, whether the sender's send ULN config toward a chain lists the dead DVN as required, and the destination's LayerZero eid. | tests only | Yes, from a Foundry script |
 
 
 #### `contracts/LzOft.sol`
@@ -2109,12 +2109,12 @@ Private helpers: `leafEntry`, `signedTxToJSON`, `signedTxFromJSON`.
 
 #### `ts/src/cli.ts`
 
-The `crossecute` command-line entry point: plain-plan check, signed-queue propose, confirm and export, and authority-relay scaffolding.
+The `crossecute` command-line entry point: checks unsigned-mode plans, proposes, confirms and exports signed-queue transactions, and provides authority-relay scaffolding.
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
 | `signedQueue(command, draftPath, owners)`<br>_local_ | Proposes, confirms or exports a signed bundle through Safe Queue, signing with a Ledger via `cast`. | cli.main | Yes, `crossecute signed-propose\|signed-confirm\|signed-export` |
-| `check(planPath, safeTxPath)`<br>_local_ | Verifies a plain-mode plan and prints its Safe transaction hashes. | cli (type alias or module-level code), cli.main; also tests | Yes, `crossecute check` |
+| `check(planPath, safeTxPath)`<br>_local_ | Verifies an unsigned-mode plan and prints its Safe transaction hashes. | cli (type alias or module-level code), cli.main; also tests | Yes, `crossecute check` |
 | `authorityRelay(configPath, directory)`<br>_local_ | Reads a relay config and scaffolds the Forge Attest proposal for a receiver's next authority update. | cli.main | Yes, `crossecute authority-relay` |
 | `main({…})`<br>_local_ | Dispatches `check`, `authority-relay` and `signed-propose\|confirm\|export` from the command line. | cli (type alias or module-level code) | Yes, `crossecute <command>` (bin entry) |
 
@@ -2192,7 +2192,7 @@ Private helpers: `planHashes`, `assemble`, `fieldFromJSON`, `same`.
 
 #### `ts/src/plan.ts`
 
-Parses and checks the plain-mode plan file.
+Parses and checks the unsigned-mode plan file.
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
@@ -2217,7 +2217,7 @@ Private helpers: `unsignedDraft`, `fields`, `matchingTransaction`, `checkedSigna
 
 #### `ts/src/safeTx.ts`
 
-Reads, writes and checks Safe transaction typed data and hashes, and the MultiSend encoding the plain planner uses.
+Reads, writes and checks Safe transaction typed data and hashes, and the MultiSend encoding used by the unsigned-mode planner.
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
@@ -2303,7 +2303,7 @@ A dash means that surface has no function for the concept. Only concepts that ha
 | Merkle package JSON | - | `MerklePackageJson.toJson` | `merklePackageToJsonObject`, `serializeMerklePackage` |
 | Safe transaction hash | `SafeHashes.transactionHash` (guard) | `SafeTxHash.hash` | `safeTxHashes` |
 | Safe typed data | - | `PlanJson.safeTxTypedData` | `serializeSafeTxTypedData`, `parseSafeTxTypedData` |
-| Plain-mode plan | - | `PlanJson.planFile` | `parsePlan`, `requirePlan`, `homeCalldata` |
+| Unsigned-mode plan | - | `PlanJson.planFile` | `parsePlan`, `requirePlan`, `homeCalldata` |
 | Authority graph and record hash | `AuthorityUpdateEncoding.graphHash`, `recordHash` | - | `authorityGraphHash`, `authorityRecordHash` |
 | Select a new authority graph | `ISourceAuthorityGuard.selectAuthority` | - | action `select` in `buildAuthorityProposal` |
 | EVM chain key | `ChainKey.forEvm(chainId)` and `Erc7930.chainKey(envelope)` produce the same key for the same chain | - | `chainKey` |

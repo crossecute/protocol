@@ -28,7 +28,7 @@ abstract contract Unsent is TransceiverBase {
     }
 }
 
-/// @dev A plain transceiver paired with whichever extension the test names.
+/// @dev A standard EVM transceiver paired with whichever extension the test names.
 contract PairedPlain is Unsent {
     constructor(address extension_) TransceiverBase(extension_) {}
 

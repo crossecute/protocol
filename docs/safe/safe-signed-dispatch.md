@@ -32,11 +32,12 @@ receiver's graph and head and how direct and provider-delivered updates advance 
 
 Envelope and routing:
 
-- **D1.** A standalone Safe transaction signs the normal `sendMessage(bytes,bytes,bytes[])`
-  calldata for one destination. The recipient, payload and attributes use the plain mode's
-  encoding. The transmitter consumes the guard-staged authorization and sends in the same
-  source transaction, wrapping the exact calldata with Safe context, signatures and any
-  nested approval evidence. The standalone message has no Merkle root, leaf or proof.
+- **D1.** A standalone Safe transaction signs `sendMessage(bytes,bytes,bytes[])` calldata
+  for one destination. The recipient, application payload and attributes use the same
+  encoding in both modes. The transmitter consumes the guard-staged authorization and
+  sends in the same source transaction, wrapping the exact calldata with Safe context,
+  signatures and any nested approval evidence. The standalone message has no Merkle root,
+  leaf or proof.
 - **D2.** The owner Safe can register any `bytes32` root. The transmitter records the root as
   registered and stores no signatures: the signed registration is in the source
   `execTransaction` calldata, and each relay or direct submission supplies it. Registration
@@ -72,7 +73,7 @@ Trees and leaves:
   the transmitter does not track. Direct execution writes only receiver state.
 - **D8.** Each Merkle leaf commits to its receiver's local nonce. The Safe nonce stays in the
   signed transaction context. A standalone send has the same application payload as the
-  plain path and uses the Safe digest as its replay identity.
+  unsigned path and uses the Safe digest as its replay identity.
 
 Verification and replay:
 
@@ -99,7 +100,7 @@ Verification and replay:
   If the original leaf is still valid, either may consume the nonce first.
 - **D13.** A verified standalone signed message or Merkle leaf can self-call
   `commit(bytes32)`, `cancel(bytes32)`, or `revokeGateway(address)` with the same
-  effects as in plain mode. Verify Safe authorization before executing any of these
+  effects as in unsigned mode. Verify Safe authorization before executing any of these
   calls. A commit-only leaf consumes its nonce when the commitment is recorded.
   `finalize` consumes the commitment later without touching the nonce. A revoked
   gateway cannot deliver provider messages. Direct submission remains available.
@@ -132,7 +133,7 @@ Authority:
 - **D20.** One transmitter and one receiver implementation per provider support both modes.
   At creation, the transceiver discovers the owner's installed transaction guard and probes
   `supportsInterface(type(ICrossecuteGuard).interfaceId)`. An affirmative response selects
-  signed mode. An absent guard, unsupported interface or failed discovery selects plain mode.
+  signed mode. An absent guard, unsupported interface or failed discovery selects unsigned mode.
   The deployment records its mode. A signed transmitter still consumes a fresh staged record
   from the current compatible guard on every signed owner operation and reverts if that record
   is unavailable. Installing or removing a guard later does not change an existing conduit.
@@ -184,9 +185,10 @@ Authority:
 [`SignedDispatchTypes.sol`](../../contracts/evm/src/messaging/signed/types/SignedDispatchTypes.sol) declares a
 shared `SafeTxEvidence` containing a
 [`SignedSafeTx`](../../contracts/safe-guard/src/ICrossecuteGuard.sol) in `signedSafeTx`
-(the exact `SafeTx` and its signatures), and nested approval evidence. For a standalone delivery, decode recipient and plain payload
-from the signed `sendMessage` calldata. For a Merkle delivery, decode the root from the
-signed `registerRoot` calldata and use the separately supplied leaf and proof.
+(the exact `SafeTx` and its signatures), and nested approval evidence. For a standalone
+delivery, decode the recipient and application payload from the signed `sendMessage`
+calldata. For a Merkle delivery, decode the root from the signed `registerRoot` calldata
+and use the separately supplied leaf and proof.
 
 - **Q1.1** Use the configured source Safe and chain ID for the EIP-712 domain. Check the
   signed target and require `operation == CALL` and zero `safeTxGas` and `gasPrice`.
@@ -306,7 +308,7 @@ a signed owner transaction can bootstrap (Q4.4). The body carries the guard, sel
 encoded selected graph and setup calls, which the destination takes on the provider's authentication
 (D22).
 
-- **Q4.1** Verify the signed source transmitter address with the plain derivation and the
+- **Q4.1** Verify the signed source transmitter address with the shared derivation and the
   registered source deployment inputs (Q4.7).
 - **Q4.2** The EIP-155 source chain ID in the Safe domain must match the authenticated
   origin and source chain key.
@@ -323,11 +325,11 @@ encoded selected graph and setup calls, which the destination takes on the provi
   and rejects it in the installed module guard
   ([#133](https://github.com/crossecute/protocol/pull/133)), so signed bootstrap consumes its
   record as `sendMessage` does.
-- **Q4.5** An initialized receiver can accept direct ordinary dispatch before the source
+- **Q4.5** An initialized receiver can accept direct signed application dispatch before the source
   receives a readiness report. A second delivery for an existing receiver reverts.
 - **Q4.6** Bootstrap carries no historical authority updates. Initialized receivers apply
   later updates in sequence under #109.
-- **Q4.7** Signed and plain conduits share one outer CREATE2 salt preimage.
+- **Q4.7** Signed and unsigned conduits share one outer CREATE2 salt preimage.
 
   ```solidity
   conduitSalt = keccak256(abi.encode(owner, userSalt, homeChainKey));
@@ -335,7 +337,7 @@ encoded selected graph and setup calls, which the destination takes on the provi
 
   A transmitter's receivers sit at its address wherever both transceivers share a deployer.
   The source transceiver sends a `SIGNED_BOOTSTRAP` envelope only for a conduit in signed
-  mode and a `BOOTSTRAP` envelope only for one in plain mode, so the envelope kind carries
+  mode and a `BOOTSTRAP` envelope only for one in unsigned mode, so the envelope kind carries
   the mode. Use the authenticated home chain key and the registered source transceiver and
   deployment inputs to derive the expected source transmitter. Check it against the
   envelope before initialization. Signed mode requires a derivable source. Derive the
@@ -588,7 +590,7 @@ so R10 to R12 cover every case and a lower nonce with no record is an invariant 
 | --- | --- |
 | T1 | Only the owner Safe may call `sendMessage`, `bootstrap` or `registerRoot`. Anyone may call `relayLeaf` |
 | T2 | For `sendMessage`, consume the staged guard record and restore `safeTx.data` from `msg.data`. For `bootstrap`, consume it and use nothing from it |
-| T3 | For `sendMessage`, validate the normal recipient and payload, and wrap the signed authorization |
+| T3 | For `sendMessage`, validate the recipient and application payload, and wrap the signed authorization |
 | T4 | For `registerRoot`, require the root published on the current guard, reject an existing root with `RootAlreadyRegistered(root)`, and record it |
 | T5 | For `relayLeaf`, require the supplied registration to be `registerRoot(root)` to this transmitter for a registered root, verify the proof, require an unused leaf hash, and validate the destination route |
 | T6 | Reject `v = 1` and collect nested evidence before paying; for `relayLeaf`, also run Safe's `checkSignatures` against the live authority |
@@ -621,8 +623,8 @@ Where the design lives in code, and what #108's implementation leaves out.
 How the pieces fit:
 
 - **One implementation per provider.** Every binding's transmitter extends `SignedTransmitter`
-  and its receiver `SignedReceiver`, including LayerZero OFT. A conduit is plain until
-  the transceiver or OFT factory calls `initializeSigned`, right after arming it with the plain
+  and its receiver `SignedReceiver`, including LayerZero OFT. A conduit is unsigned until
+  the transceiver or OFT factory calls `initializeSigned`, right after arming it with the base
   initializer and no calls, in the same transaction. Provider setup has one path for both modes.
   `LzOftConduitFactory` selects signed mode with the same creation check
   (`SafeViewer.signedAuthority`: the guard capability probe, then live owner derivation).
@@ -681,7 +683,7 @@ authorize destination execution before the corresponding source Safe transaction
 Relayer-funded leaf and authority sends name the relayer as the OFT refund recipient;
 Safe-funded sends retain conduit refunds. No tokens are moved: OFT amounts remain zero.
 The real Safe fixture's one-route, three-owner, empty-setup bootstrap is 1,280 bytes,
-928 bytes larger than the corresponding plain header encoding. Proofs, graph nodes, owners
+928 bytes larger than the corresponding unsigned header encoding. Proofs, graph nodes, owners
 and setup calls change the complete wire size; signatures are absent from bootstrap.
 The Paris/solc 0.8.28 OFT transmitter runtime is 24,176 bytes (400 bytes of EIP-170 headroom),
 the receiver is 22,021 bytes, and the factory is 18,625 bytes.
@@ -710,12 +712,12 @@ predate the OFT integration above; zkSync/Tron signed support remains separate w
 [`contracts/safe-guard/test/SafeBatchExecutor.t.sol`](../../contracts/safe-guard/test/SafeBatchExecutor.t.sol).
 These cases follow from the items above and are not in the acceptance criteria:
 
-- the transceiver selects signed mode for a compatible installed guard and plain mode
+- the transceiver selects signed mode for a compatible installed guard and unsigned mode
   for an absent or incompatible guard. Both modes use the same implementation.
   Installing or removing the guard later does not flip mode or allow a signed
   transmitter to send without fresh staged authorization;
-- standalone signed sends use the plain recipient and application payload, execute once
-  across both delivery routes, and never read the registered roots;
+- standalone signed sends use the shared recipient and application payload formats,
+  execute once across both delivery routes, and never read the registered roots;
 - after a source owner change, a live-quorum standalone send or root registration succeeds
   on the source. A delivery that fails the stored receiver quorum leaves its execution
   record and nonce unchanged. Applying the update and retrying belong to #109;

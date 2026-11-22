@@ -184,7 +184,7 @@ contract PayloadEncodingTest is Test {
         );
     }
 
-    /// The plain bootstrap payload carries its destination and a body in that destination's
+    /// The unsigned bootstrap payload carries its destination and a body in that destination's
     /// wire form, which decodes as `sendMessage`'s payload would.
     function test_theBootstrapPayloadRoundTrips() public view {
         bytes memory identifier = Erc7930.encodeEvmChain(8453);

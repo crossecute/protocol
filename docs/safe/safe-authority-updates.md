@@ -318,7 +318,7 @@ manager. The guard fixes its pins at deployment, with no setter (X13): MultiSend
 SignMessageLib, the Safe and SafeL2 singletons and the fallback handler. Destination
 implementations take the guard and MultiSendCallOnly addresses as constructor immutables,
 with no setter. These pins apply to every receiver using that implementation. Both pins
-unset permit plain mode only; setting just one is rejected. There is no destination registry
+unset permit unsigned mode only; setting just one is rejected. There is no destination registry
 contract. A chain without the canonical MultiSendCallOnly is unsupported until a new
 generation.
 
@@ -366,7 +366,7 @@ it authenticates the old owners and child positions without persistent source re
 It is not included in receiver update or application wire messages. The current
 [measurements](../benchmarks/authority-109/updates.md) report its source calldata cost.
 The multicall is not pinned: skipped or wrong staging only makes
-the guard revert, and transient data ends with the transaction. A plain
+the guard revert, and transient data ends with the transaction. An unstaged
 execTransaction, as the Safe UI sends it, reverts for lack of staged data; owners can
 still sign there.
 

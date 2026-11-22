@@ -25,7 +25,7 @@ library SafeViewer {
     /// @notice Probe whether the owner's transaction guard advertises the Crossecute guard
     ///         interface.
     /// @dev Conduit creation uses this capability to choose signed mode once. Failed queries or
-    ///      malformed replies select plain mode rather than assuming the owner is a compatible
+    ///      malformed replies select unsigned mode rather than assuming the owner is a compatible
     ///      Safe.
     function isSigned(address owner) internal view returns (bool) {
         (bool ok, bytes memory reply) =

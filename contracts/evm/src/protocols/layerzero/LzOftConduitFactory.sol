@@ -38,8 +38,8 @@ interface IConduitIdentity {
 ///      addresses, which are the same on every chain, so this has one address
 ///      everywhere and a conduit has one address everywhere.
 ///
-/// @dev A plain conduit's CREATE2 salt binds `(owner, salt, homeChainKey, homeEid, homeOft, destRoot)`.
-///      Both modes use the same salt; mode is fixed at creation.
+/// @dev Both modes derive the CREATE2 salt from `(owner, salt, homeChainKey, homeEid, homeOft, destRoot)`.
+///      Creation fixes the mode.
 ///      Any contract can queue a compose for any target, so the bootstrap is trusted only
 ///      because the delivering OFT proves into the root the message names, and that root is
 ///      part of the address the receiver is created at: a forged root creates another conduit.

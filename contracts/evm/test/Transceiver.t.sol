@@ -343,7 +343,7 @@ contract TransceiverTest is Test {
         base.bootstrap{value: quote}(_key(ETH), alice, SALT, _calls(), new bytes[](0));
 
         bytes memory expected = Envelope.encodeBootstrap(alice, SALT, toBytes32(transmitter), _calls());
-        assertEq(base.sentPayload(), expected, "the plain bootstrap's bytes");
+        assertEq(base.sentPayload(), expected, "the unsigned bootstrap's bytes");
         assertEq(quote, expected.length, "the quote prices those bytes");
     }
 

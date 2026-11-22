@@ -23,7 +23,7 @@ Every grade follows from this, so it comes first. It is the chain's `derivation`
 
 A chain is `Predetermined` from another exactly when it is a parity chain and the grading chain
 is not `other` (`ChainConfig.gradeOf`): a zkSync or Tron transceiver finds a parity chain's
-transceiver from the registry's prediction, as every transceiver does, but a plain transceiver on
+transceiver from the registry's prediction, as every transceiver does, but a standard EVM transceiver on
 an `other` chain sits off the shared address and can use no parity address (#33). Code at Arachnid's address does not settle it: zkSync Era returns
 the same 69 bytes there as Ethereum, but EraVM's CREATE2 would put `ProxyDeployer`
 elsewhere. Classify a chain by its VM, then let the deploy's own check confirm it:
@@ -155,7 +155,7 @@ Set `CROSSECUTE_AUTHORITY_GUARD` to the verified address from `safe-guard.toml` 
 `CROSSECUTE_MULTISEND_CALL_ONLY` to that file's `multi_send_call_only.address`. The provider
 deploy helpers, including OFT, pass both as constructor immutables. The scripts refuse a
 partial pair or a signed release deployment with no guard code on the deployment chain.
-Both unset deploy a receiver implementation for plain mode only. For OFT the pins also
+Both unset deploy a receiver implementation for unsigned mode only. For OFT the pins also
 decide the factory's address, since the factory is built with the receiver's address and is not
 a proxy: a pin set on one chain and unset or different on another puts the factory, and every
 conduit it derives, at another address there, and bootstraps to that chain revert. Run

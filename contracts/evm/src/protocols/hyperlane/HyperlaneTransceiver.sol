@@ -7,7 +7,7 @@ import {HyperlaneMessage} from "src/protocols/hyperlane/HyperlaneMessage.sol";
 import {IMessageRecipient} from "@hyperlane/interfaces/IMessageRecipient.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 
-/// @notice Hyperlane on `TransceiverBase`, shared by the plain, zkSync, and Tron variants, which
+/// @notice Hyperlane on `TransceiverBase`, shared by the standard EVM, zkSync, and Tron variants, which
 ///         differ only in address derivation.
 ///
 /// @dev One Mailbox serves both `dispatch`/`quoteDispatch` and inbound `process`->`handle`,
