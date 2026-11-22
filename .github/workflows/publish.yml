@@ -12,7 +12,11 @@ permissions:
   contents: read
 
 jobs:
+  provider-forks:
+    uses: ./.github/workflows/provider-forks.yml
+
   npm:
+    needs: provider-forks
     runs-on: ubuntu-latest
     environment: npm
     permissions:

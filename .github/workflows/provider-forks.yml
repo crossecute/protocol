@@ -1,0 +1,34 @@
+name: provider forks
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-provider-fork:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [layerzero, ccip]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
+        with:
+          version: v1.8.1
+
+      - run: contracts/evm/script/check-provider-forks.sh "$PROVIDER"
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          ETH_RPC_URL: ${{ vars.PROVIDER_FORK_ETH_RPC_URL }}
+          ARBITRUM_RPC_URL: ${{ vars.PROVIDER_FORK_ARBITRUM_RPC_URL }}
+          FRAXTAL_RPC_URL: ${{ vars.PROVIDER_FORK_FRAXTAL_RPC_URL }}
+          BASE_RPC_URL: ${{ vars.PROVIDER_FORK_BASE_RPC_URL }}
+          OPTIMISM_RPC_URL: ${{ vars.PROVIDER_FORK_OPTIMISM_RPC_URL }}

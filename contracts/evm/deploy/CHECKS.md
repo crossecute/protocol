@@ -482,6 +482,30 @@ explicit gas attributes where supported. Use the report's
 [gas guidance](../../../docs/benchmarks/safe-signed-dispatch-measurements.md#delivery-gas-decision)
 and [provider size and fee checks](../../../docs/benchmarks/safe-signed-dispatch-measurements.md#provider-size-and-per-byte-fee-checks).
 
+### Pinned provider checks for a release candidate
+
+Run `contracts/evm/script/check-provider-forks.sh layerzero` and
+`contracts/evm/script/check-provider-forks.sh ccip` from the repo root. The
+[provider forks workflow](../../../.github/workflows/provider-forks.yml) also runs on a selected
+candidate ref and before protocol npm staging. The script verifies the block hashes and requires
+every named suite to run without skips. It uses public RPCs by default. Set `ETH_RPC_URL`,
+`ARBITRUM_RPC_URL`, `FRAXTAL_RPC_URL`, `BASE_RPC_URL`, or `OPTIMISM_RPC_URL` to an archival
+RPC for the same chain if the public endpoint cannot serve the pinned state.
+In GitHub Actions, `PROVIDER_FORK_` followed by one of those variable names overrides a
+public endpoint. The workflow uses the script defaults when no override is configured.
+
+- LayerZero uses deployed endpoints and OFTs for source quote and send, and real OFT and
+  endpoint compose code to execute bootstrap and payloads. A reverted compose stays queued
+  for retry after its target is repaired. Test calls stand in for the DVNs and executor.
+- CCIP checks configured parity lanes with the deployed Router and tests Ethereum-to-Base
+  bootstrap and send fee parity on the Ethereum fork. Separate tests drive CCIP's upstream
+  Router and OffRamp binaries through bootstrap, delivery failure, retry, and replay protection
+  with a local RMN and verifiers.
+
+The workflow makes read-only RPCs and executes transactions locally on forks. Actual provider
+delivery and the [hosted Safe Queue and Ledger acceptance run](../../../docs/safe/hosted-signed-acceptance.md)
+require a disposable deployed route.
+
 ### LayerZero fork regression run (#118)
 
 All three RPC-dependent regressions passed on 2026-11-19 Pacific time with Forge 1.8.1
