@@ -156,6 +156,67 @@ linked authority updates to track Safe ownership and threshold changes.
 [Safe-signed dispatch](docs/safe/safe-signed-dispatch.md) ·
 [Safe authority updates](docs/safe/safe-authority-updates.md)
 
+### Change authority in plain mode
+
+The current owner transfers ownership of the transmitter on the home chain. The
+receivers authenticate the same transmitter address after the handoff, so the new
+owner can use the existing receivers as soon as the transfer succeeds.
+
+```mermaid
+sequenceDiagram
+    participant O as Current owner
+    participant N as New owner
+    participant T as Transmitter
+    participant P as Messaging provider
+    participant R as Receiver
+
+    O->>T: transferOwnership(newOwner)
+    T->>T: Check current owner and store new owner
+    Note over T: Home transaction ends with the handoff complete
+    N->>T: sendMessage(recipient, payload, attributes)
+    T->>P: Dispatch from the existing transmitter address
+    P->>R: Deliver the next operation
+    R->>R: Authenticate the same transmitter and run the calls
+```
+
+If the plain-mode owner is a Safe and its address stays the same, changing the
+Safe's signers or threshold happens entirely within that Safe.
+
+### Change authority in Safe-signed mode
+
+The transmitter stays owned by the source Safe. The current quorum signs an update
+that links the previous update head to the new authority graph. Each receiver
+advances its own head and graph when it accepts the update.
+
+```mermaid
+sequenceDiagram
+    participant S as Source Safe
+    participant L as Any submitter
+    participant G as Source Safe guard
+    participant T as Transmitter
+    participant P as Messaging provider
+    participant R as Signed receiver
+
+    Note over S,L: Current Safe quorum signs the linked update
+    alt Relay a published update
+        L->>G: stageUpdate with graph and portable evidence
+        L->>S: Execute the signed Safe transaction in the same transaction
+        S->>G: Guard verifies update and publishes evidence on success
+        L->>T: relayAuthority with the exact published submission
+        T->>P: Check publication and send update
+        P->>R: Deliver from the authenticated transmitter
+    else Submit signed evidence directly
+        L->>R: submitAuthority with the signed update and graph
+    end
+    R->>R: Check predecessor, graph, and quorum
+    R->>R: Store the new head and authority graph atomically
+```
+
+Direct submission can use valid signed evidence without source execution or
+publication. A receiver that missed several updates applies them in predecessor
+order, optionally in one `submitAuthorityBatch` transaction.
+[Safe authority transport and publication](docs/safe/safe-authority-updates.md#authority-transport-and-publication)
+
 ### Bootstrap and send through a LayerZero OFT
 
 The `layerzero-oft` factory creates a transmitter for a fixed set of destinations
