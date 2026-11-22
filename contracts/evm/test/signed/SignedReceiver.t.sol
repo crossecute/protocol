@@ -125,7 +125,7 @@ contract SignedReceiverTest is Test {
     }
 
     /// @notice Package the fixture's authority records with encoded setup calls.
-    function _bootstrapBody(bytes memory setup) internal view returns (bytes memory) {
+    function _bootstrapBody(bytes memory setup) internal pure returns (bytes memory) {
         return Records.bootstrap(address(0x1234), _records(), setup);
     }
 
@@ -161,7 +161,7 @@ contract SignedReceiverTest is Test {
         assertTrue(r.isAuthorizedCaller(receiver));
     }
 
-    function test_bootstrapEncodingSize() public view {
+    function test_bootstrapEncodingSize() public pure {
         bytes memory setup = abi.encode(new Call[](0));
         for (uint256 count = 1; count <= 3; ++count) {
             SafeAuthorityRecord[] memory records = new SafeAuthorityRecord[](count);

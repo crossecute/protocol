@@ -17,8 +17,8 @@ contract AuthorityHarness {
     /// @notice Expose authority snapshot storage through a test harness.
     /// @dev The verifier tests need a real stored graph without deploying a complete signed
     ///      conduit.
-    function store(SafeAuthorityRecord[] memory records, uint256 chainId) external {
-        authority.store(records, chainId);
+    function store(SafeAuthorityRecord[] memory snapshot, uint256 chainId) external {
+        authority.store(snapshot, chainId);
     }
 
     /// @notice Expose the stored-authority verifier through an external call.

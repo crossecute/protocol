@@ -158,7 +158,7 @@ contract DispatchLeavesTest is Test {
     /// @notice Try to use an internal tree node as a leaf commitment.
     /// @dev Double hashing must prevent a tree node from being reinterpreted as authorized leaf
     ///      data.
-    function test_anInternalNodeIsNotALeaf() public {
+    function test_anInternalNodeIsNotALeaf() public view {
         bytes32[] memory leaves = new bytes32[](4);
         for (uint256 i; i < 4; ++i) {
             leaves[i] = h.hash(_leaf(i));
