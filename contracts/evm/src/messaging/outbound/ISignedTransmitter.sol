@@ -13,6 +13,9 @@ interface ISignedTransmitter {
     ///      record, so only a signed owner transaction can call it.
     function bootstrap(bytes calldata payload, bytes[] calldata attributes) external payable;
 
+    /// @notice Price the standalone signed message encoded by the Safe transaction evidence.
+    function quoteMessageSigned(SafeTxEvidence calldata evidence) external view returns (uint256);
+
     /// @notice Register an owner-authorized root for later permissionless leaf relays.
     /// @dev Only the root is stored: each relayer supplies the signed registration and leaf proof.
     function registerRoot(bytes32 root) external;
