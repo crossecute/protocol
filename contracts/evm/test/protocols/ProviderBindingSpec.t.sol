@@ -615,7 +615,7 @@ abstract contract ProviderGovernorHomeSpec is ProviderIdFixture {
 }
 
 /// @title ProviderInboundFixture
-/// @notice A plain transceiver that accepts bootstraps from `ORIGIN_TRANSCEIVER` on
+/// @notice A standard EVM transceiver that accepts bootstraps from `ORIGIN_TRANSCEIVER` on
 ///         `REMOTE_CHAIN_ID`, and the deliveries the inbound specs make to it.
 abstract contract ProviderInboundFixture is ProviderFixture {
     /// @dev The origin's transceiver as this one records it. `Unique`, so no parity check.
@@ -673,7 +673,7 @@ abstract contract ProviderInboundFixture is ProviderFixture {
 ///         configured origin, arriving through the provider's own path, creates a receiver
 ///         configured for that provider; a wrong sender is refused; and the float can be funded
 ///         and leaves only to the treasury.
-/// @dev The plain variant only. zkSync and Tron variants fail closed at conduit creation on
+/// @dev The standard EVM variant only. zkSync and Tron variants fail closed at conduit creation on
 ///      Forge's EVM, so their suites pin their own overrides instead.
 abstract contract ProviderInboundSpec is ProviderInboundFixture {
     event InboundHandled(bytes32 chainKey);
@@ -695,7 +695,7 @@ abstract contract ProviderInboundSpec is ProviderInboundFixture {
         assertTrue(IAccessControl(receiver).hasRole(GATEWAY_ROLE, _gateway()));
     }
 
-    /// @notice The plain transceiver born knowing only the governor's home, `REMOTE_CHAIN_ID`:
+    /// @notice The standard EVM transceiver born knowing only the governor's home, `REMOTE_CHAIN_ID`:
     ///         `registry`, provider `keccak256("under-test")`, a `Unique` bar, and the
     ///         provider's id for that home, with no owner call afterwards.
     /// @dev External so that an expected revert attaches to the deployment, not the first

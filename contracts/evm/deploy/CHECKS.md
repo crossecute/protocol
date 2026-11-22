@@ -211,7 +211,7 @@ the same message costs delivered to a contract that does nothing:
 
 | Delivery | CCIP | Hyperlane | LayerZero | OP Stack | Wormhole |
 | --- | --- | --- | --- | --- | --- |
-| Bootstrap to a plain transceiver, no calls | 443,291 | 442,610 | 496,750 | 445,709 | 486,695 |
+| Bootstrap to a standard EVM transceiver, no calls | 443,291 | 442,610 | 496,750 | 445,709 | 486,695 |
 | The same with one call to an address with no code | 449,682 | 449,002 | 503,132 | 452,203 | 494,083 |
 | Report arriving at the home transceiver | 122,853 | 122,120 | 122,749 | 119,826 | n/a (166,245) |
 | Payload to an existing receiver, no calls | 26,223 | 24,421 | 27,621 | 23,164 | 67,785 |
@@ -512,9 +512,9 @@ forge test --match-contract '^(LzDvnForkTest|LzOftForkTest|LzOftForkDeliveryGasT
 - `LzOftForkDeliveryGasTest` passed the receive and compose gas assertions on both
   destinations. Bootstrap compose used 470,273 gas on Ethereum and 470,348 on Arbitrum.
 
-These OFT regressions simulate provider delivery of plain bootstrap and payload messages.
+These OFT regressions simulate provider delivery of unsigned bootstrap and payload messages.
 
-### A plain LayerZero conduit toward Fraxtal on Ethereum's real endpoint
+### A native LayerZero conduit toward Fraxtal on Ethereum's real endpoint
 
 On 2026-11-20, `LzConduitDvnForkTest` (`test/fork/LzConduitDvnFork.t.sol`) deployed the real
 `LzTransceiver` and `LzTransmitter` on a fork of Ethereum and sent to Fraxtal through the real
@@ -601,7 +601,7 @@ authority graph and application calls, and provide explicit compose gas attribut
 results apply to the pinned blocks, two-owner graph, and calls in the fixture. Confirm all
 copies of the factory, its logic and linked libraries use the same release build and
 deterministic addresses, including the receiver authority pins, by running
-every chain's deploy with the release's `CROSSECUTE_OFT_FACTORY`. Plain and
+every chain's deploy with the release's `CROSSECUTE_OFT_FACTORY`. Unsigned and
 signed modes use the same route-bound salt and six-argument factory prediction.
 
 ## CCIP 2.0 options

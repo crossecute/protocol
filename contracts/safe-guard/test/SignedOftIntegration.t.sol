@@ -162,7 +162,7 @@ contract SignedOftIntegrationTest is SourceAuthorityBase {
         assertEq(bootstrapWire.length, 1280, "one three-owner Safe, one route, no setup calls");
         (, LzOftMessage.Bootstrap memory header,,) =
             abi.decode(bootstrapWire, (uint256, LzOftMessage.Bootstrap, uint256, bytes));
-        assertEq(bootstrapWire.length - abi.encode(header).length, 928, "signed envelope overhead over plain bootstrap");
+        assertEq(bootstrapWire.length - abi.encode(header).length, 928, "overhead over unsigned bootstrap");
         assertEq(oft.sent(0).from, conduit);
         Call[] memory calls = new Call[](1);
         calls[0] = Call(address(0x5151), 0, abi.encodeCall(OftIntegrationSink.hit, ()));

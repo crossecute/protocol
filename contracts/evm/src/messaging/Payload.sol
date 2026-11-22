@@ -59,7 +59,7 @@ library Payload {
 
     /* ================================ bootstrap ================================= */
 
-    /// @notice The plain bootstrap payload: the destination's ERC-7930 chain identifier, and
+    /// @notice The unsigned bootstrap payload: the destination's ERC-7930 chain identifier, and
     ///         the body the receiver runs on creation, in that destination's one form.
     /// @dev The destination travels inside the payload because `bootstrap` takes no other
     ///      argument naming it.

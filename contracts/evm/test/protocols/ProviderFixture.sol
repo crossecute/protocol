@@ -72,10 +72,10 @@ abstract contract ProviderFixture is ProviderConduitFixture {
     ///         initialize.
     function _signedReceiverImplementation(address guard, address multiSendCallOnly) internal virtual returns (address);
 
-    /// @notice A new implementation of the provider's plain transceiver, wrapped in its harness.
+    /// @notice A new implementation of the provider's standard EVM transceiver, wrapped in its harness.
     function _transceiverImplementation() internal virtual returns (address);
 
-    /// @notice Deploy the plain transceiver through the provider's deploy script, naming
+    /// @notice Deploy the standard EVM transceiver through the provider's deploy script, naming
     ///         `homeId` as the governor home's provider id.
     function _deploy(TransceiverDeployment memory d, uint256 homeId) internal virtual returns (address);
 

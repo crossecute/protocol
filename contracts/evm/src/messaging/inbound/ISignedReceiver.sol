@@ -27,12 +27,12 @@ interface ISignedReceiver {
 }
 
 /// @notice What a transceiver asks of the receiver logic for a signed conduit. The receiver is
-///         armed first with its plain initializer and no calls, then `initializeSigned` in the
+///         armed first with its base initializer and no calls, then `initializeSigned` in the
 ///         same transaction.
 interface ISignedReceiverInit {
     /// @notice Store the source authority the bootstrap carried and execute the receiver's setup.
-    /// @dev The transceiver must call this immediately after plain initialization, so a receiver
-    ///      created from a signed bootstrap is never exposed with plain authorization.
+    /// @dev The transceiver must call this immediately after base initialization, so a receiver
+    ///      created from a signed bootstrap is never exposed with unsigned authorization.
     /// @param sourceChainId The EIP-155 id of the home chain, which is the Safe domain's.
     /// @param owner The conduit's owner, which the root record must name.
     function initializeSigned(uint256 sourceChainId, address owner, bytes calldata body) external;

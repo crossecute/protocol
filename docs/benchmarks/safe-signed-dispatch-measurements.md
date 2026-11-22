@@ -23,7 +23,7 @@ Before each sample, `vm.cool` resets account and storage access warmth for the r
 its implementation, the authority library and the application target. Figures include
 an external call and ABI encoding/decoding, but exclude transaction intrinsic/calldata
 charges, transport verification and relayer transaction overhead. `initializeSigned`
-excludes CREATE2, the plain initializer, transceiver address validation and setup
+excludes CREATE2, the base initializer, transceiver address validation and setup
 application calls. The bootstrap body is the authority records and empty setup calls; it
 carries no signatures or evidence (#148), so inline and cached graphs bootstrap alike. Its
 size excludes the 192-byte outer signed envelope.

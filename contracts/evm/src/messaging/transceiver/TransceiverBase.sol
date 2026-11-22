@@ -152,7 +152,7 @@ abstract contract TransceiverBase is TransceiverCore {
     ///      another party will occupy on every chain.
     ///
     /// @dev Signed mode (#108) when the caller is a Safe whose transaction guard advertises
-    ///      `ICrossecuteGuard`, at the same address a plain conduit of `(owner, salt)` would have.
+    ///      `ICrossecuteGuard`, at the same address an unsigned conduit of `(owner, salt)` would have.
     ///      The mode is fixed here; a guard installed or removed later does not change it. The
     ///      owner graph is derived here only to check it derives; a signed bootstrap carries the
     ///      guard's selected graph instead.
@@ -181,7 +181,7 @@ abstract contract TransceiverBase is TransceiverCore {
     ///      `sourceTransmitter`, the conduit a report is forwarded to.
     /// @param sourceTransmitter The transmitter a receiver will answer to; zero for a
     ///        transmitter, which answers to its owner.
-    /// @dev A signed conduit is armed with the plain initializer and no calls, and its caller
+    /// @dev A signed conduit is armed with the base initializer and no calls, and its caller
     ///      completes it with `initializeSigned` in the same call, so provider setup has one
     ///      path for both modes.
     function _createConduit(
@@ -360,7 +360,7 @@ abstract contract TransceiverBase is TransceiverCore {
 
     /// @notice Refuse any caller but the conduit `(owner, salt)` resolves to here, and return
     ///         it as the bootstrap carries it.
-    /// @dev Signed and plain conduits share an address, so the envelope kind is held to the
+    /// @dev Signed and unsigned conduits share an address, so the envelope kind is held to the
     ///      conduit's mode here; the destination creates a signed receiver only from a signed
     ///      envelope.
     function _bootstrapCaller(address owner, bytes32 salt, bool signed) private view returns (bytes32) {
@@ -370,7 +370,7 @@ abstract contract TransceiverBase is TransceiverCore {
         return _transmitterWord(conduit);
     }
 
-    /// @dev Conduit logic without `isSigned` is plain.
+    /// @dev Conduit logic without `isSigned` is unsigned.
     function _isSignedConduit(address conduit) private view returns (bool) {
         (bool ok, bytes memory ret) = conduit.staticcall(abi.encodeCall(ISignedTransmitterInit.isSigned, ()));
         return ok && ret.length == 32 && abi.decode(ret, (bool));

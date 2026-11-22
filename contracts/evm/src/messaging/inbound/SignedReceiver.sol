@@ -29,8 +29,8 @@ import {ISignedReceiver, ISignedReceiverInit} from "src/messaging/inbound/ISigne
 ///         authenticated updates select later graphs, and dispatch verifies their signatures
 ///         whether delivered by a provider or submitted directly.
 ///
-/// @dev Plain until `initializeSigned`, which the transceiver calls right after arming the
-///      receiver with its plain initializer and no calls, in the same transaction.
+/// @dev Unsigned until `initializeSigned`, which the transceiver calls right after arming the
+///      receiver with its base initializer and no calls, in the same transaction.
 ///
 /// @dev In signed mode the source transmitter's address grants nothing: `execute`, `commit`,
 ///      `cancel` and `revokeGateway` answer only to this receiver's own calls, made by verified
@@ -264,7 +264,7 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
 
     /* =================================== views ================================== */
 
-    /// @notice Return the stored graph hash, or zero for a plain receiver.
+    /// @notice Return the stored graph hash, or zero for an unsigned receiver.
     function authorityGraph() external view returns (bytes32) {
         return selection().authorityHash;
     }

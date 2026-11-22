@@ -40,7 +40,7 @@ contract LzOftTransmitter is SignedTransmitter, ILzOftTransmitterInit {
 
     error UseLzOftInitializer();
 
-    /// @dev The factory arms this with `homeOft`, so the plain shape would leave it unset.
+    /// @dev The factory arms this with `homeOft`, so the base initializer would leave it unset.
     function initialize(address, address, bytes32) external pure override {
         revert UseLzOftInitializer();
     }

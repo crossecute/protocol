@@ -38,7 +38,7 @@ These are settled. The sections below describe each in full.
   multisig's choice; leaving it empty trusts enabled modules with their Safe permissions.
 - **Staging.** An owner transaction whose top-level selector is `sendMessage(bytes,bytes,bytes[])`
   or `bootstrap(bytes,bytes[])` is staged, whatever its target or operation. Both write the same
-  staged record. The complete signature blob is staged, with no size cap. Plain protocol
+  staged record. The complete signature blob is staged, with no size cap. Unsigned protocol
   transmitters use the same bootstrap selector and leave the record for the post-hook to clear.
 - **Leaf publication.** Anyone can publish a Merkle tree's ordered, encoded leaves to the guard,
   which records the root and emits one event per leaf. The owner pre-hook checks publication

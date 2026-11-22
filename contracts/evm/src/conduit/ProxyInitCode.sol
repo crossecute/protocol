@@ -11,7 +11,7 @@ import {Proxy} from "src/conduit/Proxy.sol";
 ///      from the loaded copy lands where `PROXY_INIT_CODE_HASH` predicts.
 ///
 /// @dev Read by `STATICCALL` rather than `EXTCODECOPY`, which zksolc refuses to compile: every
-///      contract a zkSync variant's imports reach is compiled for EraVM, the plain transceivers
+///      contract a zkSync variant's imports reach is compiled for EraVM, the standard EVM transceivers
 ///      among them.
 library ProxyInitCode {
     error StoreFailed();

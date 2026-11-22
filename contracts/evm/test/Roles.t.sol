@@ -244,7 +244,7 @@ contract RolesTest is Test {
 
     /// @dev A receiver can drop its transport and cannot replace it. That is the one
     ///      membership change surviving initialization anywhere in the protocol, and the
-    ///      direction is deliberate: in plain mode a gateway that can deliver can forge, so
+    ///      direction is deliberate: in unsigned mode a gateway that can deliver can forge, so
     ///      going deaf is the recoverable failure and a compromised transport driving the
     ///      conduit is not.
     function test_aReceiverDropsItsGatewayOnItsTransmittersSayS0() public {

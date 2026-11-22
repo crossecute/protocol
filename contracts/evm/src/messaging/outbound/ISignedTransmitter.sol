@@ -41,7 +41,7 @@ interface ISignedTransmitter {
 }
 
 /// @notice What a transceiver asks of the transmitter logic for a signed conduit, after arming
-///         it with its plain initializer.
+///         it with its base initializer.
 interface ISignedTransmitterInit {
     /// @notice Enable signed mode once.
     function initializeSigned() external;

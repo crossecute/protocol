@@ -71,12 +71,13 @@ peer for the destination.
 If setup calls or the report send revert, receiver creation rolls back and the
 bootstrap delivery can be retried. [Bootstrap checks, fees, and retry behavior](docs/architecture/message-flow.md#b-bootstrap-no-receiver-on-the-destination-yet)
 
-### Send and execute
+### Send and execute in unsigned mode
 
-On an EVM route, `recipientOn(chainId)` returns the receiver's ERC-7930 address.
+The home-chain transmitter checks the owner, and the destination receiver
+authenticates the transmitter through the messaging provider. On an EVM route,
+`recipientOn(chainId)` returns the receiver's ERC-7930 address.
 The transmitter checks the recipient, quotes the provider and protocol fees, and
-sends through its own provider endpoint. The receiver authenticates the transport,
-home chain, and transmitter before running the payload.
+sends through its own provider endpoint.
 
 ```mermaid
 sequenceDiagram
@@ -156,7 +157,7 @@ linked authority updates to track Safe ownership and threshold changes.
 [Safe-signed dispatch](docs/safe/safe-signed-dispatch.md) ·
 [Safe authority updates](docs/safe/safe-authority-updates.md)
 
-### Change authority in plain mode
+### Change authority in unsigned mode
 
 The current owner transfers ownership of the transmitter on the home chain. The
 receivers authenticate the same transmitter address after the handoff, so the new
@@ -179,8 +180,8 @@ sequenceDiagram
     R->>R: Authenticate the same transmitter and run the calls
 ```
 
-If the plain-mode owner is a Safe and its address stays the same, changing the
-Safe's signers or threshold happens entirely within that Safe.
+If a Safe owns the transmitter in unsigned mode, the Safe can change its signers
+or threshold at its existing address.
 
 ### Change authority in Safe-signed mode
 
@@ -244,4 +245,4 @@ sequenceDiagram
     R->>R: Authenticate delivery and execute the operation
 ```
 
-Both plain and Safe-signed conduits can use the OFT route. [OFT binding specification](docs/providers/layerzero-oft-spec.md)
+Both unsigned and Safe-signed conduits can use the OFT route. [OFT binding specification](docs/providers/layerzero-oft-spec.md)

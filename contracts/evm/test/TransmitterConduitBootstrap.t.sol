@@ -51,7 +51,7 @@ contract TransmitterConduitBootstrapTest is Test {
     bytes32 constant SALT = keccak256("acct");
     uint256 constant DESTINATION = 42161;
 
-    /// @notice Deploy and fund a plain conduit with a transceiver that hands transport back to
+    /// @notice Deploy and fund an unsigned conduit with a transceiver that hands transport back to
     ///         it.
     /// @dev Each test starts with enough balance and the same routing setup so only the
     ///      behavior under test differs.

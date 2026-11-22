@@ -82,7 +82,7 @@ contract SignedReceiverTest is Test {
     }
 
     /// @notice Arm a Hyperlane receiver with no setup calls or signed authority.
-    function _plainReceiver() internal returns (address r) {
+    function _unsignedReceiver() internal returns (address r) {
         r = deployConduit(
             address(new HyperlaneReceiver(address(mailbox), address(0x1234), address(0x5678))),
             abi.encodeCall(IReceiverInit.initialize, (TRANSMITTER, bytes32(uint256(HOME_DOMAIN)), new Call[](0)))
@@ -139,7 +139,7 @@ contract SignedReceiverTest is Test {
     ///      and rollback assertions.
     function setUp() public {
         vm.warp(1_000_000);
-        receiver = _plainReceiver();
+        receiver = _unsignedReceiver();
         _initialize(receiver, _bootstrapBody(_calls("setup")));
     }
 
@@ -425,7 +425,7 @@ contract SignedReceiverTest is Test {
         AuthorityGraph memory next = Records.graph(_records());
         SafeTxEvidence memory update = _selectionUpdate(next);
         bytes32 head = SafeHashes.transactionHash(update.signedSafeTx.safeTx, SAFE, SOURCE_CHAIN);
-        receiver = _plainReceiver();
+        receiver = _unsignedReceiver();
         _initialize(
             receiver, abi.encode(SignedBootstrap(address(0x1234), head, abi.encode(next), abi.encode(new Call[](0))))
         );
@@ -747,7 +747,7 @@ contract SignedReceiverTest is Test {
     }
 
     function test_bootstrapRejectsTheWrongGuardOrZeroHead() public {
-        address r = _plainReceiver();
+        address r = _unsignedReceiver();
         SignedBootstrap memory bootstrap = abi.decode(_bootstrapBody(_calls("x")), (SignedBootstrap));
         bootstrap.guard = address(0xBAD);
         vm.expectRevert(ReceiverAuthority.BootstrapGuardMismatch.selector);
@@ -759,7 +759,7 @@ contract SignedReceiverTest is Test {
         assertEq(SignedReceiver(payable(r)).authorityGraph(), bytes32(0));
     }
 
-    function test_unsetPinsAllowPlainModeButRefuseSignedInitialization() public {
+    function test_unsetPinsAllowUnsignedModeButRefuseSignedInitialization() public {
         address r = deployConduit(
             address(new HyperlaneReceiver(address(mailbox), address(0), address(0))),
             abi.encodeCall(IReceiverInit.initialize, (TRANSMITTER, bytes32(uint256(HOME_DOMAIN)), new Call[](0)))
@@ -836,7 +836,7 @@ contract SignedReceiverTest is Test {
     /// @dev Only the transceiver that created the receiver may establish its authority
     ///      snapshot.
     function test_onlyTheParentTransceiverInitializes() public {
-        address r = _plainReceiver();
+        address r = _unsignedReceiver();
         bytes memory body = _bootstrapBody(_calls("x"));
         vm.prank(address(0xBAD));
         vm.expectRevert(abi.encodeWithSelector(SignedReceiver.NotParentTransceiver.selector, address(0xBAD)));
@@ -846,7 +846,7 @@ contract SignedReceiverTest is Test {
     /// @notice Initialize with records rooted at a Safe other than the conduit's owner.
     /// @dev The stored authority must be the owner's.
     function test_recordsRootedAtAnotherSafeRefuse() public {
-        address r = _plainReceiver();
+        address r = _unsignedReceiver();
         bytes memory body = _bootstrapBody(_calls("x"));
         vm.expectRevert(abi.encodeWithSelector(ReceiverAuthority.RootIsNotOwner.selector, address(0x1), SAFE));
         SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, address(0x1), body);
@@ -856,7 +856,7 @@ contract SignedReceiverTest is Test {
     /// @dev The receiver takes the carried graph on the provider's authentication; signatures
     ///      could not prove the owners who did not sign, so none are checked.
     function test_theCarriedRecordsAreStoredWithoutSignatures() public {
-        address r = _plainReceiver();
+        address r = _unsignedReceiver();
         SafeAuthorityRecord[] memory other =
             Records.list(Records.record(SAFE, 1, Records.eoaOwners(Records.pks(7, 8, 9))));
         _initialize(r, Records.bootstrap(address(0x1234), other, _calls("x")));
@@ -866,7 +866,7 @@ contract SignedReceiverTest is Test {
     /// @notice Initialize with a graph that fails the canonical checks.
     /// @dev Shape validation still applies to the carried records.
     function test_aMalformedGraphRefuses() public {
-        address r = _plainReceiver();
+        address r = _unsignedReceiver();
         SafeAuthorityRecord[] memory bad =
             Records.list(Records.record(SAFE, 0, Records.eoaOwners(Records.pks(1, 2, 3))));
         vm.expectRevert();
@@ -878,7 +878,7 @@ contract SignedReceiverTest is Test {
     /// @dev A receiver must not remain partially initialized when authorized setup cannot
     ///      complete.
     function test_aRevertingSetupRevertsInitialization() public {
-        address r = _plainReceiver();
+        address r = _unsignedReceiver();
         Call[] memory c = new Call[](1);
         c[0] = Call(address(sink), 0, abi.encodeCall(Sink.boom, ()));
         vm.expectPartialRevert(bytes4(keccak256("CallFailed(uint256,bytes)")));
@@ -965,12 +965,12 @@ contract SignedReceiverTest is Test {
         assertEq(sink.hits(), 2);
     }
 
-    /// @notice Deliver an unsigned plain payload to a signed receiver.
+    /// @notice Deliver an unsigned payload to a signed receiver.
     /// @dev The signed mode must not fall back to trusting the source transmitter's address
     ///      alone.
-    function test_aPlainPayloadFromTheProviderRefuses() public {
+    function test_anUnsignedPayloadFromTheProviderRefuses() public {
         vm.expectRevert(abi.encodeWithSelector(SignedReceiver.UnknownWire.selector, 32));
-        _deliver(_calls("plain"));
+        _deliver(_calls("unsigned"));
     }
 
     /* =================================== leaves ================================= */
@@ -1218,11 +1218,11 @@ contract SignedReceiverTest is Test {
         assertEq(sink.hits(), 2);
     }
 
-    /// @notice Call the signed submission API on a plain receiver.
+    /// @notice Call the signed submission API on an unsigned receiver.
     /// @dev Mode-specific entry points must not install or assume an authority snapshot that
     ///      was never initialized.
-    function test_aPlainReceiverRefusesSignedSubmission() public {
-        address r = _plainReceiver();
+    function test_anUnsignedReceiverRefusesSignedSubmission() public {
+        address r = _unsignedReceiver();
         SafeTxEvidence memory evidence = _message(_here(r), _calls("m"));
         vm.expectRevert(SignedReceiver.NotSigned.selector);
         ISignedReceiver(r).submitMessage(evidence);
@@ -1259,7 +1259,7 @@ contract SignedReceiverTest is Test {
     /// @dev Reentrancy rejection must preserve both the outer operation and the future
     ///      usability of unexecuted evidence.
     function _reentryScenario(uint256 outer, uint256 inner) private {
-        if (outer == 5) receiver = _plainReceiver();
+        if (outer == 5) receiver = _unsignedReceiver();
         uint256 nonce = SignedReceiver(payable(receiver)).nextNonce();
         SafeTxEvidence memory nestedMessageEvidence = _message(_here(receiver), _calls("nested"));
         ExecutionLeaf memory nestedLeaf = _leaf(nonce + 1, _calls("nested leaf"));

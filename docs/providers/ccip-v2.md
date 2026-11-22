@@ -64,7 +64,7 @@ a normal authenticated payload containing a receiver self-call to change policy.
 receiver delivers only from its home selector and source transmitter, so it accepts a
 policy for that one pair and refuses any other. A transceiver accepts changes only from
 its owner, for any pair. Changes do not reopen upgrades or role
-grants. Both plain and divergent transceivers expose the v2 policy interface.
+grants. Both standard EVM and divergent transceivers expose the v2 policy interface.
 
 | Policy field | Rule |
 | --- | --- |

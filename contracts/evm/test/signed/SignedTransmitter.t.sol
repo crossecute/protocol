@@ -366,7 +366,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
     }
 
     /// @notice Bootstrap with too little balance for the transport fee.
-    /// @dev A failed send reverts the Safe transaction, as in plain mode, and records nothing.
+    /// @dev A failed send reverts the Safe transaction, as in unsigned mode, and records nothing.
     function test_aFailedSendRevertsAndRecordsNothing() public {
         mailbox.setFee(address(st).balance + 1);
         SafeTxEvidence memory evidence = _delivery(safe, address(st), _bootstrapCall(), _quorum());
@@ -472,20 +472,19 @@ contract SignedTransmitterTest is HyperlaneFixture {
         assertTrue(st.isBootstrapped(remote));
     }
 
-    /// @notice Renounce ownership of a plain-mode transmitter.
-    /// @dev Signed-mode restrictions must not change the inherited plain ownership behavior.
-    function test_plainOwnershipCanStillBeRenounced() public {
-        SignedTransmitter plain = SignedTransmitter(payable(t.createTransmitter(keccak256("plain"))));
-        assertFalse(plain.isSigned());
-        plain.renounceOwnership();
-        assertEq(plain.owner(), address(0));
+    /// @notice Renounce ownership of an unsigned-mode transmitter.
+    /// @dev Signed-mode restrictions must not change the inherited unsigned ownership behavior.
+    function test_unsignedOwnershipCanStillBeRenounced() public {
+        SignedTransmitter unsignedTx = SignedTransmitter(payable(t.createTransmitter(keccak256("unsigned"))));
+        assertFalse(unsignedTx.isSigned());
+        unsignedTx.renounceOwnership();
+        assertEq(unsignedTx.owner(), address(0));
     }
 
     /* ================================= standalone ================================ */
 
     /// @notice Sign and execute a standalone send to the selected recipient.
-    /// @dev Tests can inspect both the staged source evidence and the wire message emitted by
-    ///      the normal send path.
+    /// @dev Tests can inspect the staged source evidence and the signed wire message.
     function _send(bytes memory recipient, bytes memory payload) internal returns (SafeTxEvidence memory evidence) {
         evidence = _delivery(
             safe,
@@ -524,10 +523,10 @@ contract SignedTransmitterTest is HyperlaneFixture {
         assertEq(treasury.balance - treasuryBefore, providerFee / 10);
     }
 
-    /// @notice Call the plain message quote on a signed transmitter.
+    /// @notice Call the unsigned message quote on a signed transmitter.
     /// @dev A quote without signatures cannot price the signed wire payload and must direct
     ///      callers to the signed API.
-    function test_thePlainMessageQuoteRefusesInSignedMode() public {
+    function test_theUnsignedMessageQuoteRefusesInSignedMode() public {
         bytes memory recipient = _receiverHere();
         vm.expectRevert(SignedTransmitter.SignedQuoteRequired.selector);
         st.quoteMessage(recipient, _payload(), new bytes[](0));

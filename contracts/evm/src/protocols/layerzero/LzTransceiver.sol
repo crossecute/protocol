@@ -13,7 +13,7 @@ import {ILzReceiverInit} from "src/protocols/layerzero/LzReceiver.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {Call} from "src/messaging/Call.sol";
 
-/// @notice LayerZero on `TransceiverBase`, shared by the plain, zkSync, and Tron variants, which
+/// @notice LayerZero on `TransceiverBase`, shared by the standard EVM, zkSync, and Tron variants, which
 ///         differ only in address derivation.
 ///
 /// @dev One OApp sends bootstraps and reports to any configured eid and receives both from

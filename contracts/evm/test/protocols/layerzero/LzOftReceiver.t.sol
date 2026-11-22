@@ -111,7 +111,7 @@ contract LzOftReceiverTest is Test {
         assertEq(target.hits(), 1);
     }
 
-    function test_thePlainInitializerIsRefused() public {
+    function test_theBaseInitializerIsRefused() public {
         LzOftReceiver logic = new LzOftReceiver(address(0), address(0));
         vm.expectRevert(LzOftReceiver.UseLzOftInitializer.selector);
         logic.initialize(TRANSMITTER, bytes32(uint256(HOME_EID)), new Call[](0));

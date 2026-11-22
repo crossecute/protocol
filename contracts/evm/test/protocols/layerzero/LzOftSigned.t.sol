@@ -166,7 +166,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         assertEq(receiver.authorityGraph(), b.graph);
     }
 
-    function test_signedCreationUsesThePlainDerivation() public view {
+    function test_signedCreationUsesSharedDerivation() public view {
         (,,, bytes32 root,) = factory.bootstrapRoute(address(transmitter), destKey);
         assertTrue(transmitter.isSigned());
         assertTrue(factory.isSigned(address(transmitter)));
@@ -193,10 +193,10 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
     /// @notice The factory keeps no mode record: it reads the flag the conduit holds.
     function test_theFactoryReportsTheModeTheConduitHolds() public {
         vm.prank(address(0xE0A));
-        LzOftTransmitter plain =
-            LzOftTransmitter(payable(factory.createTransmitter(keccak256("plain"), address(oft), _leaves(dstOft))));
-        assertFalse(plain.isSigned());
-        assertFalse(factory.isSigned(address(plain)));
+        LzOftTransmitter unsignedTx =
+            LzOftTransmitter(payable(factory.createTransmitter(keccak256("unsigned"), address(oft), _leaves(dstOft))));
+        assertFalse(unsignedTx.isSigned());
+        assertFalse(factory.isSigned(address(unsignedTx)));
         assertFalse(factory.isSigned(address(this)), "an address the factory did not create");
         assertTrue(factory.isSigned(address(transmitter)));
     }
@@ -204,11 +204,11 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
     /// @notice Each bootstrap builder serves only the mode its caller was created in.
     function test_eachBootstrapBuilderRefusesTheOtherModesConduit() public {
         vm.prank(address(0xE0A));
-        LzOftTransmitter plain =
-            LzOftTransmitter(payable(factory.createTransmitter(keccak256("plain"), address(oft), _leaves(dstOft))));
+        LzOftTransmitter unsignedTx =
+            LzOftTransmitter(payable(factory.createTransmitter(keccak256("unsigned"), address(oft), _leaves(dstOft))));
         bytes memory route = Erc7930.encodeEvmChain(DEST);
 
-        vm.prank(address(plain));
+        vm.prank(address(unsignedTx));
         vm.expectRevert(LzOftConduitFactory.WrongBootstrapMode.selector);
         factory.signedConduitBootstrap(route, "");
 
@@ -289,7 +289,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         oft.deliver(HOME_EID, address(factory), bytes32(uint256(uint160(b.conduit))), b.bootstrapWire);
     }
 
-    function test_plainPayloadCannotExecuteOnSignedReceiver() public {
+    function test_unsignedPayloadCannotExecuteOnSignedReceiver() public {
         Bundle memory b = _bundle();
         _destination(b);
         vm.expectPartialRevert(SignedReceiver.UnknownWire.selector);

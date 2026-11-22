@@ -239,7 +239,7 @@ contract LzOftTransmitterTest is Test {
 
     /* ============================== initialization ============================= */
 
-    function test_thePlainInitializerIsRefused() public {
+    function test_theBaseInitializerIsRefused() public {
         LzOftTransmitter logic = new LzOftTransmitter();
         vm.expectRevert(LzOftTransmitter.UseLzOftInitializer.selector);
         logic.initialize(owner, address(factory), SALT);

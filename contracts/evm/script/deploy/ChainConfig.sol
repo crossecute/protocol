@@ -159,7 +159,7 @@ library ChainConfig {
     /// @notice The grade `registryChain`'s registry gives `graded`: `Predetermined` when
     ///         `graded` is a parity chain and `registryChain` is not `other`, else `Unique`.
     /// @dev A parity chain's transceivers sit where the registry predicts, from the deployer
-    ///      recorded for the chain. A plain transceiver on an `other` chain sits elsewhere, so it
+    ///      recorded for the chain. A standard EVM transceiver on an `other` chain sits elsewhere, so it
     ///      can use no parity address (#33). A non-parity chain is
     ///      `Unique` in every registry, its own included. Configuration never assigns `Unknown`.
     function gradeOf(ChainEntry memory registryChain, ChainEntry memory graded) internal pure returns (Provenance) {
