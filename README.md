@@ -127,6 +127,7 @@ sequenceDiagram
     participant L as Any relayer
     participant P as Messaging provider
     participant R as Signed receiver
+    participant C as Target contracts
 
     alt Standalone operation
         alt Send through the provider
@@ -147,7 +148,7 @@ sequenceDiagram
         end
     end
     R->>R: Verify authorization and replay state
-    R->>R: Execute newly authorized calls atomically
+    R->>C: Execute newly authorized calls atomically
 ```
 
 Provider delivery and direct submission share replay state. Receivers follow
