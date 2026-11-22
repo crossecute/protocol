@@ -18,6 +18,7 @@ import {LzOftDeploy, LzOftDestination} from "script/deploy/LzOftDeploy.sol";
 import {DeliveryGasMeter} from "test/protocols/DeliveryGasMeter.sol";
 import {bootstrapPayload} from "test/Harness.sol";
 import {createRpcFork} from "test/fork/ForkBlock.sol";
+import {Target as RetryTarget} from "test/protocols/layerzero/LzOftReceiver.t.sol";
 
 /// @dev `OAppOptionsType3`, which this repo does not vendor.
 interface IEnforcedOptions {
@@ -258,6 +259,43 @@ contract LzOftForkTest is LzOftForkBase {
 
         _bootstrap(252, fraxtal, FRAXTAL_OFT);
         _messageAfter(252, fraxtal, FRAXTAL_OFT);
+    }
+
+    function test_frxUsdComposeCanRetryAfterTheDestinationCallReverts() public {
+        if (!_forks()) vm.skip(true);
+        _createConduit(_leaves());
+        _bootstrap(1, ethereum, ETH_OFT);
+
+        RetryTarget target = new RetryTarget();
+        target.setOpen(false);
+        Call[] memory calls = new Call[](1);
+        calls[0] = Call(address(target), 0, abi.encodeCall(RetryTarget.hit, ()));
+
+        vm.selectFork(homeFork);
+        bytes memory recipient = conduit.recipientOn(1);
+        bytes memory payload = conduit.payloadForCalls(calls);
+        uint256 quote = conduit.quoteMessage(recipient, payload, new bytes[](0));
+        assertGt(quote, 0);
+        uint256 beforeSend = address(conduit).balance;
+        vm.recordLogs();
+        conduit.sendMessage(recipient, payload, new bytes[](0));
+        assertEq(beforeSend - address(conduit).balance, quote);
+        bytes memory packet = _sentPacket();
+
+        vm.selectFork(ethereum);
+        (bytes32 guid, bytes memory composed) = _queue(ETH_OFT, packet);
+        ILayerZeroEndpointV2 endpoint = ILayerZeroEndpointV2(ENDPOINT);
+        vm.expectRevert();
+        endpoint.lzCompose(ETH_OFT, address(conduit), guid, 0, composed, "");
+        assertEq(target.hits(), 0);
+        assertEq(endpoint.composeQueue(ETH_OFT, address(conduit), guid, 0), keccak256(composed));
+
+        target.setOpen(true);
+        endpoint.lzCompose(ETH_OFT, address(conduit), guid, 0, composed, "");
+        assertEq(target.hits(), 1);
+        vm.expectRevert();
+        endpoint.lzCompose(ETH_OFT, address(conduit), guid, 0, composed, "");
+        assertEq(target.hits(), 1);
     }
 }
 
