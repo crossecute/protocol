@@ -5,7 +5,6 @@ import {Test} from "forge-std/Test.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
-import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
@@ -20,7 +19,7 @@ interface IHomeOft {
 }
 
 /// @dev The factory's conduit-facing surface, with one destination per chain the test sets.
-contract MockOftConduitFactory is ILzOftConduitFactory {
+contract MockOftConduitFactory {
     address public immutable treasury = address(0x7EA5);
 
     struct Route {

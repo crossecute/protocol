@@ -5,11 +5,10 @@ import {IOFT, SendParam} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.
 import {MessagingFee} from "@layerzerolabs/oapp-evm/contracts/oapp/OAppSender.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
-import {LzOftMerkle} from "src/protocols/layerzero/LzOftMerkle.sol";
 import {Call} from "src/messaging/Call.sol";
 
 /// @notice Send and quote through an operator's OFT, and the formats the `layerzero-oft`
-///         binding's two ends agree on: the destination leaf and the bootstrap compose message.
+///         binding's two ends agree on: the bootstrap compose message.
 ///
 /// @dev Every send moves no tokens: `amountLD` and `minAmountLD` are 0, as no binding carries
 ///      value but its fee. The one attribute is `LzMessage.OPTIONS_ATTRIBUTE`, which replaces the
@@ -72,23 +71,11 @@ library LzOftMessage {
         if (actual != want) revert PeerChanged(eid, want, actual);
     }
 
-    function leaf(bytes32 chainKey, uint32 eid, address oft) internal pure returns (bytes32) {
-        return LzOftMerkle.leaf(chainKey, eid, oft);
-    }
-
     function encodeBootstrap(Bootstrap memory b) internal pure returns (bytes memory) {
         return abi.encode(b);
     }
 
     function decodeBootstrap(bytes memory message) internal pure returns (Bootstrap memory) {
         return abi.decode(message, (Bootstrap));
-    }
-
-    function root(bytes32[] memory leaves) internal pure returns (bytes32) {
-        return LzOftMerkle.root(leaves);
-    }
-
-    function proof(bytes32[] memory level, uint256 index) internal pure returns (bytes32[] memory) {
-        return LzOftMerkle.proof(level, index);
     }
 }

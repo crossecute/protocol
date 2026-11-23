@@ -3,12 +3,12 @@ pragma solidity ^0.8.20;
 
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
-import {ILzOftCreate} from "src/protocols/layerzero/ILzOftCreate.sol";
 import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {receiverAuthorityPins} from "script/deploy/TransceiverDeploy.sol";
 import {arachnidAddress, arachnidDeploy, check} from "script/deploy/ProxyDeploy.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 
 /// @notice A destination as an operator names it: its EVM chain id and LayerZero eid.
 struct LzOftDestination {
@@ -79,18 +79,18 @@ library LzOftDeploy {
         );
     }
 
-    /// @notice The leaves `createTransmitter` takes for `destinations`, read from `homeOft`'s
-    ///         peers on this chain, in the ascending `chainKey` order it requires.
-    function leaves(address homeOft, LzOftDestination[] memory destinations)
+    /// @notice The destinations `createTransmitter` takes for `destinations`, read from
+    ///         `homeOft`'s peers on this chain, in the ascending `chainKey` order it requires.
+    function factoryDestinations(address homeOft, LzOftDestination[] memory destinations)
         internal
         view
-        returns (ILzOftCreate.OftLeaf[] memory out)
+        returns (ILzOftConduitFactory.Destination[] memory out)
     {
-        out = new ILzOftCreate.OftLeaf[](destinations.length);
+        out = new ILzOftConduitFactory.Destination[](destinations.length);
         for (uint256 i; i < destinations.length; ++i) {
             bytes32 peer = IOAppCore(homeOft).peers(destinations[i].eid);
             check(peer != bytes32(0) && uint256(peer) >> 160 == 0, "the home OFT peers an EVM OFT for the eid");
-            out[i] = ILzOftCreate.OftLeaf(
+            out[i] = ILzOftConduitFactory.Destination(
                 ChainKey.forEvm(destinations[i].chainId), destinations[i].eid, address(uint160(uint256(peer)))
             );
         }
@@ -101,15 +101,18 @@ library LzOftDeploy {
         }
     }
 
-    /// @notice On the destination's own chain: the leaf names this chain, its OFT's endpoint
-    ///         has the leaf's eid, and the OFT peers `homeOft` back.
-    /// @dev The home factory cannot check the first two, so a leaf that fails them would be
-    ///      bound into the conduit's address and its bootstrap would never land.
-    function checkOnDestination(ILzOftCreate.OftLeaf memory leaf, uint32 homeEid, address homeOft) internal view {
-        check(leaf.chainKey == ChainKey.local(), "the leaf names the chain it is checked on");
-        check(IOAppCore(leaf.oft).endpoint().eid() == leaf.eid, "the destination OFT's endpoint has the leaf's eid");
+    /// @notice On the destination's own chain: `d` names this chain, its OFT's endpoint has
+    ///         `d`'s eid, and the OFT peers `homeOft` back.
+    /// @dev The home factory cannot check the first two, so a destination that fails them would
+    ///      be bound into the conduit's address and its bootstrap would never land.
+    function checkOnDestination(ILzOftConduitFactory.Destination memory d, uint32 homeEid, address homeOft)
+        internal
+        view
+    {
+        check(d.chainKey == ChainKey.local(), "the destination names the chain it is checked on");
+        check(IOAppCore(d.oft).endpoint().eid() == d.eid, "the destination OFT's endpoint has the destination's eid");
         check(
-            IOAppCore(leaf.oft).peers(homeEid) == bytes32(uint256(uint160(homeOft))),
+            IOAppCore(d.oft).peers(homeEid) == bytes32(uint256(uint160(homeOft))),
             "the destination OFT peers the home OFT"
         );
     }

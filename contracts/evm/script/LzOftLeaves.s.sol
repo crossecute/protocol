@@ -8,8 +8,8 @@ import {check, DeployCheck} from "script/deploy/ProxyDeploy.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {LzOftDeploy, LzOftDestination} from "script/deploy/LzOftDeploy.sol";
-import {ILzOftCreate} from "src/protocols/layerzero/ILzOftCreate.sol";
-import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
+import {LzOftConduitAddress} from "src/protocols/layerzero/LzOftConduitAddress.sol";
 
 /// @title LzOftLeaves
 /// @notice The destination list a `layerzero-oft` conduit is created with, built and checked.
@@ -22,7 +22,7 @@ import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 ///      is then checked on its own chain over `<NAME>_RPC_URL`, the one check the home factory
 ///      cannot make: that the eid is that chain's.
 contract LzOftLeaves is Script {
-    function run() external returns (ILzOftCreate.OftLeaf[] memory leaves, bytes32 destRoot) {
+    function run() external returns (ILzOftConduitFactory.Destination[] memory committed, bytes32 destRoot) {
         string memory dir = ChainConfig.defaultDir();
         ChainEntry[] memory cs = ChainConfig.chains(dir);
         address homeOft = vm.envAddress("LZ_OFT_HOME");
@@ -41,24 +41,22 @@ contract LzOftLeaves is Script {
             // forge-lint: disable-next-line(unsafe-typecast) checked against id_bits = 32
             destinations[i] = LzOftDestination(c.chainId, uint32(eid));
         }
-        leaves = LzOftDeploy.leaves(homeOft, destinations);
+        committed = LzOftDeploy.factoryDestinations(homeOft, destinations);
 
         uint256 homeFork = vm.activeFork();
-        for (uint256 i; i < leaves.length; ++i) {
-            string memory name = _nameOf(cs, leaves[i].chainKey);
+        for (uint256 i; i < committed.length; ++i) {
+            string memory name = _nameOf(cs, committed[i].chainKey);
             vm.createSelectFork(vm.envString(string.concat(vm.toUppercase(name), "_RPC_URL")));
-            LzOftDeploy.checkOnDestination(leaves[i], homeEid, homeOft);
+            LzOftDeploy.checkOnDestination(committed[i], homeEid, homeOft);
         }
         vm.selectFork(homeFork);
 
-        bytes32[] memory hashes = new bytes32[](leaves.length);
-        for (uint256 i; i < leaves.length; ++i) {
-            hashes[i] = LzOftMessage.leaf(leaves[i].chainKey, leaves[i].eid, leaves[i].oft);
-            console2.log(_nameOf(cs, leaves[i].chainKey), leaves[i].eid, leaves[i].oft);
+        for (uint256 i; i < committed.length; ++i) {
+            console2.log(_nameOf(cs, committed[i].chainKey), committed[i].eid, committed[i].oft);
         }
-        destRoot = LzOftMessage.root(hashes);
-        console2.log("leaves, abi-encoded for createTransmitter:");
-        console2.logBytes(abi.encode(leaves));
+        destRoot = LzOftConduitAddress.destRoot(committed, ChainKey.local(), homeEid);
+        console2.log("destinations, abi-encoded for createTransmitter:");
+        console2.logBytes(abi.encode(committed));
         console2.log("destRoot:");
         console2.logBytes32(destRoot);
     }
@@ -67,6 +65,6 @@ contract LzOftLeaves is Script {
         for (uint256 i; i < cs.length; ++i) {
             if (chainKey == ChainKey.forEvm(cs[i].chainId)) return cs[i].name;
         }
-        revert DeployCheck("a leaf's chain is in chains.toml");
+        revert DeployCheck("a destination's chain is in chains.toml");
     }
 }

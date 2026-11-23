@@ -11,18 +11,25 @@ rewritten to relative paths.
 
 ```ts
 import {
-  ILzOftConduitFactoryViewAbi, ILzOftCreateAbi, ISignedTransmitterAbi, ISourceAuthorityGuardAbi, SafeBatchExecutorAbi,
+  ILzOftConduitFactoryAbi, ISignedReceiverAbi, ISignedTransmitterAbi, ISourceAuthorityGuardAbi, SafeBatchExecutorAbi,
 } from "@crossecute/protocol/abi";
 ```
 
-For LayerZero OFT tooling, import `ILzOftCreate`, `LzOftMerkle`, and `UlnConfig` from
-`@crossecute/protocol/protocols/layerzero/`. Construct factory inputs with
-`ILzOftCreate.OftLeaf(chainKey, eid, oft)`. The `createTransmitter` calldata still uses
-`(bytes32,uint32,address)[]` for the destination records.
+Each interface declares the events and errors its implementation emits and reverts with, so its
+ABI alone decodes them.
 
-Use `ILzOftConduitFactoryView` to predict conduit addresses, read the deployed Proxy initcode
-hash, and inspect committed destinations and their bootstrap proofs. `ISignedTransmitter`
-exposes `quoteRelay`, `isRootRegistered`, and `isLeafRelayed` alongside `relayLeaf`.
+For LayerZero OFT tooling, import from `@crossecute/protocol/protocols/layerzero/`:
+
+- `ILzOftConduitFactory`: conduit creation, its events and errors, and the views for address
+  prediction, committed destinations and their bootstrap proofs. Factory inputs are
+  `ILzOftConduitFactory.Destination(chainKey, eid, oft)`.
+- `LzOftConduitAddress`: the same derivation offline: each destination's leaf hash, the
+  destination checks `createTransmitter` makes before reading peers, `destRoot`, `conduitSalt` and
+  `predictConduit`.
+- `UlnConfig`: the ABI layout of LayerZero's ULN configuration.
+
+`OrderedMerkle` under `messaging/` builds the protocol's one Merkle tree, which both the guard's
+`publishLeaves` and the OFT destination root use.
 
 ## Derived addresses
 
@@ -30,6 +37,8 @@ Do not predict conduit addresses with `ProxyInitCode.hash()` or `ProxyDeployer.p
 compiled in your own project. Both hash `type(Proxy).creationCode` from your compiler, and the
 protocol's addresses depend on its pinned settings (solc 0.8.28, paris, 200 runs, no
 metadata). Call `predictReceiver` or `predictTransmitter` on the deployed transceiver instead.
+For a `layerzero-oft` conduit, pass the deployed factory's `PROXY_INIT_CODE_HASH()` to
+`LzOftConduitAddress.predictConduit`.
 
 ## Versions
 

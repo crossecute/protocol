@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
-import {ILzOftCreate} from "src/protocols/layerzero/ILzOftCreate.sol";
 import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
@@ -17,6 +16,8 @@ import {ChainType} from "src/addressing/ChainType.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {bootstrapPayload} from "test/Harness.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
+import {LzOftConduitAddress} from "src/protocols/layerzero/LzOftConduitAddress.sol";
 
 contract Sink {
     uint256 public hits;
@@ -67,9 +68,13 @@ abstract contract LzOftConduitFactoryBase is Test {
         return address(0);
     }
 
-    function _leaves(address dstOft) internal view returns (ILzOftCreate.OftLeaf[] memory leaves) {
-        leaves = new ILzOftCreate.OftLeaf[](1);
-        leaves[0] = ILzOftCreate.OftLeaf(destKey, DEST_EID, dstOft);
+    function _destinations(address dstOft)
+        internal
+        view
+        returns (ILzOftConduitFactory.Destination[] memory destinations)
+    {
+        destinations = new ILzOftConduitFactory.Destination[](1);
+        destinations[0] = ILzOftConduitFactory.Destination(destKey, DEST_EID, dstOft);
     }
 
     function _calls(address sink) internal pure returns (Call[] memory calls) {
@@ -86,17 +91,21 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
         oft.setPeer(DEST_EID, DST_OFT);
     }
 
-    function _create(ILzOftCreate.OftLeaf[] memory leaves) internal returns (LzOftTransmitter) {
+    function _create(ILzOftConduitFactory.Destination[] memory destinations) internal returns (LzOftTransmitter) {
         vm.prank(owner);
-        return LzOftTransmitter(payable(factory.createTransmitter(SALT, address(oft), leaves)));
+        return LzOftTransmitter(payable(factory.createTransmitter(SALT, address(oft), destinations)));
     }
 
     function test_theConduitLandsWhereItsFieldsDerive() public {
-        LzOftTransmitter conduit = _create(_leaves(DST_OFT));
+        LzOftTransmitter conduit = _create(_destinations(DST_OFT));
         (,, uint32 homeEid, bytes32 root,) = factory.bootstrapRoute(address(conduit), destKey);
         assertEq(homeEid, HOME_EID, "the home OFT's endpoint's eid");
         assertEq(address(conduit), factory.predictConduit(owner, SALT, homeKey, HOME_EID, address(oft), root));
-        assertEq(root, LzOftMessage.leaf(destKey, DEST_EID, DST_OFT), "one leaf is its own root");
+        assertEq(
+            root,
+            LzOftConduitAddress.leafHash(ILzOftConduitFactory.Destination(destKey, DEST_EID, DST_OFT)),
+            "one leaf is its own root"
+        );
         assertEq(conduit.owner(), owner);
         assertEq(conduit.homeOft(), address(oft));
         assertEq(conduit.transceiver(), address(factory));
@@ -106,74 +115,81 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
     /// @dev Every stored destination proves into the root the address binds, for any count.
     function testFuzz_everyDestinationProvesIntoTheRoot(uint8 count) public {
         uint256 n = bound(count, 1, 12);
-        ILzOftCreate.OftLeaf[] memory leaves = new ILzOftCreate.OftLeaf[](n);
+        ILzOftConduitFactory.Destination[] memory destinations = new ILzOftConduitFactory.Destination[](n);
         for (uint256 i; i < n; ++i) {
             // forge-lint: disable-next-line(unsafe-typecast) bounded above
             uint32 eid = uint32(40_000 + i);
             address dst = address(uint160(0xD000 + i));
             oft.setPeer(eid, dst);
-            leaves[i] = ILzOftCreate.OftLeaf(bytes32(i + 1), eid, dst);
+            destinations[i] = ILzOftConduitFactory.Destination(bytes32(i + 1), eid, dst);
         }
-        LzOftTransmitter conduit = _create(leaves);
+        LzOftTransmitter conduit = _create(destinations);
 
         bytes32 root;
         for (uint256 i; i < n; ++i) {
             (uint32 eid, address dst,, bytes32 r, bytes32[] memory proof) =
-                factory.bootstrapRoute(address(conduit), leaves[i].chainKey);
+                factory.bootstrapRoute(address(conduit), destinations[i].chainKey);
             root = r;
-            assertEq(eid, leaves[i].eid);
-            assertEq(dst, leaves[i].oft);
-            assertTrue(MerkleProof.verify(proof, r, LzOftMessage.leaf(leaves[i].chainKey, eid, dst)), "proves");
+            assertEq(eid, destinations[i].eid);
+            assertEq(dst, destinations[i].oft);
+            assertTrue(
+                MerkleProof.verify(
+                    proof,
+                    r,
+                    LzOftConduitAddress.leafHash(ILzOftConduitFactory.Destination(destinations[i].chainKey, eid, dst))
+                ),
+                "proves"
+            );
         }
         assertEq(address(conduit), factory.predictConduit(owner, SALT, homeKey, HOME_EID, address(oft), root));
     }
 
     function test_noDestinationsIsRefused() public {
-        vm.expectRevert(LzOftConduitFactory.NoDestinations.selector);
-        _create(new ILzOftCreate.OftLeaf[](0));
+        vm.expectRevert(ILzOftConduitFactory.NoDestinations.selector);
+        _create(new ILzOftConduitFactory.Destination[](0));
     }
 
     function test_aZeroTreasuryIsRefused() public {
         address transmitterImpl = factory.transmitterImplementation();
         address receiverImpl = factory.receiverImplementation();
-        vm.expectRevert(LzOftConduitFactory.NoTreasury.selector);
+        vm.expectRevert(ILzOftConduitFactory.NoTreasury.selector);
         new LzOftConduitFactory(transmitterImpl, receiverImpl, address(0));
     }
 
     /// @dev Strictly ascending, which also refuses a chain listed twice.
-    function test_unsortedOrRepeatedLeavesAreRefused() public {
+    function test_unsortedOrRepeatedDestinationsAreRefused() public {
         oft.setPeer(1, address(1));
         oft.setPeer(2, address(2));
-        ILzOftCreate.OftLeaf[] memory leaves = new ILzOftCreate.OftLeaf[](2);
-        leaves[0] = ILzOftCreate.OftLeaf(bytes32(uint256(2)), 2, address(2));
-        leaves[1] = ILzOftCreate.OftLeaf(bytes32(uint256(1)), 1, address(1));
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.LeavesNotSorted.selector, 1));
-        _create(leaves);
+        ILzOftConduitFactory.Destination[] memory destinations = new ILzOftConduitFactory.Destination[](2);
+        destinations[0] = ILzOftConduitFactory.Destination(bytes32(uint256(2)), 2, address(2));
+        destinations[1] = ILzOftConduitFactory.Destination(bytes32(uint256(1)), 1, address(1));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.DestinationsNotSorted.selector, 1));
+        _create(destinations);
 
-        leaves[1] = leaves[0];
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.LeavesNotSorted.selector, 1));
-        _create(leaves);
+        destinations[1] = destinations[0];
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.DestinationsNotSorted.selector, 1));
+        _create(destinations);
     }
 
-    function test_aLeafForThisChainIsRefused() public {
+    function test_aDestinationForThisChainIsRefused() public {
         oft.setPeer(HOME_EID, DST_OFT);
-        ILzOftCreate.OftLeaf[] memory leaves = new ILzOftCreate.OftLeaf[](1);
-        leaves[0] = ILzOftCreate.OftLeaf(homeKey, HOME_EID, DST_OFT);
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.BadLeaf.selector, 0));
-        _create(leaves);
+        ILzOftConduitFactory.Destination[] memory destinations = new ILzOftConduitFactory.Destination[](1);
+        destinations[0] = ILzOftConduitFactory.Destination(homeKey, HOME_EID, DST_OFT);
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.BadDestination.selector, 0));
+        _create(destinations);
     }
 
     /// @dev No other chain shares the home's eid, and the destination factory refuses a compose
     ///      from it, so that bootstrap could never land.
-    function test_aLeafWithTheHomesEidIsRefused() public {
+    function test_aDestinationWithTheHomesEidIsRefused() public {
         oft.setPeer(HOME_EID, DST_OFT);
-        ILzOftCreate.OftLeaf[] memory leaves = new ILzOftCreate.OftLeaf[](1);
-        leaves[0] = ILzOftCreate.OftLeaf(destKey, HOME_EID, DST_OFT);
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.BadLeaf.selector, 0));
-        _create(leaves);
+        ILzOftConduitFactory.Destination[] memory destinations = new ILzOftConduitFactory.Destination[](1);
+        destinations[0] = ILzOftConduitFactory.Destination(destKey, HOME_EID, DST_OFT);
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.BadDestination.selector, 0));
+        _create(destinations);
     }
 
-    function test_aLeafTheHomeOftDoesNotPeerIsRefused() public {
+    function test_aDestinationTheHomeOftDoesNotPeerIsRefused() public {
         vm.expectRevert(
             abi.encodeWithSelector(
                 LzOftMessage.PeerChanged.selector,
@@ -182,37 +198,41 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
                 bytes32(uint256(uint160(DST_OFT)))
             )
         );
-        _create(_leaves(address(0xBAD)));
+        _create(_destinations(address(0xBAD)));
     }
 
     function test_aHomeOftWithoutAnEndpointIsRefused() public {
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.NotAnOft.selector, address(0xC0DE)));
-        factory.createTransmitter(SALT, address(0xC0DE), _leaves(DST_OFT));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.NotAnOft.selector, address(0xC0DE)));
+        factory.createTransmitter(SALT, address(0xC0DE), _destinations(DST_OFT));
     }
 
     function test_theSameConduitCannotBeCreatedTwice() public {
-        LzOftTransmitter conduit = _create(_leaves(DST_OFT));
+        LzOftTransmitter conduit = _create(_destinations(DST_OFT));
         vm.expectRevert(abi.encodeWithSelector(Conduits.ConduitExists.selector, owner, SALT, address(conduit)));
-        _create(_leaves(DST_OFT));
+        _create(_destinations(DST_OFT));
     }
 
     function test_aChainNotListedHasNoRoute() public {
-        LzOftTransmitter conduit = _create(_leaves(DST_OFT));
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.NotADestination.selector, address(conduit), homeKey));
+        LzOftTransmitter conduit = _create(_destinations(DST_OFT));
+        vm.expectRevert(
+            abi.encodeWithSelector(ILzOftConduitFactory.NotADestination.selector, address(conduit), homeKey)
+        );
         factory.bootstrapRoute(address(conduit), homeKey);
     }
 
     function test_aChainNotListedHasNoDestination() public {
-        LzOftTransmitter conduit = _create(_leaves(DST_OFT));
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.NotADestination.selector, address(conduit), homeKey));
+        LzOftTransmitter conduit = _create(_destinations(DST_OFT));
+        vm.expectRevert(
+            abi.encodeWithSelector(ILzOftConduitFactory.NotADestination.selector, address(conduit), homeKey)
+        );
         factory.destinationOf(address(conduit), homeKey);
     }
 
     /// @dev The compose names the fields `bootstrapRoute` reports and the conduit's own
     ///      `(owner, salt)`, and goes to this factory's address on the destination.
     function test_theBootstrapIsBuiltFromTheConduitsFields() public {
-        LzOftTransmitter conduit = _create(_leaves(DST_OFT));
+        LzOftTransmitter conduit = _create(_destinations(DST_OFT));
         (,, uint32 homeEid, bytes32 root, bytes32[] memory proof) = factory.bootstrapRoute(address(conduit), destKey);
         bytes memory body = Payload.encodeCalls(_calls(address(0x5111)));
 
@@ -232,39 +252,39 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
     }
 
     function test_aBootstrapForAnotherCallerOrIdentityIsRefused() public {
-        LzOftTransmitter conduit = _create(_leaves(DST_OFT));
+        LzOftTransmitter conduit = _create(_destinations(DST_OFT));
         bytes memory route = Erc7930.encodeEvmChain(DEST);
         bytes memory body = Payload.encodeCalls(new Call[](0));
 
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.UnknownConduit.selector, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.UnknownConduit.selector, address(this)));
         factory.conduitBootstrap(route, owner, SALT, body);
 
         address derived = factory.predictConduit(owner, bytes32(0), homeKey, HOME_EID, address(oft), _root());
         vm.prank(address(conduit));
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.NotTheConduit.selector, address(conduit), derived));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.NotTheConduit.selector, address(conduit), derived));
         factory.conduitBootstrap(route, owner, bytes32(0), body);
     }
 
     /// @dev The compose carries `Call[]`, so a chain that is not `eip155` is refused before
     ///      its leaf is looked up.
     function test_aNonEvmChainIsRefused() public {
-        LzOftTransmitter conduit = _create(_leaves(DST_OFT));
+        LzOftTransmitter conduit = _create(_destinations(DST_OFT));
         bytes memory sol = Erc7930.encodeChainId(ChainType.SOLANA, hex"0102030405060708");
 
         vm.prank(address(conduit));
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.NotAnEvmChain.selector, keccak256(sol)));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.NotAnEvmChain.selector, keccak256(sol)));
         factory.conduitBootstrap(sol, owner, SALT, Payload.encodeElements(new bytes[](0)));
     }
 
     function _root() internal view returns (bytes32) {
-        return LzOftMessage.leaf(destKey, DEST_EID, DST_OFT);
+        return LzOftConduitAddress.leafHash(ILzOftConduitFactory.Destination(destKey, DEST_EID, DST_OFT));
     }
 
     function test_onlyItsOwnConduitsArePredicted() public {
-        LzOftTransmitter conduit = _create(_leaves(DST_OFT));
+        LzOftTransmitter conduit = _create(_destinations(DST_OFT));
         vm.prank(address(conduit));
         assertEq(factory.predictReceiver(destKey, owner, SALT), abi.encodePacked(address(conduit)));
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.UnknownConduit.selector, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.UnknownConduit.selector, address(this)));
         factory.predictReceiver(destKey, owner, SALT);
     }
 }
@@ -279,7 +299,7 @@ contract LzOftConduitFactoryDestinationTest is LzOftConduitFactoryBase {
         _chain(DEST, DEST_EID);
         oft.setPeer(HOME_EID, HOME_OFT);
         sink = new Sink();
-        root = LzOftMessage.leaf(destKey, DEST_EID, address(oft));
+        root = LzOftConduitAddress.leafHash(ILzOftConduitFactory.Destination(destKey, DEST_EID, address(oft)));
         conduit = factory.predictConduit(owner, SALT, homeKey, HOME_EID, HOME_OFT, root);
     }
 
@@ -326,7 +346,8 @@ contract LzOftConduitFactoryDestinationTest is LzOftConduitFactoryBase {
         bytes memory m = _queue(fake, conduit, _bootstrap(root, new bytes32[](0)));
         vm.expectRevert(
             abi.encodeWithSelector(
-                LzOftConduitFactory.NotInRoot.selector, LzOftMessage.leaf(destKey, DEST_EID, address(fake))
+                ILzOftConduitFactory.NotInRoot.selector,
+                LzOftConduitAddress.leafHash(ILzOftConduitFactory.Destination(destKey, DEST_EID, address(fake)))
             )
         );
         _run(fake, m);
@@ -335,23 +356,24 @@ contract LzOftConduitFactoryDestinationTest is LzOftConduitFactoryBase {
     /// @dev The factory has no endpoint of its own; the one the claimed OFT uses must call.
     function test_aCallerOtherThanTheOftsEndpointIsRefused() public {
         bytes memory m = _queue(oft, conduit, _bootstrap(root, new bytes32[](0)));
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.NotTheEndpoint.selector, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.NotTheEndpoint.selector, address(this)));
         factory.lzCompose(address(oft), GUID, m, EXECUTOR, "");
     }
 
     /// @dev The leaf binds the chain and its eid, so a root that lists this OFT for another
     ///      chain proves nothing here.
-    function test_aLeafForAnotherChainIsRefused() public {
-        bytes32 otherRoot = LzOftMessage.leaf(ChainKey.forEvm(10), 30111, address(oft));
+    function test_aDestinationForAnotherChainIsRefused() public {
+        bytes32 otherRoot =
+            LzOftConduitAddress.leafHash(ILzOftConduitFactory.Destination(ChainKey.forEvm(10), 30111, address(oft)));
         address other = factory.predictConduit(owner, SALT, homeKey, HOME_EID, HOME_OFT, otherRoot);
         bytes memory m = _queue(oft, other, _bootstrap(otherRoot, new bytes32[](0)));
-        vm.expectPartialRevert(LzOftConduitFactory.NotInRoot.selector);
+        vm.expectPartialRevert(ILzOftConduitFactory.NotInRoot.selector);
         _run(oft, m);
     }
 
     function test_aSenderOtherThanTheConduitIsRefused() public {
         bytes memory m = _queue(oft, address(0xBAD), _bootstrap(root, new bytes32[](0)));
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.NotTheConduit.selector, address(0xBAD), conduit));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.NotTheConduit.selector, address(0xBAD), conduit));
         _run(oft, m);
     }
 
@@ -363,7 +385,7 @@ contract LzOftConduitFactoryDestinationTest is LzOftConduitFactoryBase {
         oft.setPeer(elsewhere, HOME_OFT);
         bytes memory m =
             oft.receivePacket(elsewhere, GUID, address(factory), conduit, _bootstrap(root, new bytes32[](0)));
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.NotTheHomeEid.selector, elsewhere, HOME_EID));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.NotTheHomeEid.selector, elsewhere, HOME_EID));
         _run(oft, m);
     }
 
@@ -385,7 +407,8 @@ contract LzOftConduitFactoryDestinationTest is LzOftConduitFactoryBase {
     function test_aForgedRootCreatesAnotherConduit() public {
         MockOft fake = new MockOft(address(endpoint));
         fake.setPeer(HOME_EID, HOME_OFT);
-        bytes32 forged = LzOftMessage.leaf(destKey, DEST_EID, address(fake));
+        bytes32 forged =
+            LzOftConduitAddress.leafHash(ILzOftConduitFactory.Destination(destKey, DEST_EID, address(fake)));
         address elsewhere = factory.predictConduit(owner, SALT, homeKey, HOME_EID, HOME_OFT, forged);
         _run(fake, _queue(fake, elsewhere, _bootstrap(forged, new bytes32[](0))));
 
@@ -419,7 +442,8 @@ contract LzOftConduitFactoryRoundTripTest is LzOftConduitFactoryBase {
         address homeOft = address(oft);
         oft.setPeer(DEST_EID, dstOft);
         vm.prank(owner);
-        LzOftTransmitter conduit = LzOftTransmitter(payable(factory.createTransmitter(SALT, homeOft, _leaves(dstOft))));
+        LzOftTransmitter conduit =
+            LzOftTransmitter(payable(factory.createTransmitter(SALT, homeOft, _destinations(dstOft))));
         vm.deal(address(conduit), 1 ether);
         Sink sink = new Sink{salt: bytes32(0)}();
         vm.prank(owner);

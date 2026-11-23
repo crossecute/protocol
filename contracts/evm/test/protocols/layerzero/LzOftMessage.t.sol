@@ -9,6 +9,8 @@ import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {Call} from "src/messaging/Call.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
+import {LzOftConduitAddress} from "src/protocols/layerzero/LzOftConduitAddress.sol";
 
 contract PeerOft {
     mapping(uint32 => bytes32) public peers;
@@ -110,30 +112,6 @@ contract LzOftMessageTest is Test {
             )
         );
         h.requirePeer(address(oft), EID, TO);
-    }
-
-    /// @dev The leaf is what OpenZeppelin's `MerkleProof` verifies against a sorted-pair root,
-    ///      which is how the factory will check it.
-    function test_aLeafProvesIntoASortedPairRoot() public pure {
-        bytes32 a = LzOftMessage.leaf(keccak256("eip155:8453"), 30184, address(0xA));
-        bytes32 b = LzOftMessage.leaf(keccak256("eip155:42161"), 30110, address(0xB));
-        bytes32 root = Hashes.commutativeKeccak256(a, b);
-        bytes32[] memory proof = new bytes32[](1);
-        proof[0] = b;
-        assertTrue(MerkleProof.verify(proof, root, a));
-        assertFalse(
-            MerkleProof.verify(proof, root, LzOftMessage.leaf(keccak256("eip155:8453"), 30184, address(0xC))),
-            "another OFT on the same chain"
-        );
-    }
-
-    /// @dev A 64-byte inner node cannot pass as a leaf, since a leaf is hashed twice.
-    function test_aLeafIsNotItsSingleHash() public pure {
-        bytes32 chainKey = keccak256("eip155:8453");
-        assertNotEq(
-            LzOftMessage.leaf(chainKey, 30184, address(0xA)),
-            keccak256(abi.encode(chainKey, uint32(30184), address(0xA)))
-        );
     }
 
     function test_theBootstrapRoundTrips() public view {

@@ -103,7 +103,7 @@ for (const dir of readdirSync(join(root, "out"))) {
   }
 }
 
-for (const name of ["ILzOftConduitFactoryView", "ILzOftCreate", "ISignedTransmitter", "ISourceAuthorityGuard", "SafeBatchExecutor"]) {
+for (const name of ["ILzOftConduitFactory", "ISignedReceiver", "ISignedTransmitter", "ISourceAuthorityGuard", "SafeBatchExecutor"]) {
   if (!abis.has(name)) throw new Error(`Missing ${name} ABI. Run npm --prefix npm run build from contracts/evm.`);
 }
 

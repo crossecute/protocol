@@ -9,7 +9,6 @@ import {ChildUpdate} from "crossecute/messaging/authority/ChildUpdate.sol";
 import {Payload} from "crossecute/messaging/Payload.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {SafeHashes} from "../src/SafeHashes.sol";
-import {ILzOftCreate} from "crossecute/protocols/layerzero/ILzOftCreate.sol";
 import {LzOftConduitFactory} from "crossecute/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftTransmitter} from "crossecute/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftMessage} from "crossecute/protocols/layerzero/LzOftMessage.sol";
@@ -22,6 +21,7 @@ import {ChainKey} from "crossecute/addressing/ChainKey.sol";
 import {SafeTxEvidence, SignedBootstrap} from "crossecute/messaging/signed/types/SignedDispatchTypes.sol";
 import {MockLzEndpoint} from "evm-test/protocols/layerzero/MockLzEndpoint.sol";
 import {MockOft} from "evm-test/protocols/layerzero/MockOft.sol";
+import {ILzOftConduitFactory} from "crossecute/protocols/layerzero/ILzOftConduitFactory.sol";
 
 contract OftIntegrationSink {
     uint256 public hits;
@@ -121,15 +121,15 @@ contract SignedOftIntegrationTest is SourceAuthorityBase {
         oft.setPeer(DEST_EID, dstOft);
         _activate(safe, _signers());
         address homeOft = address(oft);
-        ILzOftCreate.OftLeaf[] memory leaves = new ILzOftCreate.OftLeaf[](1);
-        leaves[0] = ILzOftCreate.OftLeaf(ChainKey.forEvm(DEST), DEST_EID, dstOft);
+        ILzOftConduitFactory.Destination[] memory destinations = new ILzOftConduitFactory.Destination[](1);
+        destinations[0] = ILzOftConduitFactory.Destination(ChainKey.forEvm(DEST), DEST_EID, dstOft);
         assertTrue(
             _exec(
                 safe,
                 _signers(),
                 address(oftFactory),
                 0,
-                abi.encodeCall(oftFactory.createTransmitter, (bytes32(0), homeOft, leaves)),
+                abi.encodeCall(oftFactory.createTransmitter, (bytes32(0), homeOft, destinations)),
                 Enum.Operation.Call
             )
         );
