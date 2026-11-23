@@ -18,3 +18,26 @@ interface ILzOftSignedConduitFactory is ILzOftConduitFactory {
         view
         returns (bytes memory recipient, bytes memory message);
 }
+
+/// @notice Address prediction and committed destination routes from a LayerZero OFT factory.
+interface ILzOftConduitFactoryView is ILzOftConduitFactory {
+    /// @notice The deployed factory's Proxy initcode hash for offline address prediction.
+    function PROXY_INIT_CODE_HASH() external view returns (bytes32);
+
+    /// @notice Predict the conduit address committed to these creation inputs.
+    function predictConduit(
+        address owner,
+        bytes32 salt,
+        bytes32 homeChainKey,
+        uint32 homeEid,
+        address homeOft,
+        bytes32 destRoot
+    ) external view returns (address);
+
+    /// @notice The destination and proof carried by a bootstrap from `conduit` to `chainKey`.
+    /// @dev Reverts if the conduit was not created with this chain.
+    function bootstrapRoute(address conduit, bytes32 chainKey)
+        external
+        view
+        returns (uint32 eid, address dstOft, uint32 homeEid, bytes32 destRoot, bytes32[] memory proof);
+}

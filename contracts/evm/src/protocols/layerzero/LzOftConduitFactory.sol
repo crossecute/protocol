@@ -13,7 +13,11 @@ import {ChainKey} from "src/addressing/ChainKey.sol";
 import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
-import {ILzOftConduitFactory, ILzOftSignedConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
+import {
+    ILzOftConduitFactory,
+    ILzOftConduitFactoryView,
+    ILzOftSignedConduitFactory
+} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 import {ILzOftCreate} from "src/protocols/layerzero/ILzOftCreate.sol";
 import {ILzOftTransmitterInit} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {ILzOftReceiverInit} from "src/protocols/layerzero/LzOftReceiver.sol";
@@ -45,7 +49,7 @@ interface IConduitIdentity {
 ///      Any contract can queue a compose for any target, so the bootstrap is trusted only
 ///      because the delivering OFT proves into the root the message names, and that root is
 ///      part of the address the receiver is created at: a forged root creates another conduit.
-contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILzOftCreate, ILayerZeroComposer {
+contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILzOftConduitFactoryView, ILzOftCreate, ILayerZeroComposer {
     /// @dev The route committed at conduit creation and its index in the destination tree.
     struct CommittedDestination {
         uint32 eid;
@@ -67,7 +71,8 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILzOftCreate, ILayer
     address public immutable treasury;
     /// @notice This chain's key, read at deployment, so each chain's copy knows its own chain.
     bytes32 public immutable localChainKey;
-    bytes32 public immutable PROXY_INIT_CODE_HASH = ProxyInitCode.hash();
+    /// @inheritdoc ILzOftConduitFactoryView
+    bytes32 public immutable override PROXY_INIT_CODE_HASH = ProxyInitCode.hash();
     address internal immutable _proxyInitCode;
 
     mapping(address conduit => Conduit) internal _conduits;
@@ -125,6 +130,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILzOftCreate, ILayer
         return keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot));
     }
 
+    /// @inheritdoc ILzOftConduitFactoryView
     function predictConduit(
         address owner,
         bytes32 salt,
@@ -178,10 +184,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILzOftCreate, ILayer
         if (signed) emit SignedConduitCreated(conduit);
     }
 
-    /// @notice Where `conduit`'s bootstrap to `chainKey` goes, the home eid and root bound into
-    ///         the conduit's address, and the proof of that destination in the root: the fields
-    ///         `conduitBootstrap` puts in the compose.
-    /// @dev Reverts for a chain the conduit was not created with.
+    /// @inheritdoc ILzOftConduitFactoryView
     function bootstrapRoute(address conduit, bytes32 chainKey)
         external
         view
