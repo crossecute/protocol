@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import {LzOftConduitFactoryBase, Sink} from "test/protocols/layerzero/LzOftConduitFactory.t.sol";
-import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
