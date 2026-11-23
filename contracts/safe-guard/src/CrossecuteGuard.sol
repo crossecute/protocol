@@ -2,6 +2,7 @@
 pragma solidity =0.8.30;
 
 import {IERC7786GatewaySource} from "crossecute/messaging/IErc7786.sol";
+import {OrderedMerkle} from "crossecute/messaging/OrderedMerkle.sol";
 import {ISignedTransmitter} from "crossecute/messaging/outbound/ISignedTransmitter.sol";
 import {SafePolicyGuardBase} from "policy-engine/SafePolicyGuardBase.sol";
 import {IERC165} from "policy-engine/interfaces/IERC165.sol";
@@ -138,22 +139,10 @@ contract CrossecuteGuard is SafePolicyGuardBase, ICrossecuteGuard, SourceAuthori
         uint256 count = leaves.length;
         require(count != 0, NoLeaves());
         bytes32[] memory leafHashes = new bytes32[](count);
-        bytes32[] memory level = new bytes32[](count);
         for (uint256 i = 0; i < count; ++i) {
-            leafHashes[i] = keccak256(abi.encode(keccak256(leaves[i])));
-            level[i] = leafHashes[i];
+            leafHashes[i] = OrderedMerkle.leafHash(leaves[i]);
         }
-        // In place: node i reads entries 2i and 2i + 1, which no earlier node has overwritten.
-        for (uint256 width = count; width > 1;) {
-            uint256 pairs = width >> 1;
-            for (uint256 i = 0; i < pairs; ++i) {
-                (bytes32 a, bytes32 b) = (level[2 * i], level[2 * i + 1]);
-                level[i] = a < b ? keccak256(abi.encode(a, b)) : keccak256(abi.encode(b, a));
-            }
-            if (width & 1 == 1) level[pairs] = level[width - 1];
-            width = pairs + (width & 1);
-        }
-        root = level[0];
+        root = OrderedMerkle.root(leafHashes);
         $published[root] = true;
         for (uint256 i = 0; i < count; ++i) {
             // forge-lint: disable-next-line(reentrancy-events) this function makes no external call

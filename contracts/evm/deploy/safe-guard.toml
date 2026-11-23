@@ -2,7 +2,7 @@
 # Safe 1.5.0 canonical addresses and runtime hashes:
 # https://github.com/safe-global/safe-deployments/tree/ca9cb0d2d5f5175fc8e41d579f356748d2bc1c62/src/assets/v1.5.0
 
-address = "0x3332C80a4D74282e51995B2D63b480f04b230a40"
+address = "0xD8778814ba151BCc94Ebe20a28A4979442cD3b56"
 
 [multi_send_call_only]
 address = "0xA83c336B20401Af773B6219BA5027174338D1836"
