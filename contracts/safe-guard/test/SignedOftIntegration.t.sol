@@ -9,6 +9,7 @@ import {ChildUpdate} from "crossecute/messaging/authority/ChildUpdate.sol";
 import {Payload} from "crossecute/messaging/Payload.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
 import {SafeHashes} from "../src/SafeHashes.sol";
+import {ILzOftCreate} from "crossecute/protocols/layerzero/ILzOftCreate.sol";
 import {LzOftConduitFactory} from "crossecute/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftTransmitter} from "crossecute/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftMessage} from "crossecute/protocols/layerzero/LzOftMessage.sol";
@@ -120,8 +121,8 @@ contract SignedOftIntegrationTest is SourceAuthorityBase {
         oft.setPeer(DEST_EID, dstOft);
         _activate(safe, _signers());
         address homeOft = address(oft);
-        LzOftConduitFactory.Leaf[] memory leaves = new LzOftConduitFactory.Leaf[](1);
-        leaves[0] = LzOftConduitFactory.Leaf(ChainKey.forEvm(DEST), DEST_EID, dstOft);
+        ILzOftCreate.OftLeaf[] memory leaves = new ILzOftCreate.OftLeaf[](1);
+        leaves[0] = ILzOftCreate.OftLeaf(ChainKey.forEvm(DEST), DEST_EID, dstOft);
         assertTrue(
             _exec(
                 safe,

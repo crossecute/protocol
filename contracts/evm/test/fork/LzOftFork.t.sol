@@ -11,6 +11,7 @@ import {ILayerZeroReceiver} from "@layerzerolabs/lz-evm-protocol-v2/contracts/in
 import {ICommitFinalize, ReceiverBase} from "src/messaging/inbound/ReceiverBase.sol";
 import {Call} from "src/messaging/Call.sol";
 import {DeliveryGas} from "src/messaging/DeliveryGas.sol";
+import {ILzOftCreate} from "src/protocols/layerzero/ILzOftCreate.sol";
 import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
@@ -113,7 +114,7 @@ abstract contract LzOftForkBase is Test {
     }
 
     /// @dev For a Fraxtal home: Ethereum and Arbitrum, the lockbox's peers.
-    function _leaves() internal view returns (LzOftConduitFactory.Leaf[] memory) {
+    function _leaves() internal view returns (ILzOftCreate.OftLeaf[] memory) {
         LzOftDestination[] memory destinations = new LzOftDestination[](2);
         destinations[0] = LzOftDestination(1, ETH_EID);
         destinations[1] = LzOftDestination(42161, ARB_EID);
@@ -121,14 +122,14 @@ abstract contract LzOftForkBase is Test {
     }
 
     /// @dev For an Ethereum home: Fraxtal, the only peer Ethereum's frxUSD has among these chains.
-    function _fraxtalLeaves() internal view returns (LzOftConduitFactory.Leaf[] memory) {
+    function _fraxtalLeaves() internal view returns (ILzOftCreate.OftLeaf[] memory) {
         LzOftDestination[] memory destinations = new LzOftDestination[](1);
         destinations[0] = LzOftDestination(252, FRAXTAL_EID);
         return LzOftDeploy.leaves(homeOft, destinations);
     }
 
     /// @dev On the home fork, funded for every send's fee.
-    function _createConduit(LzOftConduitFactory.Leaf[] memory leaves) internal {
+    function _createConduit(ILzOftCreate.OftLeaf[] memory leaves) internal {
         factory = LzOftDeploy.factory(address(0x7EA5));
         conduit = LzOftTransmitter(payable(factory.createTransmitter(SALT, homeOft, leaves)));
         vm.deal(address(conduit), 100 ether);
@@ -222,7 +223,7 @@ contract LzOftForkTest is LzOftForkBase {
     function test_frxUsdCarriesABootstrapToEachDestinationAndAMessageAfter() public {
         if (!_forks()) vm.skip(true);
 
-        LzOftConduitFactory.Leaf[] memory leaves = _leaves();
+        ILzOftCreate.OftLeaf[] memory leaves = _leaves();
         for (uint256 i; i < leaves.length; ++i) {
             assertEq(leaves[i].oft, leaves[i].eid == ETH_EID ? ETH_OFT : ARB_OFT, "the lockbox's peers are Frax's");
         }
@@ -248,7 +249,7 @@ contract LzOftForkTest is LzOftForkBase {
         if (!_forks()) vm.skip(true);
 
         _homeOn(ethereum, ETH_EID, ETH_OFT);
-        LzOftConduitFactory.Leaf[] memory leaves = _fraxtalLeaves();
+        ILzOftCreate.OftLeaf[] memory leaves = _fraxtalLeaves();
         assertEq(leaves[0].oft, FRAXTAL_OFT, "Ethereum's frxUSD peers Fraxtal's lockbox");
 
         vm.selectFork(fraxtal);

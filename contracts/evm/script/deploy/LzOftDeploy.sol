@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
+import {ILzOftCreate} from "src/protocols/layerzero/ILzOftCreate.sol";
 import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
@@ -83,13 +84,13 @@ library LzOftDeploy {
     function leaves(address homeOft, LzOftDestination[] memory destinations)
         internal
         view
-        returns (LzOftConduitFactory.Leaf[] memory out)
+        returns (ILzOftCreate.OftLeaf[] memory out)
     {
-        out = new LzOftConduitFactory.Leaf[](destinations.length);
+        out = new ILzOftCreate.OftLeaf[](destinations.length);
         for (uint256 i; i < destinations.length; ++i) {
             bytes32 peer = IOAppCore(homeOft).peers(destinations[i].eid);
             check(peer != bytes32(0) && uint256(peer) >> 160 == 0, "the home OFT peers an EVM OFT for the eid");
-            out[i] = LzOftConduitFactory.Leaf(
+            out[i] = ILzOftCreate.OftLeaf(
                 ChainKey.forEvm(destinations[i].chainId), destinations[i].eid, address(uint160(uint256(peer)))
             );
         }
@@ -104,7 +105,7 @@ library LzOftDeploy {
     ///         has the leaf's eid, and the OFT peers `homeOft` back.
     /// @dev The home factory cannot check the first two, so a leaf that fails them would be
     ///      bound into the conduit's address and its bootstrap would never land.
-    function checkOnDestination(LzOftConduitFactory.Leaf memory leaf, uint32 homeEid, address homeOft) internal view {
+    function checkOnDestination(ILzOftCreate.OftLeaf memory leaf, uint32 homeEid, address homeOft) internal view {
         check(leaf.chainKey == ChainKey.local(), "the leaf names the chain it is checked on");
         check(IOAppCore(leaf.oft).endpoint().eid() == leaf.eid, "the destination OFT's endpoint has the leaf's eid");
         check(

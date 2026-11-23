@@ -12,7 +12,7 @@ import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
-import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
+import {ILzOftCreate} from "src/protocols/layerzero/ILzOftCreate.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftDeploy} from "script/deploy/LzOftDeploy.sol";
@@ -55,7 +55,7 @@ contract LzOftSignedForkTest is LzOftForkBase {
         guard.setSelection(address(safe), AUTHORITY_HEAD, authorityHash);
 
         factory = LzOftDeploy.factory(TREASURY, address(guard), MULTISEND_CALL_ONLY);
-        LzOftConduitFactory.Leaf[] memory leaves = _leaves();
+        ILzOftCreate.OftLeaf[] memory leaves = _leaves();
         bytes memory result =
             safe.exec(address(factory), 0, abi.encodeCall(factory.createTransmitter, (SALT, FRAXTAL_OFT, leaves)));
         conduit = LzOftTransmitter(payable(abi.decode(result, (address))));

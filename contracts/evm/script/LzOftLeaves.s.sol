@@ -8,7 +8,7 @@ import {check, DeployCheck} from "script/deploy/ProxyDeploy.sol";
 import {ChainKey} from "src/addressing/ChainKey.sol";
 import {ChainConfig, ChainEntry, Derivation} from "script/deploy/ChainConfig.sol";
 import {LzOftDeploy, LzOftDestination} from "script/deploy/LzOftDeploy.sol";
-import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
+import {ILzOftCreate} from "src/protocols/layerzero/ILzOftCreate.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 
 /// @title LzOftLeaves
@@ -22,7 +22,7 @@ import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 ///      is then checked on its own chain over `<NAME>_RPC_URL`, the one check the home factory
 ///      cannot make: that the eid is that chain's.
 contract LzOftLeaves is Script {
-    function run() external returns (LzOftConduitFactory.Leaf[] memory leaves, bytes32 destRoot) {
+    function run() external returns (ILzOftCreate.OftLeaf[] memory leaves, bytes32 destRoot) {
         string memory dir = ChainConfig.defaultDir();
         ChainEntry[] memory cs = ChainConfig.chains(dir);
         address homeOft = vm.envAddress("LZ_OFT_HOME");

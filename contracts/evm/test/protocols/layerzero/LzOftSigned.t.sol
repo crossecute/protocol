@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {LzOftConduitFactoryBase, Sink} from "test/protocols/layerzero/LzOftConduitFactory.t.sol";
+import {ILzOftCreate} from "src/protocols/layerzero/ILzOftCreate.sol";
 import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
@@ -184,7 +185,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         (owners[0], owners[1]) = (vm.addr(1), notASafe);
         other.setOwners(owners, 2);
         other.setGuard(address(guard));
-        LzOftConduitFactory.Leaf[] memory leaves = _leaves(dstOft);
+        ILzOftCreate.OftLeaf[] memory leaves = _leaves(dstOft);
         vm.prank(address(other));
         vm.expectRevert(abi.encodeWithSelector(SafeAuthorityGraph.NotASafe.selector, notASafe));
         factory.createTransmitter(SALT, address(oft), leaves);

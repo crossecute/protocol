@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
+import {ILzOftCreate} from "src/protocols/layerzero/ILzOftCreate.sol";
 import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
@@ -66,9 +67,9 @@ abstract contract LzOftConduitFactoryBase is Test {
         return address(0);
     }
 
-    function _leaves(address dstOft) internal view returns (LzOftConduitFactory.Leaf[] memory leaves) {
-        leaves = new LzOftConduitFactory.Leaf[](1);
-        leaves[0] = LzOftConduitFactory.Leaf(destKey, DEST_EID, dstOft);
+    function _leaves(address dstOft) internal view returns (ILzOftCreate.OftLeaf[] memory leaves) {
+        leaves = new ILzOftCreate.OftLeaf[](1);
+        leaves[0] = ILzOftCreate.OftLeaf(destKey, DEST_EID, dstOft);
     }
 
     function _calls(address sink) internal pure returns (Call[] memory calls) {
@@ -85,7 +86,7 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
         oft.setPeer(DEST_EID, DST_OFT);
     }
 
-    function _create(LzOftConduitFactory.Leaf[] memory leaves) internal returns (LzOftTransmitter) {
+    function _create(ILzOftCreate.OftLeaf[] memory leaves) internal returns (LzOftTransmitter) {
         vm.prank(owner);
         return LzOftTransmitter(payable(factory.createTransmitter(SALT, address(oft), leaves)));
     }
@@ -105,13 +106,13 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
     /// @dev Every stored destination proves into the root the address binds, for any count.
     function testFuzz_everyDestinationProvesIntoTheRoot(uint8 count) public {
         uint256 n = bound(count, 1, 12);
-        LzOftConduitFactory.Leaf[] memory leaves = new LzOftConduitFactory.Leaf[](n);
+        ILzOftCreate.OftLeaf[] memory leaves = new ILzOftCreate.OftLeaf[](n);
         for (uint256 i; i < n; ++i) {
             // forge-lint: disable-next-line(unsafe-typecast) bounded above
             uint32 eid = uint32(40_000 + i);
             address dst = address(uint160(0xD000 + i));
             oft.setPeer(eid, dst);
-            leaves[i] = LzOftConduitFactory.Leaf(bytes32(i + 1), eid, dst);
+            leaves[i] = ILzOftCreate.OftLeaf(bytes32(i + 1), eid, dst);
         }
         LzOftTransmitter conduit = _create(leaves);
 
@@ -129,7 +130,7 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
 
     function test_noDestinationsIsRefused() public {
         vm.expectRevert(LzOftConduitFactory.NoDestinations.selector);
-        _create(new LzOftConduitFactory.Leaf[](0));
+        _create(new ILzOftCreate.OftLeaf[](0));
     }
 
     function test_aZeroTreasuryIsRefused() public {
@@ -143,9 +144,9 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
     function test_unsortedOrRepeatedLeavesAreRefused() public {
         oft.setPeer(1, address(1));
         oft.setPeer(2, address(2));
-        LzOftConduitFactory.Leaf[] memory leaves = new LzOftConduitFactory.Leaf[](2);
-        leaves[0] = LzOftConduitFactory.Leaf(bytes32(uint256(2)), 2, address(2));
-        leaves[1] = LzOftConduitFactory.Leaf(bytes32(uint256(1)), 1, address(1));
+        ILzOftCreate.OftLeaf[] memory leaves = new ILzOftCreate.OftLeaf[](2);
+        leaves[0] = ILzOftCreate.OftLeaf(bytes32(uint256(2)), 2, address(2));
+        leaves[1] = ILzOftCreate.OftLeaf(bytes32(uint256(1)), 1, address(1));
         vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.LeavesNotSorted.selector, 1));
         _create(leaves);
 
@@ -156,8 +157,8 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
 
     function test_aLeafForThisChainIsRefused() public {
         oft.setPeer(HOME_EID, DST_OFT);
-        LzOftConduitFactory.Leaf[] memory leaves = new LzOftConduitFactory.Leaf[](1);
-        leaves[0] = LzOftConduitFactory.Leaf(homeKey, HOME_EID, DST_OFT);
+        ILzOftCreate.OftLeaf[] memory leaves = new ILzOftCreate.OftLeaf[](1);
+        leaves[0] = ILzOftCreate.OftLeaf(homeKey, HOME_EID, DST_OFT);
         vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.BadLeaf.selector, 0));
         _create(leaves);
     }
@@ -166,8 +167,8 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
     ///      from it, so that bootstrap could never land.
     function test_aLeafWithTheHomesEidIsRefused() public {
         oft.setPeer(HOME_EID, DST_OFT);
-        LzOftConduitFactory.Leaf[] memory leaves = new LzOftConduitFactory.Leaf[](1);
-        leaves[0] = LzOftConduitFactory.Leaf(destKey, HOME_EID, DST_OFT);
+        ILzOftCreate.OftLeaf[] memory leaves = new ILzOftCreate.OftLeaf[](1);
+        leaves[0] = ILzOftCreate.OftLeaf(destKey, HOME_EID, DST_OFT);
         vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.BadLeaf.selector, 0));
         _create(leaves);
     }

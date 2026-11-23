@@ -14,8 +14,10 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {ProviderAddress} from "src/protocols/ProviderAddress.sol";
 import {ILzOftConduitFactory, ILzOftSignedConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
+import {ILzOftCreate} from "src/protocols/layerzero/ILzOftCreate.sol";
 import {ILzOftTransmitterInit} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {ILzOftReceiverInit} from "src/protocols/layerzero/LzOftReceiver.sol";
+import {LzOftMerkle} from "src/protocols/layerzero/LzOftMerkle.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 
 import {SafeViewer} from "src/messaging/signed/SafeViewer.sol";
@@ -43,14 +45,7 @@ interface IConduitIdentity {
 ///      Any contract can queue a compose for any target, so the bootstrap is trusted only
 ///      because the delivering OFT proves into the root the message names, and that root is
 ///      part of the address the receiver is created at: a forged root creates another conduit.
-contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
-    /// @notice One destination, as the operator lists it at creation.
-    struct Leaf {
-        bytes32 chainKey;
-        uint32 eid;
-        address oft;
-    }
-
+contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILzOftCreate, ILayerZeroComposer {
     struct Destination {
         uint32 eid;
         address oft;
@@ -151,13 +146,14 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
     ///      `homeOft`'s peers now, and again at each send.
     ///      A leaf whose `eid` is another chain's is not caught here, since nothing on this chain
     ///      maps an eid to a chain; that bootstrap's compose fails at the destination.
-    function createTransmitter(bytes32 salt, address homeOft, Leaf[] calldata leaves)
+    function createTransmitter(bytes32 salt, address homeOft, OftLeaf[] calldata leaves)
         external
+        override
         returns (address conduit)
     {
         uint32 homeEid = _homeEid(homeOft);
         bytes32[] memory hashes = _requireLeaves(homeOft, homeEid, leaves);
-        bytes32 destRoot = LzOftMessage.root(hashes);
+        bytes32 destRoot = LzOftMerkle.root(hashes);
 
         bool signed = SafeViewer.signedAuthority(msg.sender).length != 0;
         bytes32 s = conduitSalt(msg.sender, salt, localChainKey, homeEid, homeOft, destRoot);
@@ -192,7 +188,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
     {
         Destination memory d = _destination(conduit, chainKey);
         Conduit memory a = _conduits[conduit];
-        return (d.eid, d.oft, a.homeEid, a.destRoot, LzOftMessage.proof(_leafHashes[conduit], d.index));
+        return (d.eid, d.oft, a.homeEid, a.destRoot, LzOftMerkle.proof(_leafHashes[conduit], d.index));
     }
 
     /// @inheritdoc ILzOftConduitFactory
@@ -227,7 +223,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
                 a.homeEid,
                 a.homeOft,
                 a.destRoot,
-                LzOftMessage.proof(_leafHashes[msg.sender], d.index),
+                LzOftMerkle.proof(_leafHashes[msg.sender], d.index),
                 Payload.decodeCalls(body)
             )
         );
@@ -256,7 +252,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
             a.homeEid,
             a.homeOft,
             a.destRoot,
-            LzOftMessage.proof(_leafHashes[msg.sender], d.index),
+            LzOftMerkle.proof(_leafHashes[msg.sender], d.index),
             new Call[](0)
         );
         recipient = Erc7930.encode(io.chainType, io.chainRef, abi.encodePacked(address(this)));
@@ -360,7 +356,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
     {
         ILayerZeroEndpointV2 endpoint = IOAppCore(from).endpoint();
         if (msg.sender != address(endpoint)) revert NotTheEndpoint(msg.sender);
-        bytes32 leaf = LzOftMessage.leaf(localChainKey, endpoint.eid(), from);
+        bytes32 leaf = LzOftMerkle.leaf(localChainKey, endpoint.eid(), from);
         if (!MerkleProof.verify(b.proof, b.destRoot, leaf)) revert NotInRoot(leaf);
 
         srcEid = OFTComposeMsgCodec.srcEid(message);
@@ -414,7 +410,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
         return endpoint.eid();
     }
 
-    function _requireLeaves(address homeOft, uint32 homeEid, Leaf[] calldata leaves)
+    function _requireLeaves(address homeOft, uint32 homeEid, OftLeaf[] calldata leaves)
         private
         view
         returns (bytes32[] memory hashes)
@@ -422,13 +418,13 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
         if (leaves.length == 0) revert NoDestinations();
         hashes = new bytes32[](leaves.length);
         for (uint256 i; i < leaves.length; ++i) {
-            Leaf calldata l = leaves[i];
+            OftLeaf calldata l = leaves[i];
             if (i != 0 && l.chainKey <= leaves[i - 1].chainKey) revert LeavesNotSorted(i);
             if (l.chainKey == localChainKey || l.eid == 0 || l.eid == homeEid || l.oft == address(0)) {
                 revert BadLeaf(i);
             }
             LzOftMessage.requirePeer(homeOft, l.eid, l.oft);
-            hashes[i] = LzOftMessage.leaf(l.chainKey, l.eid, l.oft);
+            hashes[i] = LzOftMerkle.leaf(l.chainKey, l.eid, l.oft);
         }
     }
 }

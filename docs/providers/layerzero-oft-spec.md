@@ -24,9 +24,9 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 - **Home OFT**: the OFT on the conduit's home chain that it sends through. Bound into the
   conduit's address.
 - **Destination OFT**: the home OFT's peer for a destination's eid.
-- **Leaf**: `keccak256(bytes.concat(keccak256(abi.encode(chainKey, eid, dstOft))))` for one
-  destination (`LzOftMessage.leaf`).
-- **Destination root**: the root `LzOftMessage.root` computes over a conduit's leaves, in
+- **OFT leaf record**: `ILzOftCreate.OftLeaf`, the `(chainKey, eid, oft)` input to `createTransmitter`.
+  `LzOftMerkle.leaf` hashes it as `keccak256(bytes.concat(keccak256(abi.encode(chainKey, eid, oft))))`.
+- **Destination root**: the root `LzOftMerkle.root` computes over a conduit's leaf hashes, in
   ascending `chainKey` order. Bound into the conduit's address.
 - **Factory**: `LzOftConduitFactory`, the CREATE2 deployer of every conduit of this binding, the
   builder of every bootstrap's compose on the home (`conduitBootstrap` or
