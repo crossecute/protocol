@@ -1,6 +1,6 @@
 // Builds the publishable tree under npm/: every src/ file whose imports stay within src/,
 // OpenZeppelin, and the guard, rewritten to relative imports, plus the ABIs of what it ships.
-// Run after `forge build`, from contracts/evm.
+// Run from contracts/evm via `npm --prefix npm run build`.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, posix, relative } from "node:path";
 
@@ -37,6 +37,7 @@ function packagePath(repoPath) {
 function resolve(file, spec) {
   if (peerPrefixes.some((p) => spec.startsWith(p))) return { peer: spec };
   if (spec.startsWith(".")) return { repo: normalize(join(dirname(file), spec)) };
+  if (spec.startsWith("crossecute/")) return { repo: normalize(join("src", spec.slice("crossecute/".length))) };
   const b = bundled.find((x) => spec.startsWith(x.prefix));
   return b ? { repo: normalize(b.from + spec.slice(b.prefix.length)) } : null;
 }
@@ -100,6 +101,10 @@ for (const dir of readdirSync(join(root, "out"))) {
       abis.set(contract, { source: repo, abi: artifact.abi });
     }
   }
+}
+
+for (const name of ["ILzOftCreate", "ISourceAuthorityGuard", "SafeBatchExecutor"]) {
+  if (!abis.has(name)) throw new Error(`Missing ${name} ABI. Run npm --prefix npm run build from contracts/evm.`);
 }
 
 mkdirSync(join(outDir, "abi"), { recursive: true });

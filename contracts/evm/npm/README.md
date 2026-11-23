@@ -1,9 +1,8 @@
 # @crossecute/protocol
 
-Solidity sources and ABIs for building on Crossecute. It holds every file under
-`contracts/evm/src/` whose imports stay within the protocol, OpenZeppelin and the guard,
-with its imports rewritten to relative paths. The provider bindings under `src/protocols/<p>/`
-import vendored provider code and are left out.
+Solidity sources and ABIs for building on Crossecute. The package includes EVM and guard
+sources whose imports resolve within the protocol or OpenZeppelin, with bundled imports
+rewritten to relative paths.
 
 ```
 @crossecute/protocol/=node_modules/@crossecute/protocol/contracts/
@@ -11,8 +10,13 @@ import vendored provider code and are left out.
 ```
 
 ```ts
-import { IERC7786GatewaySourceAbi } from "@crossecute/protocol/abi";
+import { ILzOftCreateAbi, ISourceAuthorityGuardAbi, SafeBatchExecutorAbi } from "@crossecute/protocol/abi";
 ```
+
+For LayerZero OFT tooling, import `ILzOftCreate`, `LzOftMerkle`, and `UlnConfig` from
+`@crossecute/protocol/protocols/layerzero/`. Construct factory inputs with
+`ILzOftCreate.OftLeaf(chainKey, eid, oft)`. The `createTransmitter` calldata still uses
+`(bytes32,uint32,address)[]` for the destination records.
 
 ## Derived addresses
 

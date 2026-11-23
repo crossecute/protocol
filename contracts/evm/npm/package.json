@@ -1,6 +1,6 @@
 {
   "name": "@crossecute/protocol",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Crossecute protocol interfaces, libraries and ABIs for integrators",
   "license": "MIT",
   "repository": {
@@ -23,7 +23,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "cd .. && forge build && node npm/pack.mjs",
+    "build": "cd .. && forge build && forge build ../safe-guard/src/SafeBatchExecutor.sol ../safe-guard/src/authority/ISourceAuthorityGuard.sol && node npm/pack.mjs",
     "prepack": "npm run build"
   },
   "peerDependencies": {

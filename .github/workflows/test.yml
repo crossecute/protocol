@@ -107,8 +107,6 @@ jobs:
         with:
           node-version: 26
 
-      - run: forge build
-
       - run: npm/check-consumer.sh
 
   # Reports coverage of src/ and enforces no minimum. The build is unoptimized, so the tests
