@@ -28,7 +28,8 @@ interface ILzOftTransmitterInit {
 contract LzOftTransmitter is SignedTransmitter, ILzOftTransmitterInit {
     bytes4 public constant LZ_OPTIONS_ATTRIBUTE = LzMessage.OPTIONS_ATTRIBUTE;
 
-    struct Destination {
+    /// @dev The route recorded when the home transmitter dispatches the bootstrap.
+    struct BootstrappedDestination {
         uint32 eid;
         address oft;
     }
@@ -36,7 +37,7 @@ contract LzOftTransmitter is SignedTransmitter, ILzOftTransmitterInit {
     /// @notice The OFT this conduit sends through, bound into its address by the factory.
     address public homeOft;
 
-    mapping(bytes32 chainKey => Destination) internal _destinations;
+    mapping(bytes32 chainKey => BootstrappedDestination) internal _destinations;
 
     error UseLzOftInitializer();
 
@@ -62,7 +63,7 @@ contract LzOftTransmitter is SignedTransmitter, ILzOftTransmitterInit {
 
     /// @notice The eid and OFT a bootstrap recorded for `chainKey`; zero before it.
     function destinationOf(bytes32 chainKey) external view returns (uint32 eid, address oft) {
-        Destination memory d = _destinations[chainKey];
+        BootstrappedDestination memory d = _destinations[chainKey];
         return (d.eid, d.oft);
     }
 
@@ -78,7 +79,7 @@ contract LzOftTransmitter is SignedTransmitter, ILzOftTransmitterInit {
         returns (uint256)
     {
         (bytes memory recipient, bytes memory message) =
-            ILzOftSignedConduitFactory(transceiver).signedConduitBootstrap(route, body);
+            ILzOftSignedConduitFactory(transceiver).signedConduitBootstrap(route, deployer, conduitSalt, body);
         return _quoteMessage(recipient, message, attributes);
     }
 
@@ -90,8 +91,8 @@ contract LzOftTransmitter is SignedTransmitter, ILzOftTransmitterInit {
         bytes[] memory attributes,
         uint256 fee
     ) internal override {
-        (bytes memory recipient, bytes memory message) =
-            ILzOftSignedConduitFactory(transceiver).signedConduitBootstrap(route, body);
+        (bytes memory recipient, bytes memory message) = ILzOftSignedConduitFactory(transceiver)
+            .signedConduitBootstrap(route, deployer, conduitSalt, body);
         _sendMessage(recipient, message, attributes, fee);
     }
 
@@ -104,7 +105,7 @@ contract LzOftTransmitter is SignedTransmitter, ILzOftTransmitterInit {
         override
         returns (bytes32)
     {
-        (SendParam memory param, bytes32 chainKey, Destination memory d, bool bootstrap) =
+        (SendParam memory param, bytes32 chainKey, BootstrappedDestination memory d, bool bootstrap) =
             _messageParam(recipient, payload, attributes);
         if (bootstrap) _destinations[chainKey] = d;
         LzOftMessage.send(homeOft, param, value, _refundTo());
@@ -129,7 +130,7 @@ contract LzOftTransmitter is SignedTransmitter, ILzOftTransmitterInit {
     function _messageParam(bytes memory recipient, bytes memory payload, bytes[] memory attributes)
         private
         view
-        returns (SendParam memory param, bytes32 chainKey, Destination memory d, bool bootstrap)
+        returns (SendParam memory param, bytes32 chainKey, BootstrappedDestination memory d, bool bootstrap)
     {
         Erc7930.Interop memory io = Erc7930.parseStrict(recipient);
         chainKey = ChainKey.fromParsed(io);

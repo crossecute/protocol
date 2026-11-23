@@ -2,12 +2,9 @@
 pragma solidity ^0.8.28;
 
 import {LzOftConduitFactoryBase, Sink} from "test/protocols/layerzero/LzOftConduitFactory.t.sol";
-import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
-import {SignedTransmitter} from "src/messaging/outbound/SignedTransmitter.sol";
-import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
 import {ISignedReceiver} from "src/messaging/inbound/ISignedReceiver.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -19,9 +16,9 @@ import {StubSafe, StubGuard} from "test/signed/StubSafe.sol";
 import {Conduits} from "src/conduit/Conduits.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
-import {SignedTransmitterLib} from "src/messaging/outbound/SignedTransmitterLib.sol";
 import {SafeSigs, Records} from "test/signed/SignedFixtures.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 
 /// @notice OFT transport with real cryptographic evidence, independently recreated destination state.
 contract LzOftSignedTest is LzOftConduitFactoryBase {
@@ -67,7 +64,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         safe.setGuard(address(guard));
         _select();
         vm.prank(address(safe));
-        transmitter = LzOftTransmitter(payable(factory.createTransmitter(SALT, address(oft), _leaves(dstOft))));
+        transmitter = LzOftTransmitter(payable(factory.createTransmitter(SALT, address(oft), _destinations(dstOft))));
         vm.deal(address(transmitter), 1 ether);
     }
 
@@ -184,17 +181,18 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         (owners[0], owners[1]) = (vm.addr(1), notASafe);
         other.setOwners(owners, 2);
         other.setGuard(address(guard));
-        LzOftConduitFactory.Leaf[] memory leaves = _leaves(dstOft);
+        ILzOftConduitFactory.Destination[] memory destinations = _destinations(dstOft);
         vm.prank(address(other));
         vm.expectRevert(abi.encodeWithSelector(SafeAuthorityGraph.NotASafe.selector, notASafe));
-        factory.createTransmitter(SALT, address(oft), leaves);
+        factory.createTransmitter(SALT, address(oft), destinations);
     }
 
     /// @notice The factory keeps no mode record: it reads the flag the conduit holds.
     function test_theFactoryReportsTheModeTheConduitHolds() public {
         vm.prank(address(0xE0A));
-        LzOftTransmitter unsignedTx =
-            LzOftTransmitter(payable(factory.createTransmitter(keccak256("unsigned"), address(oft), _leaves(dstOft))));
+        LzOftTransmitter unsignedTx = LzOftTransmitter(
+            payable(factory.createTransmitter(keccak256("unsigned"), address(oft), _destinations(dstOft)))
+        );
         assertFalse(unsignedTx.isSigned());
         assertFalse(factory.isSigned(address(unsignedTx)));
         assertFalse(factory.isSigned(address(this)), "an address the factory did not create");
@@ -204,28 +202,28 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
     /// @notice Each bootstrap builder serves only the mode its caller was created in.
     function test_eachBootstrapBuilderRefusesTheOtherModesConduit() public {
         vm.prank(address(0xE0A));
-        LzOftTransmitter unsignedTx =
-            LzOftTransmitter(payable(factory.createTransmitter(keccak256("unsigned"), address(oft), _leaves(dstOft))));
+        LzOftTransmitter unsignedTx = LzOftTransmitter(
+            payable(factory.createTransmitter(keccak256("unsigned"), address(oft), _destinations(dstOft)))
+        );
         bytes memory route = Erc7930.encodeEvmChain(DEST);
 
         vm.prank(address(unsignedTx));
-        vm.expectRevert(LzOftConduitFactory.WrongBootstrapMode.selector);
-        factory.signedConduitBootstrap(route, "");
+        vm.expectRevert(ILzOftConduitFactory.WrongBootstrapMode.selector);
+        factory.signedConduitBootstrap(route, address(0xE0A), keccak256("unsigned"), "");
 
         vm.prank(address(transmitter));
-        vm.expectRevert(LzOftConduitFactory.WrongBootstrapMode.selector);
+        vm.expectRevert(ILzOftConduitFactory.WrongBootstrapMode.selector);
         factory.conduitBootstrap(route, address(safe), SALT, abi.encode(new Call[](0)));
 
-        vm.expectRevert(abi.encodeWithSelector(LzOftConduitFactory.UnknownConduit.selector, address(this)));
-        factory.signedConduitBootstrap(route, "");
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.UnknownConduit.selector, address(this)));
+        factory.signedConduitBootstrap(route, address(safe), SALT, "");
     }
 
-    /// @notice The signed builder derives the caller from the identity the conduit holds and
-    ///         names the same envelope the conduit's own bootstrap carries.
+    /// @notice The signed builder names the owner and salt that derive the calling conduit.
     function test_theSignedBootstrapNamesTheConduitsOwnerAndSalt() public {
         bytes memory route = Erc7930.encodeEvmChain(DEST);
         vm.prank(address(transmitter));
-        (, bytes memory message) = factory.signedConduitBootstrap(route, hex"1234");
+        (, bytes memory message) = factory.signedConduitBootstrap(route, address(safe), SALT, hex"1234");
         (, LzOftMessage.Bootstrap memory b,, bytes memory body) =
             abi.decode(message, (uint256, LzOftMessage.Bootstrap, uint256, bytes));
         assertEq(b.owner, address(safe));
@@ -233,6 +231,18 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         assertEq(body, hex"1234");
         (,,, bytes32 root,) = factory.bootstrapRoute(address(transmitter), destKey);
         assertEq(b.destRoot, root);
+    }
+
+    /// @notice An owner or salt that does not derive the calling conduit is refused, so a
+    ///         conduit cannot name another conduit's identity in its compose.
+    function test_theSignedBootstrapRefusesAnotherIdentity() public {
+        bytes memory route = Erc7930.encodeEvmChain(DEST);
+        vm.prank(address(transmitter));
+        vm.expectPartialRevert(ILzOftConduitFactory.NotTheConduit.selector);
+        factory.signedConduitBootstrap(route, address(0xBAD), SALT, "");
+        vm.prank(address(transmitter));
+        vm.expectPartialRevert(ILzOftConduitFactory.NotTheConduit.selector);
+        factory.signedConduitBootstrap(route, address(safe), keccak256("other"), "");
     }
 
     function test_signedBootstrapAndProviderDeliveryShareReplayWithDirectSubmission() public {
@@ -270,7 +280,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         SafeTxEvidence memory e = _bootstrapEvidence();
         oft.setPeer(DEST_EID, address(0xBAD));
         guard.stage(address(safe), e.signedSafeTx.safeTx, e.signedSafeTx.signatures);
-        vm.expectPartialRevert(LzOftMessage.PeerChanged.selector);
+        vm.expectPartialRevert(ILzOftConduitFactory.PeerChanged.selector);
         safe.exec(address(transmitter), 0, e.signedSafeTx.safeTx.data);
         assertFalse(transmitter.isBootstrapped(destKey));
         (uint32 eid, address destination) = transmitter.destinationOf(destKey);
@@ -292,7 +302,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
     function test_unsignedPayloadCannotExecuteOnSignedReceiver() public {
         Bundle memory b = _bundle();
         _destination(b);
-        vm.expectPartialRevert(SignedReceiver.UnknownWire.selector);
+        vm.expectPartialRevert(ISignedReceiver.UnknownWire.selector);
         oft.deliver(HOME_EID, b.conduit, bytes32(uint256(uint160(b.conduit))), abi.encode(new Call[](0)));
     }
 
@@ -326,7 +336,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         address relayer = address(0xB0B);
         vm.deal(relayer, 1 ether);
         vm.prank(relayer);
-        uint256 fee = transmitter.quoteRelay(b.registration, b.leaf, new bytes32[](0));
+        uint256 fee = transmitter.quoteLeaf(b.registration, b.leaf, new bytes32[](0));
         uint256 balance = b.conduit.balance;
         vm.prank(relayer);
         transmitter.relayLeaf{value: fee + 123}(b.registration, b.leaf, new bytes32[](0));
@@ -408,7 +418,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         _chain(DEST, DEST_EID);
         oft.setPeer(HOME_EID, b.homeOft);
         vm.expectRevert(
-            abi.encodeWithSelector(LzOftConduitFactory.HomeChainMismatch.selector, HOME + 1, header.homeChainKey)
+            abi.encodeWithSelector(ILzOftConduitFactory.HomeChainMismatch.selector, HOME + 1, header.homeChainKey)
         );
         oft.deliver(HOME_EID, address(factory), bytes32(uint256(uint160(b.conduit))), b.bootstrapWire);
         assertEq(b.conduit.code.length, 0);
@@ -419,17 +429,17 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         (bytes memory payload, bytes[] memory attributes) =
             abi.decode(_args(e.signedSafeTx.safeTx.data), (bytes, bytes[]));
         guard.setSelection(address(safe), bytes32(uint256(2)), bytes32(uint256(3)));
-        vm.expectRevert(SignedTransmitterLib.BootstrapAuthorityMismatch.selector);
+        vm.expectRevert(ISignedTransmitter.BootstrapAuthorityMismatch.selector);
         transmitter.quoteBootstrap(payload, attributes);
         guard.stage(address(safe), e.signedSafeTx.safeTx, e.signedSafeTx.signatures);
-        vm.expectRevert(SignedTransmitterLib.BootstrapAuthorityMismatch.selector);
+        vm.expectRevert(ISignedTransmitter.BootstrapAuthorityMismatch.selector);
         safe.exec(address(transmitter), 0, e.signedSafeTx.safeTx.data);
         assertFalse(transmitter.isBootstrapped(destKey));
     }
 
     function test_signedOwnershipCannotMove() public {
         vm.prank(address(safe));
-        vm.expectRevert(SignedTransmitter.OwnershipFixed.selector);
+        vm.expectRevert(ISignedTransmitter.OwnershipFixed.selector);
         transmitter.transferOwnership(address(0xBAD));
     }
 }

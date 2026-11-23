@@ -8,6 +8,24 @@ import {AuthoritySelection, AuthorityUpdate} from "./AuthorityUpdateTypes.sol";
 
 /// @notice Source authority operations and publication implemented by CrossecuteGuard.
 interface ISourceAuthorityGuard {
+    error SafeBusy(address safe);
+    error NotActivated(address safe);
+    error AlreadyActivated(address safe);
+    error NoStagedUpdate(address safe);
+    error UnexpectedAuthorityCall(address safe);
+    error ActivationChildUpdates();
+    error GuardNotInstalled(uint256 slot);
+    error UnrecognizedSingleton(address singleton);
+    error UnrecognizedHandler(address handler);
+    error ModulesEnabled();
+    error OwnersMismatch();
+    error PositionNotExecuted(address safe, bytes32 position);
+    error SelfCallDenied();
+    error DelegatecallDenied(address target);
+    error OrdinaryBatchDenied();
+    error FinalOwnersMismatch();
+    error AuthorityHashMismatch(bytes32 live, bytes32 txHash);
+
     /// @notice The signatures destinations accept for an executed activation or update.
     event AuthorityUpdateExecuted(
         address indexed sourceSafe,

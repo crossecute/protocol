@@ -14,7 +14,6 @@ import {ChainRegistry} from "src/registry/ChainRegistry.sol";
 import {IChainRegistryRefs} from "src/registry/IChainRegistryRefs.sol";
 import {Provenance} from "src/registry/Provenance.sol";
 import {SignedTransmitter} from "src/messaging/outbound/SignedTransmitter.sol";
-import {SignedTransmitterLib} from "src/messaging/outbound/SignedTransmitterLib.sol";
 import {SignedDispatchCalls} from "src/messaging/signed/SignedDispatchCalls.sol";
 import {SafeSignaturesUtils} from "src/messaging/signed/SafeSignaturesUtils.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
@@ -73,7 +72,7 @@ contract ReenterRefund {
     /// @notice Record that the transmitter's relay lock rejects provider-refund reentry.
     receive() external payable {
         (bool ok, bytes memory reason) = transmitter.call(relayData);
-        blocked = !ok && bytes4(reason) == SignedTransmitter.RelayReentered.selector;
+        blocked = !ok && bytes4(reason) == ISignedTransmitter.RelayReentered.selector;
     }
 }
 
@@ -282,7 +281,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
         } else {
             ExecutionLeaf memory leaf = _execLeaf(0, new bytes[](0));
             SafeTxEvidence memory evidence = _register(DispatchLeaves.hash(leaf));
-            fee = st.quoteRelay(evidence, leaf, new bytes32[](0));
+            fee = st.quoteLeaf(evidence, leaf, new bytes32[](0));
             data = abi.encodeCall(st.relayLeaf, (evidence, leaf, new bytes32[](0)));
         }
     }
@@ -298,7 +297,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
         uint256 before = address(st).balance;
         (bool ok, bytes memory reason) = address(st).call{value: fee - 1}(data);
         assertFalse(ok);
-        assertEq(bytes4(reason), SignedTransmitter.InsufficientPayment.selector);
+        assertEq(bytes4(reason), ISignedTransmitter.InsufficientPayment.selector);
         address payer = address(0xF00);
         vm.deal(payer, 1000);
         vm.prank(payer);
@@ -395,10 +394,10 @@ contract SignedTransmitterTest is HyperlaneFixture {
         for (uint256 scenario = 0; scenario < 4; ++scenario) {
             _select(safe);
             SignedBootstrap memory candidate = abi.decode(_bootstrapBody(safe), (SignedBootstrap));
-            bytes memory reason = abi.encodeWithSelector(SignedTransmitterLib.BootstrapAuthorityMismatch.selector);
+            bytes memory reason = abi.encodeWithSelector(ISignedTransmitter.BootstrapAuthorityMismatch.selector);
             if (scenario == 0) {
                 guard.setSelection(address(safe), bytes32(0), bytes32(0));
-                reason = abi.encodeWithSelector(SignedTransmitterLib.NoSignedAuthority.selector, address(safe));
+                reason = abi.encodeWithSelector(ISignedTransmitter.NoSignedAuthority.selector, address(safe));
             } else if (scenario == 1) {
                 candidate.updateHead = bytes32(uint256(2));
             } else if (scenario == 2) {
@@ -442,7 +441,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
             safe, address(st), abi.encodeCall(ISignedTransmitter.bootstrap, (payload, new bytes[](0))), _quorum()
         );
         guard.stage(address(safe), evidence.signedSafeTx.safeTx, evidence.signedSafeTx.signatures);
-        vm.expectPartialRevert(SignedTransmitterLib.SignedReceiverNotDerivable.selector);
+        vm.expectPartialRevert(ISignedTransmitter.SignedReceiverNotDerivable.selector);
         safe.exec(address(st), 0, evidence.signedSafeTx.safeTx.data);
     }
 
@@ -455,7 +454,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
         assertTrue(ok, "expectRevert");
 
         vm.prank(address(safe));
-        vm.expectRevert(SignedTransmitter.OwnershipFixed.selector);
+        vm.expectRevert(ISignedTransmitter.OwnershipFixed.selector);
         st.transferOwnership(address(0x1));
     }
 
@@ -464,7 +463,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
     ///      operations usable.
     function test_signedOwnershipCannotBeRenounced() public {
         vm.prank(address(safe));
-        vm.expectRevert(SignedTransmitter.OwnershipFixed.selector);
+        vm.expectRevert(ISignedTransmitter.OwnershipFixed.selector);
         st.renounceOwnership();
         assertEq(st.owner(), address(safe));
         // Refusal leaves the fixed owner able to bootstrap normally.
@@ -528,9 +527,9 @@ contract SignedTransmitterTest is HyperlaneFixture {
     ///      callers to the signed API.
     function test_theUnsignedMessageQuoteRefusesInSignedMode() public {
         bytes memory recipient = _receiverHere();
-        vm.expectRevert(SignedTransmitter.SignedQuoteRequired.selector);
+        vm.expectRevert(ISignedTransmitter.SignedQuoteRequired.selector);
         st.quoteMessage(recipient, _payload(), new bytes[](0));
-        vm.expectRevert(SignedTransmitter.SignedQuoteRequired.selector);
+        vm.expectRevert(ISignedTransmitter.SignedQuoteRequired.selector);
         st.quoteMessageBreakdown(recipient, _payload(), new bytes[](0));
     }
 
@@ -600,7 +599,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
     ///      uniqueness checks.
     function test_rootRegistrationIsOwnerOnlyPublishedOnlyAndOnce() public {
         vm.prank(address(safe));
-        vm.expectRevert(abi.encodeWithSelector(SignedTransmitter.RootNotPublished.selector, bytes32(0)));
+        vm.expectRevert(abi.encodeWithSelector(ISignedTransmitter.RootNotPublished.selector, bytes32(0)));
         st.registerRoot(bytes32(0));
 
         guard.publish(bytes32(0));
@@ -631,7 +630,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
             _quorum(), SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, address(safe), block.chainid)
         );
         vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.NonzeroRegistrationValue.selector, 1));
-        st.quoteRelay(evidence, leaf, new bytes32[](0));
+        st.quoteLeaf(evidence, leaf, new bytes32[](0));
         vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.NonzeroRegistrationValue.selector, 1));
         st.relayLeaf(evidence, leaf, new bytes32[](0));
         assertFalse(st.isLeafRelayed(DispatchLeaves.hash(leaf)));
@@ -649,13 +648,13 @@ contract SignedTransmitterTest is HyperlaneFixture {
         (bytes32 root, bytes32[] memory pa, bytes32[] memory pb) = _tree(a, b);
         SafeTxEvidence memory registrationEvidence = _register(root);
 
-        uint256 quote = st.quoteRelay(registrationEvidence, a, pa);
+        uint256 quote = st.quoteLeaf(registrationEvidence, a, pa);
         uint256 conduitBefore = address(st).balance;
         address relayer = address(0xF00);
         vm.deal(relayer, 1 ether);
 
         vm.prank(relayer);
-        vm.expectRevert(abi.encodeWithSelector(SignedTransmitter.InsufficientPayment.selector, quote, quote - 1));
+        vm.expectRevert(abi.encodeWithSelector(ISignedTransmitter.InsufficientPayment.selector, quote, quote - 1));
         st.relayLeaf{value: quote - 1}(registrationEvidence, a, pa);
 
         vm.prank(relayer);
@@ -666,7 +665,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
         assertTrue(st.isLeafRelayed(DispatchLeaves.hash(a)));
 
         vm.prank(relayer);
-        vm.expectRevert(abi.encodeWithSelector(SignedTransmitter.LeafAlreadyRelayed.selector, DispatchLeaves.hash(a)));
+        vm.expectRevert(abi.encodeWithSelector(ISignedTransmitter.LeafAlreadyRelayed.selector, DispatchLeaves.hash(a)));
         st.relayLeaf{value: quote}(registrationEvidence, a, pa);
 
         vm.prank(relayer);
@@ -686,7 +685,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
         mailbox.setRefundSurcharge(address(st), 999);
         vm.deal(relayer, 1000);
         vm.prank(relayer);
-        uint256 fee = st.quoteRelay(evidence, leaf, new bytes32[](0));
+        uint256 fee = st.quoteLeaf(evidence, leaf, new bytes32[](0));
         assertEq(fee, 123);
         uint256 balanceBefore = address(st).balance;
         vm.prank(relayer);
@@ -727,7 +726,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
 
         SafeTxEvidence memory unregisteredEvidence =
             _delivery(safe, address(st), abi.encodeCall(ISignedTransmitter.registerRoot, (root)), _quorum());
-        vm.expectRevert(abi.encodeWithSelector(SignedTransmitter.RootNotRegistered.selector, root));
+        vm.expectRevert(abi.encodeWithSelector(ISignedTransmitter.RootNotRegistered.selector, root));
         st.relayLeaf{value: 1 ether}(unregisteredEvidence, a, pa);
 
         SafeTxEvidence memory registrationEvidence = _register(root);
@@ -756,7 +755,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
         SafeTxEvidence memory registrationEvidence = _register(root);
         RefuseEth refuser = new RefuseEth();
         vm.deal(address(this), 1 ether);
-        vm.expectRevert(SignedTransmitter.RefundFailed.selector);
+        vm.expectRevert(ISignedTransmitter.RefundFailed.selector);
         refuser.relay{value: 0.5 ether}(st, registrationEvidence, a, pa);
         assertFalse(st.isLeafRelayed(DispatchLeaves.hash(a)));
     }

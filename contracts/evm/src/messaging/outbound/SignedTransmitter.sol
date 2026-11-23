@@ -39,23 +39,6 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     bytes32 private constant SIGNED_TRANSMITTER_STORAGE =
         0x8566b709a423746963d200f6840e900d54ab8ebbe69c13e71ed1cbb86e81aa00;
 
-    event SignedTransmitterInitialized();
-    event RootRegistered(bytes32 indexed root);
-    event AuthorityRelayed(bytes32 indexed updateHead, address indexed relayer);
-    event LeafRelayed(bytes32 indexed leafHash, address indexed relayer);
-
-    error NotSigned();
-    error AlreadySigned();
-    error OwnershipFixed();
-    error SignedQuoteRequired();
-    error RootNotPublished(bytes32 root);
-    error RootNotRegistered(bytes32 root);
-    error LeafAlreadyRelayed(bytes32 leafHash);
-    error InsufficientPayment(uint256 fee, uint256 paid);
-    error RefundFailed();
-    error BalanceChanged(uint256 before, uint256 afterwards);
-    error RelayReentered();
-
     function _signedStorage() private pure returns (SignedTransmitterStorage storage $) {
         assembly ("memory-safe") {
             $.slot := SIGNED_TRANSMITTER_STORAGE
@@ -296,10 +279,8 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return providerFee + _crossecuteFee(providerFee);
     }
 
-    /// @notice The fee for relaying the supplied signed registration, leaf and proof.
-    /// @dev Shares relay validation and wire construction, so an unregistered, already relayed or
-    ///      differently encoded leaf is not quoted as executable.
-    function quoteRelay(
+    /// @inheritdoc ISignedTransmitter
+    function quoteLeaf(
         SafeTxEvidence calldata registrationEvidence,
         ExecutionLeaf calldata leaf,
         bytes32[] calldata proof
@@ -351,7 +332,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     ///      the price. Other entry points spend conduit funds and retain their refunds.
     function _refundTo() internal view override returns (address) {
         if (
-            msg.sig == this.relayLeaf.selector || msg.sig == this.quoteRelay.selector
+            msg.sig == this.relayLeaf.selector || msg.sig == this.quoteLeaf.selector
                 || msg.sig == this.relayAuthority.selector || msg.sig == this.quoteAuthority.selector
         ) return msg.sender;
         return super._refundTo();
@@ -364,16 +345,12 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return _signedStorage().signed;
     }
 
-    /// @notice Report whether the owner has registered a root on this transmitter.
-    /// @dev Relayers can check the source authorization prerequisite before paying to send a
-    ///      leaf.
+    /// @inheritdoc ISignedTransmitter
     function isRootRegistered(bytes32 root) external view returns (bool) {
         return _signedStorage().roots[root];
     }
 
-    /// @notice Report whether this transmitter has already relayed the leaf hash.
-    /// @dev A leaf may be relayed through this transmitter only once, so callers can avoid
-    ///      duplicate source sends.
+    /// @inheritdoc ISignedTransmitter
     function isLeafRelayed(bytes32 leafHash) external view returns (bool) {
         return _signedStorage().relayed[leafHash];
     }

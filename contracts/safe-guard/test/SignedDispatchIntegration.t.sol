@@ -589,7 +589,7 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
             _evidence(address(st), abi.encodeCall(ISignedTransmitter.registerRoot, (root)), safe.nonce());
         _execute(registration);
         // forge-lint: disable-next-line(arbitrary-send-eth) the fixture-created transmitter and exact quoted fee
-        st.relayLeaf{value: st.quoteRelay(registration, leaf, new bytes32[](0))}(registration, leaf, new bytes32[](0));
+        st.relayLeaf{value: st.quoteLeaf(registration, leaf, new bytes32[](0))}(registration, leaf, new bytes32[](0));
         _deliverMessage(ARBITRUM, mailbox.sentLength() - 1);
         assertEq(effect.hits(), 2);
         bytes memory submission = abi.encode(rotation, next, new ChildUpdate[](0));
@@ -659,11 +659,11 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         bytes32[] memory proof = new bytes32[](1);
         proof[0] = bh;
         // forge-lint: disable-next-line(arbitrary-send-eth) the fixture-created transmitter and exact quoted fee
-        st.relayLeaf{value: st.quoteRelay(e, a, proof)}(e, a, proof);
+        st.relayLeaf{value: st.quoteLeaf(e, a, proof)}(e, a, proof);
         _deliverMessage(BASE, mailbox.sentLength() - 1);
         proof[0] = ah;
         // forge-lint: disable-next-line(arbitrary-send-eth) the fixture-created transmitter and exact quoted fee
-        st.relayLeaf{value: st.quoteRelay(e, b, proof)}(e, b, proof);
+        st.relayLeaf{value: st.quoteLeaf(e, b, proof)}(e, b, proof);
         _deliverMessage(ARBITRUM, mailbox.sentLength() - 1);
         assertEq(effect.hits(), 2);
     }
@@ -955,7 +955,7 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
         g = gasleft();
         assertTrue(_execWith(safe, tx_.to, 0, tx_.data, Enum.Operation.Call, e.signedSafeTx.signatures));
         emit log_named_uint("sourceSafeRegisterGas", g - gasleft());
-        uint256 fee = st.quoteRelay(e, leaf, new bytes32[](0));
+        uint256 fee = st.quoteLeaf(e, leaf, new bytes32[](0));
         g = gasleft();
         // forge-lint: disable-next-line(arbitrary-send-eth) the fixture-created transmitter and exact quoted fee
         st.relayLeaf{value: fee}(e, leaf, new bytes32[](0));
@@ -1003,7 +1003,7 @@ contract SignedDispatchIntegrationTest is GuardTestBase {
             _evidence(address(st), abi.encodeCall(ISignedTransmitter.registerRoot, (root)), safe.nonce());
         _execute(e);
         // forge-lint: disable-next-line(arbitrary-send-eth) the fixture-created transmitter and exact quoted fee
-        st.relayLeaf{value: st.quoteRelay(e, leaf, new bytes32[](0))}(e, leaf, new bytes32[](0));
+        st.relayLeaf{value: st.quoteLeaf(e, leaf, new bytes32[](0))}(e, leaf, new bytes32[](0));
         uint256 index = mailbox.sentLength() - 1;
         SignedReceiver r = _receiver(BASE);
         bytes memory data = abi.encodeCall(

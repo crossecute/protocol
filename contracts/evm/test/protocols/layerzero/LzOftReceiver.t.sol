@@ -3,13 +3,13 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {LzOftReceiver, ILzOftReceiverInit} from "src/protocols/layerzero/LzOftReceiver.sol";
-import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {Executor} from "src/messaging/Executor.sol";
 import {Call} from "src/messaging/Call.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {deployConduit} from "test/DeployProxy.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 
 contract Target {
     uint256 public hits;
@@ -82,7 +82,7 @@ contract LzOftReceiverTest is Test {
         localOft.setPeer(HOME_EID, address(0xBAD));
         vm.expectRevert(
             abi.encodeWithSelector(
-                LzOftMessage.PeerChanged.selector,
+                ILzOftConduitFactory.PeerChanged.selector,
                 HOME_EID,
                 bytes32(uint256(uint160(HOME_OFT))),
                 bytes32(uint256(uint160(address(0xBAD))))

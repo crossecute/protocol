@@ -13,6 +13,9 @@ import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {DeliveryGasMeter} from "test/protocols/DeliveryGasMeter.sol";
 import {MockLzEndpoint} from "test/protocols/layerzero/MockLzEndpoint.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
+import {LzOftConduitAddress} from "src/protocols/layerzero/LzOftConduitAddress.sol";
+import {OrderedMerkle} from "src/messaging/OrderedMerkle.sol";
 
 /// @notice `layerzero-oft`'s deliveries against its `DeliveryGas` defaults, which it sends as
 ///         lzCompose gas, measured as `ProviderDeliveryGasSpec` measures every other binding's.
@@ -46,12 +49,14 @@ contract LzOftDeliveryGasTest is DeliveryGasMeter {
     /// @dev This chain's leaf first, then `n - 1` others, so the proof has `ceil(log2 n)` words.
     function _bootstrap(uint256 n, Call[] memory calls) internal view returns (address conduit, bytes memory) {
         bytes32[] memory leaves = new bytes32[](n);
-        leaves[0] = LzOftMessage.leaf(factory.localChainKey(), DEST_EID, address(oft));
+        leaves[0] = LzOftConduitAddress.leafHash(
+            ILzOftConduitFactory.Destination(factory.localChainKey(), DEST_EID, address(oft))
+        );
         for (uint256 i = 1; i < n; ++i) {
             leaves[i] = keccak256(abi.encode("another destination", i));
         }
-        bytes32 destRoot = LzOftMessage.root(leaves);
-        bytes32[] memory proof = LzOftMessage.proof(leaves, 0);
+        bytes32 destRoot = OrderedMerkle.root(leaves);
+        bytes32[] memory proof = OrderedMerkle.proof(leaves, 0);
         conduit = factory.predictConduit(OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot);
         return (
             conduit,

@@ -7,16 +7,7 @@ import {
     MessagingParams
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
-
-/// @dev `UlnBase.UlnConfig` in LayerZero's message libraries, which are not vendored.
-struct UlnConfig {
-    uint64 confirmations;
-    uint8 requiredDVNCount;
-    uint8 optionalDVNCount;
-    uint8 optionalDVNThreshold;
-    address[] requiredDVNs;
-    address[] optionalDVNs;
-}
+import {UlnConfig} from "src/protocols/layerzero/UlnConfig.sol";
 
 /// @notice Send and quote for every LayerZero sender, and the one attribute they accept:
 ///         execution options, as `abi.encodePacked(OPTIONS_ATTRIBUTE, rawOptionsBytes)`.

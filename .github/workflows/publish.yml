@@ -55,8 +55,6 @@ jobs:
             const found = ["preinstall", "install", "postinstall", "prepare"].filter((k) => k in s);
             if (found.length) { console.error("install scripts: " + found); process.exit(1); }'
 
-      - run: forge build
-
       - run: npm/check-consumer.sh
 
       # check-consumer.sh has just rebuilt the sources and ABIs under npm/ from this checkout.

@@ -39,7 +39,7 @@ before bootstrapping a signed conduit.
 | --- | --- |
 | `src/CrossecuteGuard.sol` | Owner staging, consumption and cleanup, module selector checks, child approval caching, Merkle leaf publication and the publication check for top-level owner `registerRoot` calls |
 | `src/authority/SourceAuthorityGuard.sol` | #109's source half, inherited by the guard: per-Safe selection hashes, executed-head record hashes, publication hashes, witness staging, activation, ownership changes, `selectAuthority`, full portable submission events and protected-call rules. Shared ReceiverAuthority verification authenticates the supplied current graph; receivers retain full authority records. |
-| `src/authority/ISourceAuthorityGuard.sol`, `AuthorityUpdateTypes.sol` | The source authority interface and its selection and update types |
+| `src/authority/ISourceAuthorityGuard.sol`, `AuthorityUpdateTypes.sol` | The source authority interface with its events and errors, and its selection and update types |
 | `src/ICrossecuteGuard.sol` | What a transmitter, relayer or publisher calls: `consume`, `getApproval`, `publishLeaves`, `isPublished`, their events and errors; above it, the file-level `SafeTx` and `SignedSafeTx` structs the guard, transmitter and receiver share |
 | `src/GuardDiscovery.sol` | How a transmitter reads its owner Safe's transaction guard |
 | `src/SafeHashes.sol` | Safe 1.5.0's transaction hash, message hash and domain separator, computed without calling the Safe, for the guard and the receiver |
@@ -229,10 +229,10 @@ calldata per leaf of this size (the leaf, its offset and its length):
 
 | Leaves | Publication |
 | ---: | ---: |
-| 1 | 56,232 gas |
-| 3 | 69,545 gas |
-| 16 | 153,121 gas |
-| 256 | 1,849,034 gas |
+| 1 | 56,406 gas |
+| 3 | 69,455 gas |
+| 16 | 151,565 gas |
+| 256 | 1,806,720 gas |
 
 ```bash
 forge test --match-contract 'SendMessageGasTest|ApprovalGasTest|LeafPublicationGasTest' -vv

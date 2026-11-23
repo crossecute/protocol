@@ -18,7 +18,6 @@ import {CrossecuteGuard} from "../src/CrossecuteGuard.sol";
 import {ICrossecuteGuard} from "../src/ICrossecuteGuard.sol";
 import {AuthoritySelection, AuthorityUpdate} from "../src/authority/AuthorityUpdateTypes.sol";
 import {ISourceAuthorityGuard} from "../src/authority/ISourceAuthorityGuard.sol";
-import {SourceAuthorityGuard} from "../src/authority/SourceAuthorityGuard.sol";
 import {Batch} from "./Batch.sol";
 import {SourceAuthorityBase} from "./SourceAuthorityBase.sol";
 
@@ -109,7 +108,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
             executing,
             portable
         );
-        vm.expectRevert(SourceAuthorityGuard.OrdinaryBatchDenied.selector);
+        vm.expectRevert(ISourceAuthorityGuard.OrdinaryBatchDenied.selector);
         batch.run(calls);
         assertEq(_head(safe), bytes32(0));
         assertFalse(safe.isOwner(vm.addr(KEY_D)));
@@ -152,7 +151,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
             vm.expectRevert(abi.encodeWithSelector(ICrossecuteGuard.HashMismatch.selector, expected, forged));
             guard.checkAfterExecution(forged, true);
         } else if (mode == 1) {
-            vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.SafeBusy.selector, address(safe)));
+            vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.SafeBusy.selector, address(safe)));
             guard.stageUpdate(address(safe), graph, graph, new ChildUpdate[](0), "", new NestedSafeApproval[](0));
         } else {
             vm.prank(address(safe));
@@ -217,7 +216,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
                 bytes memory data = abi.encodeCall(multiSend.multiSend, (_multiSendEntry(address(0xCAFE), "")));
                 bytes memory signatures = _signFor(safe, _ab(), address(multiSend), 0, data, Enum.Operation(op));
                 uint256 nonce = safe.nonce();
-                vm.expectRevert(SourceAuthorityGuard.OrdinaryBatchDenied.selector);
+                vm.expectRevert(ISourceAuthorityGuard.OrdinaryBatchDenied.selector);
                 _execWith(safe, address(multiSend), 0, data, Enum.Operation(op), signatures);
                 assertEq(safe.nonce(), nonce);
             }
@@ -228,7 +227,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
     function testModuleMultiSendRejects() public {
         bytes memory data = abi.encodeCall(multiSend.multiSend, (_multiSendEntry(address(0xCAFE), "")));
         vm.prank(address(safe));
-        vm.expectRevert(SourceAuthorityGuard.OrdinaryBatchDenied.selector);
+        vm.expectRevert(ISourceAuthorityGuard.OrdinaryBatchDenied.selector);
         ISafeModuleGuard(address(guard))
             .checkModuleTransaction(address(multiSend), 0, data, Operation.DELEGATECALL, address(0xCAFE));
     }
@@ -264,7 +263,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
     function testActivationRequiresStagedGraph() public {
         bytes memory data = abi.encodeCall(ISourceAuthorityGuard.activate, (bytes32(uint256(1))));
         bytes memory signatures = _signFor(safe, _ab(), address(guard), 0, data, Enum.Operation.Call);
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.NoStagedUpdate.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.NoStagedUpdate.selector, address(safe)));
         _execWith(safe, address(guard), 0, data, Enum.Operation.Call, signatures);
     }
 
@@ -276,7 +275,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         Batch.Call[] memory calls = _stagedCalls(
             safe, address(guard), data, Enum.Operation.Call, graph, new ChildUpdate[](0), signatures, signatures
         );
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.AlreadyActivated.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.AlreadyActivated.selector, address(safe)));
         batch.run(calls);
     }
 
@@ -284,7 +283,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         SafeAuthorityRecord memory record = _record(safe);
         record.owners[0].owner = vm.addr(KEY_D);
         Batch.Call[] memory calls = _activationCalls(safe, _graph(record), _ab());
-        vm.expectRevert(SourceAuthorityGuard.OwnersMismatch.selector);
+        vm.expectRevert(ISourceAuthorityGuard.OwnersMismatch.selector);
         batch.run(calls);
 
         record = _record(safe);
@@ -313,7 +312,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         Batch.Call[] memory calls = _activationCalls(txGuardOnly, _graph(_record(txGuardOnly)), signers);
         vm.expectRevert(
             abi.encodeWithSelector(
-                SourceAuthorityGuard.GuardNotInstalled.selector,
+                ISourceAuthorityGuard.GuardNotInstalled.selector,
                 0xb104e0b93118902c651344349b610029d694cfdec91c589c91ebafbcd0289947
             )
         );
@@ -346,24 +345,24 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         address other = address(new Safe());
         (Safe proxy, Signer[] memory signers) = _proxy(other, address(handler), 777);
         Batch.Call[] memory calls = _activationCalls(proxy, _graph(_record(proxy)), signers);
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.UnrecognizedSingleton.selector, other));
+        vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.UnrecognizedSingleton.selector, other));
         batch.run(calls);
     }
 
     function testActivationRejectsUnpinnedHandler() public {
         (Safe proxy, Signer[] memory signers) = _proxy(address(singleton), address(0xBEEF), 778);
         Batch.Call[] memory calls = _activationCalls(proxy, _graph(_record(proxy)), signers);
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.UnrecognizedHandler.selector, address(0xBEEF)));
+        vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.UnrecognizedHandler.selector, address(0xBEEF)));
         batch.run(calls);
     }
 
     function testMarkerCallsRevertOutsideARecognizedTransaction() public {
         _activated();
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.UnexpectedAuthorityCall.selector, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.UnexpectedAuthorityCall.selector, address(this)));
         guard.activate(bytes32(0));
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.UnexpectedAuthorityCall.selector, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.UnexpectedAuthorityCall.selector, address(this)));
         guard.selectAuthority(AuthorityUpdate(bytes32(0), bytes32(0)));
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.UnexpectedAuthorityCall.selector, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.UnexpectedAuthorityCall.selector, address(this)));
         guard.registerOwnershipChange(AuthorityUpdate(bytes32(0), bytes32(0)));
     }
 
@@ -457,7 +456,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         uint256 nonce = safe.nonce();
         // Fault injection exercises the post-hook independently of the mutation derivation.
         vm.mockCall(address(safe), abi.encodeCall(safe.getOwners, ()), abi.encode(safe.getOwners()));
-        vm.expectRevert(SourceAuthorityGuard.FinalOwnersMismatch.selector);
+        vm.expectRevert(ISourceAuthorityGuard.FinalOwnersMismatch.selector);
         batch.run(calls);
         vm.clearMockedCalls();
         assertEq(safe.nonce(), nonce);
@@ -537,7 +536,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         AuthorityGraph memory next = _withNewOwner(vm.addr(KEY_D), 2);
         bytes memory data = _ownershipData(safe, _head(safe), _hash(next), _addOwner(vm.addr(KEY_D), 2));
         bytes memory signatures = _signFor(safe, _ab(), address(multiSend), 0, data, Enum.Operation.DelegateCall);
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.NoStagedUpdate.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.NoStagedUpdate.selector, address(safe)));
         _execWith(safe, address(multiSend), 0, data, Enum.Operation.DelegateCall, signatures);
     }
 
@@ -555,7 +554,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
             signatures,
             signatures
         );
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.NotActivated.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.NotActivated.selector, address(safe)));
         batch.run(calls);
     }
 
@@ -668,7 +667,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         );
         calls[1] = _executeCall(safe, address(guard), data, Enum.Operation.Call, first);
         calls[2] = _executeCall(safe, address(guard), dataTwo, Enum.Operation.Call, second);
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.NoStagedUpdate.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.NoStagedUpdate.selector, address(safe)));
         batch.run(calls);
     }
 
@@ -676,7 +675,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         Stager stager = new Stager(guard);
         bytes memory data = _sendMessageCall();
         bytes memory signatures = _signFor(safe, _ab(), address(stager), 0, data, Enum.Operation.Call);
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.SafeBusy.selector, address(safe)));
+        vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.SafeBusy.selector, address(safe)));
         _execWith(safe, address(stager), 0, data, Enum.Operation.Call, signatures);
     }
 
@@ -690,7 +689,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         _activated();
         bytes memory data = abi.encodeCall(safe.changeThreshold, (1));
         bytes memory signatures = _signFor(safe, _ab(), address(safe), 0, data, Enum.Operation.Call);
-        vm.expectRevert(SourceAuthorityGuard.SelfCallDenied.selector);
+        vm.expectRevert(ISourceAuthorityGuard.SelfCallDenied.selector);
         _execWith(safe, address(safe), 0, data, Enum.Operation.Call, signatures);
     }
 
@@ -699,7 +698,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         address evil = address(0xE711);
         vm.etch(evil, hex"00");
         bytes memory signatures = _signFor(safe, _ab(), evil, 0, "", Enum.Operation.DelegateCall);
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.DelegatecallDenied.selector, evil));
+        vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.DelegatecallDenied.selector, evil));
         _execWith(safe, evil, 0, "", Enum.Operation.DelegateCall, signatures);
     }
 
@@ -724,7 +723,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
                     bytes memory batchData = abi.encodeCall(multiSend.multiSend, (packed));
                     bytes memory signatures =
                         _signFor(safe, _ab(), address(multiSend), 0, batchData, Enum.Operation.DelegateCall);
-                    vm.expectRevert(SourceAuthorityGuard.OrdinaryBatchDenied.selector);
+                    vm.expectRevert(ISourceAuthorityGuard.OrdinaryBatchDenied.selector);
                     _execWith(safe, address(multiSend), 0, batchData, Enum.Operation.DelegateCall, signatures);
                 }
             }
@@ -738,7 +737,7 @@ contract SourceAuthorityTest is SourceAuthorityBase {
         assertTrue(_exec(safe, _ab(), recipient, 1, "", Enum.Operation.Call));
         bytes memory batchData = abi.encodeCall(multiSend.multiSend, (_multiSendEntry(recipient, "")));
         bytes memory signatures = _signFor(safe, _ab(), address(multiSend), 0, batchData, Enum.Operation.DelegateCall);
-        vm.expectRevert(SourceAuthorityGuard.OrdinaryBatchDenied.selector);
+        vm.expectRevert(ISourceAuthorityGuard.OrdinaryBatchDenied.selector);
         _execWith(safe, address(multiSend), 0, batchData, Enum.Operation.DelegateCall, signatures);
         assertEq(guard.selection(address(safe)).authorityHash, _hash(_graph(_record(safe))));
     }

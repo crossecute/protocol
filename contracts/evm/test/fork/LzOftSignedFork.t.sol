@@ -12,7 +12,6 @@ import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
 import {SafeAuthorityRecord} from "src/messaging/signed/types/SafeAuthorityTypes.sol";
 import {SafeTxEvidence} from "src/messaging/signed/types/SignedDispatchTypes.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
-import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftDeploy} from "script/deploy/LzOftDeploy.sol";
@@ -20,6 +19,7 @@ import {toBytes32} from "test/Harness.sol";
 import {Records, SafeSigs} from "test/signed/SignedFixtures.sol";
 import {StubGuard, StubSafe} from "test/signed/StubSafe.sol";
 import {LzOftForkBase} from "test/fork/LzOftFork.t.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 
 /// @notice Real frxUSD OFT transport with a staged source Safe and cryptographic receiver checks.
 contract LzOftSignedForkTest is LzOftForkBase {
@@ -55,9 +55,10 @@ contract LzOftSignedForkTest is LzOftForkBase {
         guard.setSelection(address(safe), AUTHORITY_HEAD, authorityHash);
 
         factory = LzOftDeploy.factory(TREASURY, address(guard), MULTISEND_CALL_ONLY);
-        LzOftConduitFactory.Leaf[] memory leaves = _leaves();
-        bytes memory result =
-            safe.exec(address(factory), 0, abi.encodeCall(factory.createTransmitter, (SALT, FRAXTAL_OFT, leaves)));
+        ILzOftConduitFactory.Destination[] memory destinations = _ethereumAndArbitrumDestinations();
+        bytes memory result = safe.exec(
+            address(factory), 0, abi.encodeCall(factory.createTransmitter, (SALT, FRAXTAL_OFT, destinations))
+        );
         conduit = LzOftTransmitter(payable(abi.decode(result, (address))));
         assertTrue(conduit.isSigned());
         vm.deal(address(conduit), 100 ether);

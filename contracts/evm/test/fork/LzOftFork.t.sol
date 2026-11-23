@@ -19,6 +19,7 @@ import {DeliveryGasMeter} from "test/protocols/DeliveryGasMeter.sol";
 import {bootstrapPayload} from "test/Harness.sol";
 import {createRpcFork} from "test/fork/ForkBlock.sol";
 import {Target as RetryTarget} from "test/protocols/layerzero/LzOftReceiver.t.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 
 /// @dev `OAppOptionsType3`, which this repo does not vendor.
 interface IEnforcedOptions {
@@ -113,24 +114,24 @@ abstract contract LzOftForkBase is Test {
     }
 
     /// @dev For a Fraxtal home: Ethereum and Arbitrum, the lockbox's peers.
-    function _leaves() internal view returns (LzOftConduitFactory.Leaf[] memory) {
+    function _ethereumAndArbitrumDestinations() internal view returns (ILzOftConduitFactory.Destination[] memory) {
         LzOftDestination[] memory destinations = new LzOftDestination[](2);
         destinations[0] = LzOftDestination(1, ETH_EID);
         destinations[1] = LzOftDestination(42161, ARB_EID);
-        return LzOftDeploy.leaves(homeOft, destinations);
+        return LzOftDeploy.factoryDestinations(homeOft, destinations);
     }
 
     /// @dev For an Ethereum home: Fraxtal, the only peer Ethereum's frxUSD has among these chains.
-    function _fraxtalLeaves() internal view returns (LzOftConduitFactory.Leaf[] memory) {
+    function _fraxtalDestinations() internal view returns (ILzOftConduitFactory.Destination[] memory) {
         LzOftDestination[] memory destinations = new LzOftDestination[](1);
         destinations[0] = LzOftDestination(252, FRAXTAL_EID);
-        return LzOftDeploy.leaves(homeOft, destinations);
+        return LzOftDeploy.factoryDestinations(homeOft, destinations);
     }
 
     /// @dev On the home fork, funded for every send's fee.
-    function _createConduit(LzOftConduitFactory.Leaf[] memory leaves) internal {
+    function _createConduit(ILzOftConduitFactory.Destination[] memory committed) internal {
         factory = LzOftDeploy.factory(address(0x7EA5));
-        conduit = LzOftTransmitter(payable(factory.createTransmitter(SALT, homeOft, leaves)));
+        conduit = LzOftTransmitter(payable(factory.createTransmitter(SALT, homeOft, committed)));
         vm.deal(address(conduit), 100 ether);
     }
 
@@ -222,18 +223,20 @@ contract LzOftForkTest is LzOftForkBase {
     function test_frxUsdCarriesABootstrapToEachDestinationAndAMessageAfter() public {
         if (!_forks()) vm.skip(true);
 
-        LzOftConduitFactory.Leaf[] memory leaves = _leaves();
-        for (uint256 i; i < leaves.length; ++i) {
-            assertEq(leaves[i].oft, leaves[i].eid == ETH_EID ? ETH_OFT : ARB_OFT, "the lockbox's peers are Frax's");
+        ILzOftConduitFactory.Destination[] memory committed = _ethereumAndArbitrumDestinations();
+        for (uint256 i; i < committed.length; ++i) {
+            assertEq(
+                committed[i].oft, committed[i].eid == ETH_EID ? ETH_OFT : ARB_OFT, "the lockbox's peers are Frax's"
+            );
         }
 
         vm.selectFork(ethereum);
-        LzOftDeploy.checkOnDestination(leaves[leaves[0].eid == ETH_EID ? 0 : 1], FRAXTAL_EID, FRAXTAL_OFT);
+        LzOftDeploy.checkOnDestination(committed[committed[0].eid == ETH_EID ? 0 : 1], FRAXTAL_EID, FRAXTAL_OFT);
         vm.selectFork(arbitrum);
-        LzOftDeploy.checkOnDestination(leaves[leaves[0].eid == ARB_EID ? 0 : 1], FRAXTAL_EID, FRAXTAL_OFT);
+        LzOftDeploy.checkOnDestination(committed[committed[0].eid == ARB_EID ? 0 : 1], FRAXTAL_EID, FRAXTAL_OFT);
 
         vm.selectFork(fraxtal);
-        _createConduit(leaves);
+        _createConduit(committed);
 
         _bootstrap(1, ethereum, ETH_OFT);
         _bootstrap(42161, arbitrum, ARB_OFT);
@@ -248,14 +251,14 @@ contract LzOftForkTest is LzOftForkBase {
         if (!_forks()) vm.skip(true);
 
         _homeOn(ethereum, ETH_EID, ETH_OFT);
-        LzOftConduitFactory.Leaf[] memory leaves = _fraxtalLeaves();
-        assertEq(leaves[0].oft, FRAXTAL_OFT, "Ethereum's frxUSD peers Fraxtal's lockbox");
+        ILzOftConduitFactory.Destination[] memory committed = _fraxtalDestinations();
+        assertEq(committed[0].oft, FRAXTAL_OFT, "Ethereum's frxUSD peers Fraxtal's lockbox");
 
         vm.selectFork(fraxtal);
-        LzOftDeploy.checkOnDestination(leaves[0], ETH_EID, ETH_OFT);
+        LzOftDeploy.checkOnDestination(committed[0], ETH_EID, ETH_OFT);
 
         vm.selectFork(ethereum);
-        _createConduit(leaves);
+        _createConduit(committed);
 
         _bootstrap(252, fraxtal, FRAXTAL_OFT);
         _messageAfter(252, fraxtal, FRAXTAL_OFT);
@@ -263,7 +266,7 @@ contract LzOftForkTest is LzOftForkBase {
 
     function test_frxUsdComposeCanRetryAfterTheDestinationCallReverts() public {
         if (!_forks()) vm.skip(true);
-        _createConduit(_leaves());
+        _createConduit(_ethereumAndArbitrumDestinations());
         _bootstrap(1, ethereum, ETH_OFT);
 
         RetryTarget target = new RetryTarget();
@@ -362,7 +365,7 @@ contract LzOftForkDeliveryGasTest is LzOftForkBase, DeliveryGasMeter {
         // Deployed on the local chain, so carried to each fork from there.
         vm.makePersistent(noOp);
         if (!_forks()) vm.skip(true);
-        _createConduit(_leaves());
+        _createConduit(_ethereumAndArbitrumDestinations());
         _deliveries(1, ethereum, ETH_OFT, ETH_EID, "ethereum");
         _deliveries(42161, arbitrum, ARB_OFT, ARB_EID, "arbitrum");
     }
@@ -373,7 +376,7 @@ contract LzOftForkDeliveryGasTest is LzOftForkBase, DeliveryGasMeter {
         vm.makePersistent(noOp);
         if (!_forks()) vm.skip(true);
         _homeOn(ethereum, ETH_EID, ETH_OFT);
-        _createConduit(_fraxtalLeaves());
+        _createConduit(_fraxtalDestinations());
         _deliveries(252, fraxtal, FRAXTAL_OFT, FRAXTAL_EID, "fraxtal");
     }
 

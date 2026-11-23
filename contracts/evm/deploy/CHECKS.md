@@ -211,12 +211,12 @@ the same message costs delivered to a contract that does nothing:
 
 | Delivery | CCIP | Hyperlane | LayerZero | OP Stack | Wormhole |
 | --- | --- | --- | --- | --- | --- |
-| Bootstrap to a standard EVM transceiver, no calls | 443,291 | 442,610 | 496,750 | 445,709 | 486,695 |
-| The same with one call to an address with no code | 449,682 | 449,002 | 503,132 | 452,203 | 494,083 |
-| Report arriving at the home transceiver | 122,853 | 122,120 | 122,749 | 119,826 | n/a (166,245) |
+| Bootstrap to a standard EVM transceiver, no calls | 443,268 | 442,586 | 496,727 | 445,687 | 486,695 |
+| The same with one call to an address with no code | 449,660 | 448,978 | 503,109 | 452,180 | 494,083 |
+| Report arriving at the home transceiver | 122,763 | 122,121 | 122,750 | 119,827 | n/a (166,178) |
 | Payload to an existing receiver, no calls | 26,223 | 24,421 | 27,621 | 23,164 | 67,785 |
 
-Measured 2026-11-20 at `dcd1048`, with Forge 1.8.1 and the repository's compiler settings,
+Measured 2026-11-23 at `b9e60f8`, with Forge 1.8.1 and the repository's compiler settings,
 against mock gateways. Wormhole's numbers include verifying the VAA
 and recording it consumed, inside the receiver; its mock Core checks no guardian signatures,
 so a real delivery costs more. A payload's default also pays for the caller's calls, so the
@@ -229,11 +229,11 @@ the receiver's frame; the OFT's own lzReceive gas is the operator's enforced opt
 
 | Delivery, `layerzero-oft` | Gas |
 | --- | --- |
-| Bootstrap to the factory, 1 destination, no calls | 469,662 |
-| Bootstrap to the factory, 8 destinations, one call | 477,211 |
+| Bootstrap to the factory, 1 destination, no calls | 469,908 |
+| Bootstrap to the factory, 8 destinations, one call | 477,459 |
 | Payload to an existing receiver, no calls | 34,357 |
 
-Measured 2026-11-20 against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
+Measured 2026-11-23 at `b45a484` against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
 (`test/fork/LzOftFork.t.sol`) measures the same way through frxUSD on a fork of each destination:
 homed on Fraxtal, to Ethereum and Arbitrum; homed on Ethereum, to Fraxtal, the only one of these
 chains Ethereum's frxUSD peers. It runs lzCompose through the real `EndpointV2` into the factory
@@ -247,8 +247,8 @@ enforces for a send with a compose message (250,000 to all three):
 | Payload, lzCompose into the receiver | 42,246 | 42,274 | 42,256 |
 | Payload, the OFT's `lzReceive` | 99,372 | 82,342 | 101,993 |
 
-Measured 2026-11-20 through public RPCs at the blocks in "Fraxtal as an OFT destination" below, on the code the
-mock rows were measured on. A payload costs about 7,900 more than against the mocks and a
+Measured 2026-11-20 through public RPCs at the blocks in "Fraxtal as an OFT destination" below, at
+`dcd1048`. A payload costs about 7,900 more than against the mocks and a
 bootstrap 300 to 700 more; each stays well under its default. The `lzReceive` figure leaves out
 the endpoint's clearing of the verified payload around it. The Fraxtal column is Forge executing
 Fraxtal's state under `cancun` rules, not Fraxtal's own client; Fraxtal is an OP Stack chain with
