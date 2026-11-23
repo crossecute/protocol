@@ -10,13 +10,19 @@ rewritten to relative paths.
 ```
 
 ```ts
-import { ILzOftCreateAbi, ISourceAuthorityGuardAbi, SafeBatchExecutorAbi } from "@crossecute/protocol/abi";
+import {
+  ILzOftConduitFactoryViewAbi, ILzOftCreateAbi, ISignedTransmitterAbi, ISourceAuthorityGuardAbi, SafeBatchExecutorAbi,
+} from "@crossecute/protocol/abi";
 ```
 
 For LayerZero OFT tooling, import `ILzOftCreate`, `LzOftMerkle`, and `UlnConfig` from
 `@crossecute/protocol/protocols/layerzero/`. Construct factory inputs with
 `ILzOftCreate.OftLeaf(chainKey, eid, oft)`. The `createTransmitter` calldata still uses
 `(bytes32,uint32,address)[]` for the destination records.
+
+Use `ILzOftConduitFactoryView` to predict conduit addresses, read the deployed Proxy initcode
+hash, and inspect committed destinations and their bootstrap proofs. `ISignedTransmitter`
+exposes `quoteRelay`, `isRootRegistered`, and `isLeafRelayed` alongside `relayLeaf`.
 
 ## Derived addresses
 

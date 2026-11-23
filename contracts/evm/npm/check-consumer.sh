@@ -19,7 +19,9 @@ npm install --no-audit --no-fund --loglevel=error "./$tarball" "@openzeppelin/co
 
 node --input-type=module <<'JS'
 import assert from "node:assert/strict";
-import { ILzOftCreateAbi, ISourceAuthorityGuardAbi, SafeBatchExecutorAbi } from "@crossecute/protocol/abi";
+import {
+  ILzOftConduitFactoryViewAbi, ILzOftCreateAbi, ISignedTransmitterAbi, ISourceAuthorityGuardAbi, SafeBatchExecutorAbi,
+} from "@crossecute/protocol/abi";
 
 const create = ILzOftCreateAbi.find((entry) => entry.name === "createTransmitter");
 assert.deepEqual(create.inputs.map(({ type }) => type), ["bytes32", "address", "tuple[]"]);
@@ -27,6 +29,19 @@ assert.equal(create.inputs[2].internalType, "struct ILzOftCreate.OftLeaf[]");
 assert.deepEqual(create.inputs[2].components.map(({ name, type }) => [name, type]), [
   ["chainKey", "bytes32"], ["eid", "uint32"], ["oft", "address"],
 ]);
+
+for (const [abi, names] of [
+  [ILzOftConduitFactoryViewAbi, ["predictConduit", "bootstrapRoute", "PROXY_INIT_CODE_HASH", "destinationOf"]],
+  [ISignedTransmitterAbi, ["quoteRelay", "isRootRegistered", "isLeafRelayed"]],
+]) {
+  for (const name of names) {
+    assert(abi.some((entry) => entry.type === "function" && entry.name === name && entry.stateMutability === "view"), `Missing ${name} view`);
+  }
+}
+const quoteRelay = ISignedTransmitterAbi.find((entry) => entry.name === "quoteRelay");
+const relayLeaf = ISignedTransmitterAbi.find((entry) => entry.name === "relayLeaf");
+assert.deepEqual(quoteRelay.inputs, relayLeaf.inputs);
+
 const execute = SafeBatchExecutorAbi.find((entry) => entry.name === "execute");
 assert.equal(execute.inputs[0].internalType, "struct SafeBatchExecutor.SafeExecution[]");
 for (const name of ["stageUpdate", "publishedAuthority", "selection", "AuthorityPublished", "AuthorityUpdateExecuted"]) {
