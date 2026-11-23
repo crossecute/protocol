@@ -46,7 +46,8 @@ interface IConduitIdentity {
 ///      because the delivering OFT proves into the root the message names, and that root is
 ///      part of the address the receiver is created at: a forged root creates another conduit.
 contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILzOftCreate, ILayerZeroComposer {
-    struct Destination {
+    /// @dev The route committed at conduit creation and its index in the destination tree.
+    struct CommittedDestination {
         uint32 eid;
         address oft;
         uint64 index;
@@ -72,7 +73,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILzOftCreate, ILayer
     mapping(address conduit => Conduit) internal _conduits;
     /// @dev Leaf hashes in the order the operator listed them, for rebuilding a proof.
     mapping(address conduit => bytes32[]) internal _leafHashes;
-    mapping(address conduit => mapping(bytes32 chainKey => Destination)) internal _destinations;
+    mapping(address conduit => mapping(bytes32 chainKey => CommittedDestination)) internal _destinations;
 
     event TransmitterCreated(
         address indexed owner, address indexed conduit, bytes32 salt, uint32 homeEid, address homeOft, bytes32 destRoot
@@ -171,7 +172,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILzOftCreate, ILayer
         _leafHashes[conduit] = hashes;
         for (uint256 i; i < leaves.length; ++i) {
             // forge-lint: disable-next-line(unsafe-typecast,costly-loop) index bounded; one write each
-            _destinations[conduit][leaves[i].chainKey] = Destination(leaves[i].eid, leaves[i].oft, uint64(i));
+            _destinations[conduit][leaves[i].chainKey] = CommittedDestination(leaves[i].eid, leaves[i].oft, uint64(i));
         }
         emit TransmitterCreated(msg.sender, conduit, salt, homeEid, homeOft, destRoot);
         if (signed) emit SignedConduitCreated(conduit);
@@ -186,14 +187,14 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILzOftCreate, ILayer
         view
         returns (uint32 eid, address dstOft, uint32 homeEid, bytes32 destRoot, bytes32[] memory proof)
     {
-        Destination memory d = _destination(conduit, chainKey);
+        CommittedDestination memory d = _destination(conduit, chainKey);
         Conduit memory a = _conduits[conduit];
         return (d.eid, d.oft, a.homeEid, a.destRoot, LzOftMerkle.proof(_leafHashes[conduit], d.index));
     }
 
     /// @inheritdoc ILzOftConduitFactory
     function destinationOf(address conduit, bytes32 chainKey) external view returns (uint32 eid, address oft) {
-        Destination memory d = _destination(conduit, chainKey);
+        CommittedDestination memory d = _destination(conduit, chainKey);
         return (d.eid, d.oft);
     }
 
@@ -213,7 +214,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILzOftCreate, ILayer
         bytes32 chainKey = keccak256(route);
         Erc7930.Interop memory io = Erc7930.parseStrict(route);
         if (io.chainType != Erc7930.CT_EIP155) revert NotAnEvmChain(chainKey);
-        Destination memory d = _destination(msg.sender, chainKey);
+        CommittedDestination memory d = _destination(msg.sender, chainKey);
 
         message = LzOftMessage.encodeBootstrap(
             LzOftMessage.Bootstrap(
@@ -242,7 +243,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILzOftCreate, ILayer
         _requireDerived(a, owner, salt);
         if (!ISignedTransmitterInit(msg.sender).isSigned()) revert WrongBootstrapMode();
         bytes32 chainKey = ChainKey.fromIdentifier(route);
-        Destination memory d = _destination(msg.sender, chainKey);
+        CommittedDestination memory d = _destination(msg.sender, chainKey);
         Erc7930.Interop memory io = Erc7930.parseStrict(route);
         if (io.chainType != Erc7930.CT_EIP155) revert NotAnEvmChain(chainKey);
         LzOftMessage.Bootstrap memory b = LzOftMessage.Bootstrap(
@@ -276,7 +277,7 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILzOftCreate, ILayer
         if (derived != msg.sender) revert NotTheConduit(msg.sender, derived);
     }
 
-    function _destination(address conduit, bytes32 chainKey) private view returns (Destination memory d) {
+    function _destination(address conduit, bytes32 chainKey) private view returns (CommittedDestination memory d) {
         d = _destinations[conduit][chainKey];
         if (d.oft == address(0)) revert NotADestination(conduit, chainKey);
     }
