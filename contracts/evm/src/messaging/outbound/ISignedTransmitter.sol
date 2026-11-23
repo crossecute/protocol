@@ -66,7 +66,7 @@ interface ISignedTransmitter {
 
     /// @notice Price the relay of the supplied signed registration, leaf and proof.
     /// @dev Applies the same registration, replay and payload validation as `relayLeaf`.
-    function quoteRelay(
+    function quoteLeaf(
         SafeTxEvidence calldata registrationEvidence,
         ExecutionLeaf calldata leaf,
         bytes32[] calldata proof

@@ -281,7 +281,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
         } else {
             ExecutionLeaf memory leaf = _execLeaf(0, new bytes[](0));
             SafeTxEvidence memory evidence = _register(DispatchLeaves.hash(leaf));
-            fee = st.quoteRelay(evidence, leaf, new bytes32[](0));
+            fee = st.quoteLeaf(evidence, leaf, new bytes32[](0));
             data = abi.encodeCall(st.relayLeaf, (evidence, leaf, new bytes32[](0)));
         }
     }
@@ -630,7 +630,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
             _quorum(), SafeHashes.transactionHash(evidence.signedSafeTx.safeTx, address(safe), block.chainid)
         );
         vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.NonzeroRegistrationValue.selector, 1));
-        st.quoteRelay(evidence, leaf, new bytes32[](0));
+        st.quoteLeaf(evidence, leaf, new bytes32[](0));
         vm.expectRevert(abi.encodeWithSelector(SignedDispatchCalls.NonzeroRegistrationValue.selector, 1));
         st.relayLeaf(evidence, leaf, new bytes32[](0));
         assertFalse(st.isLeafRelayed(DispatchLeaves.hash(leaf)));
@@ -648,7 +648,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
         (bytes32 root, bytes32[] memory pa, bytes32[] memory pb) = _tree(a, b);
         SafeTxEvidence memory registrationEvidence = _register(root);
 
-        uint256 quote = st.quoteRelay(registrationEvidence, a, pa);
+        uint256 quote = st.quoteLeaf(registrationEvidence, a, pa);
         uint256 conduitBefore = address(st).balance;
         address relayer = address(0xF00);
         vm.deal(relayer, 1 ether);
@@ -685,7 +685,7 @@ contract SignedTransmitterTest is HyperlaneFixture {
         mailbox.setRefundSurcharge(address(st), 999);
         vm.deal(relayer, 1000);
         vm.prank(relayer);
-        uint256 fee = st.quoteRelay(evidence, leaf, new bytes32[](0));
+        uint256 fee = st.quoteLeaf(evidence, leaf, new bytes32[](0));
         assertEq(fee, 123);
         uint256 balanceBefore = address(st).balance;
         vm.prank(relayer);

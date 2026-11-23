@@ -326,7 +326,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         address relayer = address(0xB0B);
         vm.deal(relayer, 1 ether);
         vm.prank(relayer);
-        uint256 fee = transmitter.quoteRelay(b.registration, b.leaf, new bytes32[](0));
+        uint256 fee = transmitter.quoteLeaf(b.registration, b.leaf, new bytes32[](0));
         uint256 balance = b.conduit.balance;
         vm.prank(relayer);
         transmitter.relayLeaf{value: fee + 123}(b.registration, b.leaf, new bytes32[](0));

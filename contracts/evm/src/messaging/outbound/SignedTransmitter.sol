@@ -280,7 +280,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     }
 
     /// @inheritdoc ISignedTransmitter
-    function quoteRelay(
+    function quoteLeaf(
         SafeTxEvidence calldata registrationEvidence,
         ExecutionLeaf calldata leaf,
         bytes32[] calldata proof
@@ -332,7 +332,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     ///      the price. Other entry points spend conduit funds and retain their refunds.
     function _refundTo() internal view override returns (address) {
         if (
-            msg.sig == this.relayLeaf.selector || msg.sig == this.quoteRelay.selector
+            msg.sig == this.relayLeaf.selector || msg.sig == this.quoteLeaf.selector
                 || msg.sig == this.relayAuthority.selector || msg.sig == this.quoteAuthority.selector
         ) return msg.sender;
         return super._refundTo();

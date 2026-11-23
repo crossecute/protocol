@@ -35,16 +35,16 @@ assert.deepEqual(create.inputs[2].components.map(({ name, type }) => [name, type
 for (const [abi, names] of [
   [ILzOftConduitFactoryAbi, ["conduitSalt", "predictConduit", "destinationOf", "bootstrapRoute", "isSigned", "localChainKey",
     "PROXY_INIT_CODE_HASH", "SIGNED_BOOTSTRAP"]],
-  [ISignedTransmitterAbi, ["quoteRelay", "isRootRegistered", "isLeafRelayed"]],
+  [ISignedTransmitterAbi, ["quoteLeaf", "isRootRegistered", "isLeafRelayed"]],
 ]) {
   for (const name of names) {
     assert(abi.some((entry) => entry.type === "function" && entry.name === name
       && ["view", "pure"].includes(entry.stateMutability)), `Missing ${name} view`);
   }
 }
-const quoteRelay = ISignedTransmitterAbi.find((entry) => entry.name === "quoteRelay");
+const quoteLeaf = ISignedTransmitterAbi.find((entry) => entry.name === "quoteLeaf");
 const relayLeaf = ISignedTransmitterAbi.find((entry) => entry.name === "relayLeaf");
-assert.deepEqual(quoteRelay.inputs, relayLeaf.inputs);
+assert.deepEqual(quoteLeaf.inputs, relayLeaf.inputs);
 
 // Each interface ABI decodes what its implementation emits and reverts with.
 for (const [abi, type, names] of [
