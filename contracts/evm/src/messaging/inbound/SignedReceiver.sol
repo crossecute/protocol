@@ -58,19 +58,6 @@ abstract contract SignedReceiver is ReceiverBase, ReceiverAuthorityTemplate, ISi
     bytes32 private constant SIGNED_RECEIVER_STORAGE =
         0xee70333bd3c831863985f85848a518f67d0a54c38e49f2065c9698952a1a6e00;
 
-    event SignedReceiverInitialized(address indexed sourceSafe, bytes32 graph);
-    event LeafExecuted(uint256 indexed nonce, bytes32 executionId);
-    event MessageExecuted(bytes32 indexed safeTxHash);
-
-    error NotSigned();
-    error NotParentTransceiver(address caller);
-    error AlreadySigned();
-    error UnknownWire(uint256 format);
-    error ConflictingLeaf(uint256 nonce);
-    error NonceNotNext(uint256 nonce, uint256 nextNonce);
-    error InvalidAuthorityPins();
-    error AuthorityPinsUnset();
-
     constructor(address guard, address multiSendCallOnly) {
         if ((guard == address(0)) != (multiSendCallOnly == address(0))) revert InvalidAuthorityPins();
         SOURCE_AUTHORITY_GUARD = guard;

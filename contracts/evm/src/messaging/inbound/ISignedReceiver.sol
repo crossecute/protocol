@@ -5,6 +5,19 @@ import {SafeTxEvidence, ExecutionLeaf} from "../signed/types/SignedDispatchTypes
 
 /// @notice Permissionless submission to a receiver in signed mode.
 interface ISignedReceiver {
+    event SignedReceiverInitialized(address indexed sourceSafe, bytes32 graph);
+    event LeafExecuted(uint256 indexed nonce, bytes32 executionId);
+    event MessageExecuted(bytes32 indexed safeTxHash);
+
+    error NotSigned();
+    error NotParentTransceiver(address caller);
+    error AlreadySigned();
+    error UnknownWire(uint256 format);
+    error ConflictingLeaf(uint256 nonce);
+    error NonceNotNext(uint256 nonce, uint256 nextNonce);
+    error InvalidAuthorityPins();
+    error AuthorityPinsUnset();
+
     /// @dev An authenticated repeat of a standalone message or the current authority submission.
     event DuplicateMessage();
 

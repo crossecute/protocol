@@ -8,7 +8,6 @@ import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {SignedTransmitter} from "src/messaging/outbound/SignedTransmitter.sol";
-import {SignedReceiver} from "src/messaging/inbound/SignedReceiver.sol";
 import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
 import {ISignedReceiver} from "src/messaging/inbound/ISignedReceiver.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -293,7 +292,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
     function test_unsignedPayloadCannotExecuteOnSignedReceiver() public {
         Bundle memory b = _bundle();
         _destination(b);
-        vm.expectPartialRevert(SignedReceiver.UnknownWire.selector);
+        vm.expectPartialRevert(ISignedReceiver.UnknownWire.selector);
         oft.deliver(HOME_EID, b.conduit, bytes32(uint256(uint160(b.conduit))), abi.encode(new Call[](0)));
     }
 

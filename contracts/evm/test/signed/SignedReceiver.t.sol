@@ -699,7 +699,7 @@ contract SignedReceiverTest is Test {
         ExecutionLeaf memory conflicting = _leaf(0, _calls("c"));
         (SafeTxEvidence memory newRoot, bytes32[][] memory q) =
             _register(_two(conflicting, l1), SafeSigs.two(SafeSigs.eoa(7), SafeSigs.eoa(3)));
-        vm.expectRevert(abi.encodeWithSelector(SignedReceiver.ConflictingLeaf.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(ISignedReceiver.ConflictingLeaf.selector, 0));
         ISignedReceiver(receiver).submitLeaf(newRoot, conflicting, q[0]);
         _deliver(abi.encode(WIRE_MERKLE, newRoot, l1, q[1]));
         assertEq(r.nextNonce(), 2);
@@ -765,7 +765,7 @@ contract SignedReceiverTest is Test {
             abi.encodeCall(IReceiverInit.initialize, (TRANSMITTER, bytes32(uint256(HOME_DOMAIN)), new Call[](0)))
         );
         assertTrue(SignedReceiver(payable(r)).isAuthorizedCaller(TRANSMITTER));
-        vm.expectRevert(SignedReceiver.AuthorityPinsUnset.selector);
+        vm.expectRevert(ISignedReceiver.AuthorityPinsUnset.selector);
         _initialize(r, _bootstrapBody(_calls("x")));
     }
 
@@ -839,7 +839,7 @@ contract SignedReceiverTest is Test {
         address r = _unsignedReceiver();
         bytes memory body = _bootstrapBody(_calls("x"));
         vm.prank(address(0xBAD));
-        vm.expectRevert(abi.encodeWithSelector(SignedReceiver.NotParentTransceiver.selector, address(0xBAD)));
+        vm.expectRevert(abi.encodeWithSelector(ISignedReceiver.NotParentTransceiver.selector, address(0xBAD)));
         SignedReceiver(payable(r)).initializeSigned(SOURCE_CHAIN, SAFE, body);
     }
 
@@ -889,7 +889,7 @@ contract SignedReceiverTest is Test {
     /// @dev Stored authority must not be overwritten through the creation entry point.
     function test_aSecondInitializationRefuses() public {
         bytes memory body = _bootstrapBody(_calls("x"));
-        vm.expectRevert(SignedReceiver.AlreadySigned.selector);
+        vm.expectRevert(ISignedReceiver.AlreadySigned.selector);
         _initialize(receiver, body);
     }
 
@@ -969,7 +969,7 @@ contract SignedReceiverTest is Test {
     /// @dev The signed mode must not fall back to trusting the source transmitter's address
     ///      alone.
     function test_anUnsignedPayloadFromTheProviderRefuses() public {
-        vm.expectRevert(abi.encodeWithSelector(SignedReceiver.UnknownWire.selector, 32));
+        vm.expectRevert(abi.encodeWithSelector(ISignedReceiver.UnknownWire.selector, 32));
         _deliver(_calls("unsigned"));
     }
 
@@ -1051,7 +1051,7 @@ contract SignedReceiverTest is Test {
         ExecutionLeaf memory l1 = _leaf(1, _calls("1"));
         (SafeTxEvidence memory evidence, bytes32[][] memory p) = _register(_two(l0, l1));
 
-        vm.expectRevert(abi.encodeWithSelector(SignedReceiver.NonceNotNext.selector, 1, 0));
+        vm.expectRevert(abi.encodeWithSelector(ISignedReceiver.NonceNotNext.selector, 1, 0));
         ISignedReceiver(receiver).submitLeaf(evidence, l1, p[1]);
 
         _deliver(abi.encode(WIRE_MERKLE, evidence, l0, p[0]));
@@ -1089,7 +1089,7 @@ contract SignedReceiverTest is Test {
         (SafeTxEvidence memory evidence, bytes32[][] memory p) =
             _register(_two(_leaf(0, _calls("a")), _leaf(0, _calls("b"))));
         ISignedReceiver(receiver).submitLeaf(evidence, _leaf(0, _calls("a")), p[0]);
-        vm.expectRevert(abi.encodeWithSelector(SignedReceiver.ConflictingLeaf.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(ISignedReceiver.ConflictingLeaf.selector, 0));
         ISignedReceiver(receiver).submitLeaf(evidence, _leaf(0, _calls("b")), p[1]);
     }
 
@@ -1224,7 +1224,7 @@ contract SignedReceiverTest is Test {
     function test_anUnsignedReceiverRefusesSignedSubmission() public {
         address r = _unsignedReceiver();
         SafeTxEvidence memory evidence = _message(_here(r), _calls("m"));
-        vm.expectRevert(SignedReceiver.NotSigned.selector);
+        vm.expectRevert(ISignedReceiver.NotSigned.selector);
         ISignedReceiver(r).submitMessage(evidence);
     }
     bytes private reentryCall;
