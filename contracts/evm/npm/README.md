@@ -15,8 +15,9 @@ import {
 } from "@crossecute/protocol/abi";
 ```
 
-Each interface declares the events and errors its implementation emits and reverts with, so its
-ABI alone decodes them.
+Each interface declares the events and errors its implementing contract declares. A revert raised
+inside a shared library carries that library's error instead: decode those with the library's ABI,
+such as `SignedDispatchCallsAbi`, `DispatchLeavesAbi` or `OrderedMerkleAbi`.
 
 For LayerZero OFT tooling, import from `@crossecute/protocol/protocols/layerzero/`:
 

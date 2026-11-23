@@ -46,10 +46,10 @@ const quoteLeaf = ISignedTransmitterAbi.find((entry) => entry.name === "quoteLea
 const relayLeaf = ISignedTransmitterAbi.find((entry) => entry.name === "relayLeaf");
 assert.deepEqual(quoteLeaf.inputs, relayLeaf.inputs);
 
-// Each interface ABI decodes what its implementation emits and reverts with.
+// Each interface ABI carries the events and errors its implementing contract declares.
 for (const [abi, type, names] of [
   [ILzOftConduitFactoryAbi, "event", ["TransmitterCreated", "ReceiverCreated", "SignedConduitCreated"]],
-  [ILzOftConduitFactoryAbi, "error", ["NoDestinations", "DestinationsNotSorted", "BadDestination", "NotInRoot"]],
+  [ILzOftConduitFactoryAbi, "error", ["NoDestinations", "DestinationsNotSorted", "BadDestination", "NotInRoot", "PeerChanged"]],
   [ISignedTransmitterAbi, "event", ["RootRegistered", "LeafRelayed", "AuthorityRelayed"]],
   [ISignedTransmitterAbi, "error", ["RootNotRegistered", "LeafAlreadyRelayed", "InsufficientPayment", "NoSignedAuthority"]],
   [ISignedReceiverAbi, "event", ["LeafExecuted", "MessageExecuted"]],
