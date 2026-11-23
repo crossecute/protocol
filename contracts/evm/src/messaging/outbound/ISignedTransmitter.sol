@@ -41,6 +41,20 @@ interface ISignedTransmitter {
         ExecutionLeaf calldata leaf,
         bytes32[] calldata proof
     ) external payable returns (bytes32 sendId);
+
+    /// @notice Price the relay of the supplied signed registration, leaf and proof.
+    /// @dev Applies the same registration, replay and payload validation as `relayLeaf`.
+    function quoteRelay(
+        SafeTxEvidence calldata registrationEvidence,
+        ExecutionLeaf calldata leaf,
+        bytes32[] calldata proof
+    ) external view returns (uint256 fee);
+
+    /// @notice Whether this transmitter has registered the root for relay.
+    function isRootRegistered(bytes32 root) external view returns (bool);
+
+    /// @notice Whether this transmitter has already relayed the leaf hash.
+    function isLeafRelayed(bytes32 leafHash) external view returns (bool);
 }
 
 /// @notice What a transceiver asks of the transmitter logic for a signed conduit, after arming

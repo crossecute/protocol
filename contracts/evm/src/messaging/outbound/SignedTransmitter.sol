@@ -296,9 +296,7 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return providerFee + _crossecuteFee(providerFee);
     }
 
-    /// @notice The fee for relaying the supplied signed registration, leaf and proof.
-    /// @dev Shares relay validation and wire construction, so an unregistered, already relayed or
-    ///      differently encoded leaf is not quoted as executable.
+    /// @inheritdoc ISignedTransmitter
     function quoteRelay(
         SafeTxEvidence calldata registrationEvidence,
         ExecutionLeaf calldata leaf,
@@ -364,16 +362,12 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
         return _signedStorage().signed;
     }
 
-    /// @notice Report whether the owner has registered a root on this transmitter.
-    /// @dev Relayers can check the source authorization prerequisite before paying to send a
-    ///      leaf.
+    /// @inheritdoc ISignedTransmitter
     function isRootRegistered(bytes32 root) external view returns (bool) {
         return _signedStorage().roots[root];
     }
 
-    /// @notice Report whether this transmitter has already relayed the leaf hash.
-    /// @dev A leaf may be relayed through this transmitter only once, so callers can avoid
-    ///      duplicate source sends.
+    /// @inheritdoc ISignedTransmitter
     function isLeafRelayed(bytes32 leafHash) external view returns (bool) {
         return _signedStorage().relayed[leafHash];
     }
