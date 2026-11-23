@@ -95,6 +95,8 @@ for (const dir of readdirSync(join(root, "out"))) {
       // forge records sources outside the project root by absolute path.
       const repo = isAbsolute(source) ? relative(root, source) : normalize(source);
       if (!shipped.has(repo) || artifact.abi.length === 0) continue;
+      // Forge keeps the artifact of a contract removed from a source that still exists.
+      if (!new RegExp(`\\b(?:contract|interface|library)\\s+${contract}\\b`).test(files.get(repo).text)) continue;
       if (abis.has(contract) && abis.get(contract).source !== repo) {
         throw new Error(`two shipped contracts are named ${contract}`);
       }
