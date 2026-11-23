@@ -24,9 +24,11 @@ Keywords MUST, MUST NOT, SHOULD and MAY are used in the RFC 2119 sense.
 - **Home OFT**: the OFT on the conduit's home chain that it sends through. Bound into the
   conduit's address.
 - **Destination OFT**: the home OFT's peer for a destination's eid.
-- **OFT leaf record**: `ILzOftCreate.OftLeaf`, the `(chainKey, eid, oft)` input to `createTransmitter`.
-  `LzOftMerkle.leaf` hashes it as `keccak256(bytes.concat(keccak256(abi.encode(chainKey, eid, oft))))`.
-- **Destination root**: the root `LzOftMerkle.root` computes over a conduit's leaf hashes, in
+- **Destination**: `ILzOftConduitFactory.Destination`, the `(chainKey, eid, oft)` record
+  `createTransmitter` takes for each destination.
+- **Leaf**: a destination's hash, `LzOftConduitAddress.leafHash`:
+  `keccak256(abi.encode(keccak256(abi.encode(chainKey, eid, oft))))`.
+- **Destination root**: the `OrderedMerkle` root over a conduit's leaves, in
   ascending `chainKey` order. Bound into the conduit's address.
 - **Factory**: `LzOftConduitFactory`, the CREATE2 deployer of every conduit of this binding, the
   builder of every bootstrap's compose on the home (`conduitBootstrap` or
@@ -65,12 +67,14 @@ them for a candidate.
   and pins yield the address recorded for the release (`DeployLzOft.predict`, `CROSSECUTE_OFT_FACTORY`).
 - **L1.2** A conduit's CREATE2 salt MUST be
   `keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot))`, deployed by
-  the factory with `Proxy`'s initcode (`LzOftConduitFactory.conduitSalt`, `predictConduit`), where
+  the factory with `Proxy`'s initcode (`LzOftConduitAddress.conduitSalt`, `predictConduit`), where
   `homeEid` is the eid of the home OFT's endpoint. One conduit has one address on every chain
   in its root.
-- **L1.3** The home factory MUST compute `destRoot` itself from the leaves it is given, and
-  refuse leaves that are empty, not in strictly ascending `chainKey` order, name its own chain,
-  carry a zero eid or OFT or the home's eid, or name an OFT the home OFT does not peer.
+- **L1.3** The home factory MUST compute `destRoot` itself from the destinations it is given,
+  and refuse a list that is empty or not in strictly ascending `chainKey` order, or a destination
+  that names its own chain, carries a zero eid or OFT or the home's eid, or names an OFT the home
+  OFT does not peer. `LzOftConduitAddress.requireDestinations` makes the checks that need no peer
+  read.
 
 ### L2. Sends
 
@@ -82,7 +86,7 @@ them for a candidate.
   conduit recorded or created it (`LzOftMessage.requirePeer`).
 - **L2.4** An unsigned bootstrap MUST be sent to the factory, and carry
   `LzOftMessage.Bootstrap(owner, salt, homeChainKey, homeEid, homeOft, destRoot, proof, calls)` as the
-  home factory's `conduitBootstrap` builds it from the stored leaves, for the conduit its
+  home factory's `conduitBootstrap` builds it from the stored leaf hashes, for the conduit its
   `(owner, salt)` derive. A message MUST be sent to the
   receiver, with the payload as `composeMsg`.
 - **L2.5** The only attribute MUST be `LzMessage.OPTIONS_ATTRIBUTE`, which replaces the
@@ -159,14 +163,14 @@ the conduit).
 | --- | --- |
 | L1.1 | `LzOftScriptsTest` checks deployment prediction and rejects a different release address; `LzOftForkTest` compares factory addresses across forks |
 | L1.2 | `test_theConduitLandsWhereItsFieldsDerive`, `testFuzz_everyDestinationProvesIntoTheRoot`, `test_theHomeEidIsBoundIntoTheAddress` |
-| L1.3 | `test_noDestinationsIsRefused`, `test_unsortedOrRepeatedLeavesAreRefused`, `test_aLeafForThisChainIsRefused`, `test_aLeafWithTheHomesEidIsRefused`, `test_aLeafTheHomeOftDoesNotPeerIsRefused`, `test_aHomeOftWithoutAnEndpointIsRefused` |
+| L1.3 | `test_noDestinationsIsRefused`, `test_unsortedOrRepeatedDestinationsAreRefused`, `test_aDestinationForThisChainIsRefused`, `test_aDestinationWithTheHomesEidIsRefused`, `test_aDestinationTheHomeOftDoesNotPeerIsRefused`, `test_aHomeOftWithoutAnEndpointIsRefused` |
 | L2.1, L2.4 | `test_theBootstrapGoesThroughTheHomeOftFromTheConduit`, `test_aMessageGoesToTheReceiverWithThePayloadAsTheCompose`, `test_theBootstrapIsBuiltFromTheConduitsFields`, `test_aBootstrapForAnotherCallerOrIdentityIsRefused`, `LzOftForkTest` |
 | L2.2 | the same two, which compare the value paid with the quote |
 | L2.3 | `test_aRePeeredHomeOftRefusesTheBootstrapAndItsQuote`, `test_aRePeerAfterTheBootstrapRefusesMessages` |
 | L2.5 | `test_theOptionsAttributeReplacesTheDefaultWhole`, `test_aSecondAttributeIsRefused`, `test_anotherBindingsAttributeIsRefused`, `test_onlyTheOptionsAttributeIsSupported` |
 | L2.6 | `test_signedCreationUsesSharedDerivation`, `test_quoteAndSendRejectUnselectedBootstrapAuthority`, `test_realSafeGuardBootstrapAndComposeShareDirectReplay` |
 | L3.1 | `test_aSendMovesNoTokensAndCarriesTheDefaultCompose`, `LzOftForkTest` |
-| L4.1 | `test_aCallerOtherThanTheOftsEndpointIsRefused`, `test_anOftOutsideTheRootIsRefused`, `test_aLeafForAnotherChainIsRefused`, `test_aComposeFromAnotherEidThanTheHomesIsRefused`, `test_anOftThatNoLongerPeersTheHomeIsRefused`, `test_aSenderOtherThanTheConduitIsRefused`, `test_aForgedRootCreatesAnotherConduit`, `test_aSecondBootstrapIsRefused` |
+| L4.1 | `test_aCallerOtherThanTheOftsEndpointIsRefused`, `test_anOftOutsideTheRootIsRefused`, `test_aDestinationForAnotherChainIsRefused`, `test_aComposeFromAnotherEidThanTheHomesIsRefused`, `test_anOftThatNoLongerPeersTheHomeIsRefused`, `test_aSenderOtherThanTheConduitIsRefused`, `test_aForgedRootCreatesAnotherConduit`, `test_aSecondBootstrapIsRefused` |
 | L4.2, L4.3 | `test_valueReachesTheConduit`, `test_theBootstrapCreatesTheReceiverAtTheConduitsAddress` |
 | L4.4 | `test_bootstrapChainDomainCannotBeSubstituted`, `test_bootstrapTransportFailureRollsBackAndSafeCanRetry`, `test_signedBootstrapRepeatReverts`, `test_setupCallsExecuteOnceAndDuplicateBootstrapReverts` |
 | L5.1 | `ProviderReceiveSpec`, `test_aComposeQueuedByAnotherContractIsRefused`, `test_aRePeeredLocalOftIsRefused` |

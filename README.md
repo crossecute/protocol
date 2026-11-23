@@ -232,7 +232,7 @@ sequenceDiagram
     participant D as Destination factory
     participant R as Receiver
 
-    O->>H: createTransmitter(salt, homeOft, leaves)
+    O->>H: createTransmitter(salt, homeOft, destinations)
     H->>T: Deploy and lock with destination set bound to address
     O->>T: bootstrap(payload, attributes)
     T->>P: Send bootstrap compose with destination proof

@@ -333,6 +333,19 @@ ERC-7786 interfaces for source gateways (`IERC7786GatewaySource`) and recipients
 | `receiveMessage(receiveId, sender, payload)`<br>_IERC7786Recipient · external payable_ | Receives a cross-chain message from the gateway and returns the receive selector. Implemented in: ReceiverBase. | ReceiverBase.receiveMessage; also tests | Yes via interface (state-changing) |
 
 
+#### `contracts/evm/src/messaging/OrderedMerkle.sol`
+
+The protocol's one Merkle tree, which the guard's `publishLeaves` and the `layerzero-oft` destination root both build: leaves in the caller's order, internal nodes hashing the smaller child first, and a level's unpaired last node carried up unchanged.
+
+| Function | What it does | Called by | User-called? |
+|---|---|---|---|
+| `leafHash(fields)`<br>_internal pure_ | A leaf's hash: the keccak256 of the keccak256 of its `abi.encode`d fields. | DispatchLeaves.hash, DispatchLeaves.executionId, LzOftConduitAddress.leafHash, CrossecuteGuard.publishLeaves; also tests | No |
+| `root(leafHashes)`<br>_internal pure_ | The root over leaf hashes in the given order; reverts `NoLeaves` for none. | CrossecuteGuard.publishLeaves, LzOftConduitAddress.destRoot, LzOftConduitFactory.createTransmitter; also tests | No |
+| `proof(leafHashes, index)`<br>_internal pure_ | The sibling path from one leaf to the root, which `MerkleProof.verify` checks; reverts `IndexOutOfRange` past the last leaf. | LzOftConduitFactory.bootstrapRoute, LzOftConduitFactory.conduitBootstrap, LzOftConduitFactory.signedConduitBootstrap; also tests | No |
+
+Private helpers: `_copy`, `_up`.
+
+
 #### `contracts/evm/src/messaging/Payload.sol`
 
 Library for the wire encoding of call arrays (typed `Call[]` for EVM, opaque `bytes[]` for other VMs) and of the bootstrap payload.
@@ -580,6 +593,9 @@ Interfaces for a transmitter in signed mode: the owner's calls plus the permissi
 | `relayAuthority(recipient, submission, attributes)`<br>_ISignedTransmitter · external payable_ | Anyone relays a published authority submission to the conduit's receiver, paying the fee; retries allowed. Implemented in: SignedTransmitter. | SignedTransmitter._refundTo, SDK ts/authority.buildAuthorityRelayProposal, SDK ABI trim list; also tests | Yes via interface (state-changing) |
 | `quoteAuthority(recipient, submission, attributes)`<br>_ISignedTransmitter · external view_ | Prices the same authority relay. Implemented in: SignedTransmitter. | SignedTransmitter._refundTo, SDK ts/authority.buildAuthorityRelayProposal, SDK ABI trim list; also tests | Yes via interface (read-only) |
 | `relayLeaf(registrationEvidence, leaf, proof)`<br>_ISignedTransmitter · external payable_ | Anyone pays to transmit one unused leaf authorized by a registered root and its signed registration. Implemented in: SignedTransmitter. | SignedTransmitter._refundTo, SignedDispatch.relayLeafCalldata, SDK ts/signed.relayLeafCalldata, SDK ABI trim list; also tests | Yes via interface (state-changing) |
+| `quoteLeaf(registrationEvidence, leaf, proof)`<br>_ISignedTransmitter · external view_ | Prices the relay of a registration, leaf and proof, with the same validation as `relayLeaf`. Implemented in: SignedTransmitter. | SignedTransmitter._refundTo, SDK ABI trim list; also tests | Yes via interface (read-only) |
+| `isRootRegistered(root)`<br>_ISignedTransmitter · external view_ | Whether the owner registered a root on this transmitter. Implemented in: SignedTransmitter. | SDK ABI trim list; also tests | Yes via interface (read-only) |
+| `isLeafRelayed(leafHash)`<br>_ISignedTransmitter · external view_ | Whether this transmitter already relayed a leaf, by its `DispatchLeaves.hash`. Implemented in: SignedTransmitter. | SDK ABI trim list; also tests | Yes via interface (read-only) |
 | `initializeSigned()`<br>_ISignedTransmitterInit · external_ | Turns on signed mode, once. Implemented in: SignedTransmitter. | TransceiverBase.createTransmitter, LzOftConduitFactory.createTransmitter, SDK ABI trim list; also tests | Yes via interface (state-changing) |
 | `isSigned()`<br>_ISignedTransmitterInit · external view_ | Whether the transmitter is in signed mode. Implemented in: SignedTransmitter. | TransceiverBase._isSignedConduit, LzOftConduitFactory.conduitBootstrap, LzOftConduitFactory.signedConduitBootstrap, LzOftConduitFactory.isSigned, SDK ABI trim list; also tests | Yes via interface (read-only) |
 
@@ -641,12 +657,12 @@ Transmitter that can be created in signed mode: every owner send carries the own
 | `quoteMessageBreakdown(recipient, payload, attributes)`<br>_public view_ | Quotes the unsigned send path, reverting in signed mode. Overrides or is overridden in: TransmitterBase. | TransmitterBase.sendMessage, TransmitterBase.quoteMessage; also tests | Yes, anyone (read-only) |
 | `quoteBootstrap(payload, attributes)`<br>_public view_ | Quotes a bootstrap in either mode, validating and pricing a signed one's graph. Overrides or is overridden in: TransmitterBase. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `quoteMessageSigned(evidence)`<br>_external view_ | Builds the signed standalone payload from supplied evidence and returns its fee. Declared in: ISignedTransmitter. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
-| `quoteLeaf(registrationEvidence, leaf, proof)`<br>_external view_ | The fee for relaying a given registration, leaf and proof. Declared by `ISignedTransmitter`. | SignedTransmitter._refundTo, SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `quoteLeaf(registrationEvidence, leaf, proof)`<br>_external view_ | The fee for relaying a given registration, leaf and proof. Declared in: ISignedTransmitter. | SignedTransmitter._refundTo, SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `quoteAuthority(recipient, submission, attributes)`<br>_external view_ | Prices the authority relay. Declared in: ISignedTransmitter. | SignedTransmitter._refundTo, SDK ts/authority.buildAuthorityRelayProposal, SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `_refundTo()`<br>_internal view_ | Sends provider refunds to whoever funds a leaf or authority relay; other entry points keep refunds. Overrides or is overridden in: OutboundBase, TransmitterBase. | HyperlaneTransmitter._sendMessage, HyperlaneTransmitter._quoteMessage, LzOftTransmitter._sendMessage, LzTransmitter._sendMessage, WormholeTransmitter._sendMessage; also tests | No |
 | `isSigned()`<br>_external view_ | Whether this transmitter is in signed mode. Declared in: ISignedTransmitterInit. | TransceiverBase._isSignedConduit, LzOftConduitFactory.conduitBootstrap, LzOftConduitFactory.signedConduitBootstrap, LzOftConduitFactory.isSigned, SDK ABI trim list; also tests | Yes, anyone (read-only) |
-| `isRootRegistered(root)`<br>_external view_ | Whether the owner registered a root on this transmitter. Declared by `ISignedTransmitter`. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
-| `isLeafRelayed(leafHash)`<br>_external view_ | Whether this transmitter already relayed a leaf hash. Declared by `ISignedTransmitter`. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `isRootRegistered(root)`<br>_external view_ | Whether the owner registered a root on this transmitter. Declared in: ISignedTransmitter. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `isLeafRelayed(leafHash)`<br>_external view_ | Whether this transmitter already relayed a leaf hash. Declared in: ISignedTransmitter. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 
 Private helpers: `_authorityRelay`, `_beginRelay`, `_quoteStandalone`, `_relay`, `_requireSigned`, `_sendRelay`, `_sendStandalone`, `_signedBootstrap`, `_signedStorage`.
 
@@ -1238,11 +1254,22 @@ Per-user sender-only Hyperlane transmitter created by `TransceiverBase.createTra
 
 #### `contracts/evm/src/protocols/layerzero/ILzOftConduitFactory.sol`
 
-Interfaces for what a `layerzero-oft` conduit reads from its factory: per-destination eid and OFT, and the signed bootstrap transport.
+The `layerzero-oft` factory's public surface (`ILzOftConduitFactory`): conduit creation with its `Destination` record, events and errors, the inputs a conduit's address commits to and each committed destination; and the signed bootstrap transport a signed conduit reads (`ILzOftSignedConduitFactory`).
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
+| `createTransmitter(salt, homeOft, destinations)`<br>_ILzOftConduitFactory · external_ | Creates the caller's conduit, homed on this chain, reaching exactly the given destinations in ascending chain-key order, each a peer of the home OFT. Implemented in: LzOftConduitFactory. | SDK ts/lzOft.createLzOftTransmitterCalldata, SDK ABI trim list; also tests | Yes via interface (state-changing) |
+| `conduitSalt(owner, salt, homeChainKey, homeEid, homeOft, destRoot)`<br>_ILzOftConduitFactory · external pure_ | The salt a conduit is CREATE2'd at. Implemented in: LzOftConduitFactory. | LzOftConduitFactory.createTransmitter, LzOftConduitFactory._authenticateBootstrap, SDK ABI trim list; also tests | Yes via interface (read-only) |
+| `predictConduit(owner, salt, homeChainKey, homeEid, homeOft, destRoot)`<br>_ILzOftConduitFactory · external view_ | The conduit address those creation inputs produce, the same on every chain. Implemented in: LzOftConduitFactory. | LzOftConduitFactory._requireDerived, SDK ABI trim list; also tests | Yes via interface (read-only) |
 | `destinationOf(conduit, chainKey)`<br>_ILzOftConduitFactory · external view_ | The eid and OFT a conduit reaches a chain through, as it was created with; reverts for a chain it was not created with. Implemented in: LzOftConduitFactory. | LzOftTransmitter._messageParam, SDK ABI trim list; also tests | Yes via interface (read-only) |
+| `bootstrapRoute(conduit, chainKey)`<br>_ILzOftConduitFactory · external view_ | The destination and proof a bootstrap to a chain carries, with the home eid and root bound into the conduit's address. Implemented in: LzOftConduitFactory. | SDK ABI trim list; also tests | Yes via interface (read-only) |
+| `isSigned(conduit)`<br>_ILzOftConduitFactory · external view_ | Whether a conduit was created here in signed mode. Implemented in: LzOftConduitFactory. | SDK ABI trim list; also tests | Yes via interface (read-only) |
+| `transmitterImplementation()`<br>_ILzOftConduitFactory · external view_ | The logic every transmitter this factory creates is armed with. Implemented in: LzOftConduitFactory. | LzOftConduitFactory.createTransmitter; also tests | Yes via interface (read-only) |
+| `receiverImplementation()`<br>_ILzOftConduitFactory · external view_ | The logic every receiver this factory creates is armed with. Implemented in: LzOftConduitFactory. | LzOftConduitFactory._createReceiver, LzOftConduitFactory._armSignedReceiver; also tests | Yes via interface (read-only) |
+| `treasury()`<br>_ILzOftConduitFactory · external view_ | Where conduits pay the Crossecute fee. Implemented in: LzOftConduitFactory. | TransmitterBase._payCrossecuteFee; also tests | Yes via interface (read-only) |
+| `localChainKey()`<br>_ILzOftConduitFactory · external view_ | This chain's key, which a conduit created here commits to as its home. Implemented in: LzOftConduitFactory. | SDK ABI trim list; also tests | Yes via interface (read-only) |
+| `PROXY_INIT_CODE_HASH()`<br>_ILzOftConduitFactory · external view_ | The `Proxy` initcode hash every conduit address is derived from. Implemented in: LzOftConduitFactory. | LzOftConduitFactory.predictConduit, LzOftConduitFactory.createTransmitter, LzOftConduitFactory._authenticateBootstrap, SDK ABI trim list; also tests | Yes via interface (read-only) |
+| `SIGNED_BOOTSTRAP()`<br>_ILzOftConduitFactory · external view_ | Leading word of a signed bootstrap's compose message. Implemented in: LzOftConduitFactory. | LzOftConduitFactory.lzCompose, LzOftConduitFactory.signedConduitBootstrap, SDK ABI trim list; also tests | Yes via interface (read-only) |
 | `signedConduitBootstrap(route, body)`<br>_ILzOftSignedConduitFactory · external view_ | Encodes the calling conduit's signed bootstrap and its destination factory route, so quote and send use identical bytes. Implemented in: LzOftConduitFactory. | LzOftTransmitter._quoteSignedBootstrap, LzOftTransmitter._sendSignedBootstrap, SDK ABI trim list; also tests | Yes via interface (read-only) |
 
 
@@ -1291,6 +1318,20 @@ Linked library for LayerZero send and quote through the endpoint, the execution-
 Private helpers: `_dvnStack`, `_optionsOr`, `defaultComposeOptions`, `options`.
 
 
+#### `contracts/evm/src/protocols/layerzero/LzOftConduitAddress.sol`
+
+Library computing offline what a `layerzero-oft` conduit's address commits to: each destination's leaf, the destination checks that need no chain state, the destination root, the CREATE2 salt and the address. The factory calls the same functions.
+
+| Function | What it does | Called by | User-called? |
+|---|---|---|---|
+| `leafHash(d)`<br>_internal pure_ | A destination's leaf in a conduit's `destRoot`, through `OrderedMerkle.leafHash`. | LzOftConduitAddress.leafHashes, LzOftConduitFactory._authenticateBootstrap; also tests | No |
+| `requireDestinations(destinations, homeChainKey, homeEid)`<br>_internal pure_ | Reverts as `createTransmitter` does for a list it refuses before reading peers: empty, out of order or repeated, or naming a zero eid or OFT or the home chain's key or eid. | LzOftConduitAddress.destRoot, LzOftConduitFactory._requireDestinations; also tests | No |
+| `leafHashes(destinations)`<br>_internal pure_ | Each destination's leaf, in list order. | LzOftConduitAddress.destRoot, LzOftConduitFactory._requireDestinations; also tests | No |
+| `destRoot(destinations, homeChainKey, homeEid)`<br>_internal pure_ | Checks the list, then returns the `destRoot` the factory binds into the conduit's address. | tests only | No |
+| `conduitSalt(owner, salt, homeChainKey, homeEid, homeOft, root)`<br>_internal pure_ | The salt a conduit is CREATE2'd at. | LzOftConduitAddress.predictConduit, LzOftConduitFactory.conduitSalt; also tests | No |
+| `predictConduit(factory, proxyInitCodeHash, owner, salt, homeChainKey, homeEid, homeOft, root)`<br>_internal pure_ | The conduit a factory creates for those inputs, given the factory's `PROXY_INIT_CODE_HASH()`. | LzOftConduitFactory.predictConduit; also tests | No |
+
+
 #### `contracts/evm/src/protocols/layerzero/LzOftConduitFactory.sol`
 
 Factory that creates every `layerzero-oft` conduit: the transmitter at `createTransmitter` and each receiver when its bootstrap arrives as an OFT compose.
@@ -1300,38 +1341,34 @@ Factory that creates every `layerzero-oft` conduit: the transmitter at `createTr
 | `deployer()`<br>_IConduitIdentity · external view_ | A conduit's fixed deployer, read back by the factory. | LzOftConduitFactory.signedConduitBootstrap; also tests | Yes via interface (read-only) |
 | `conduitSalt()`<br>_IConduitIdentity · external view_ | A conduit's fixed salt, read back by the factory. | LzOftConduitFactory.signedConduitBootstrap; also tests | Yes via interface (read-only) |
 | `constructor`<br>_LzOftConduitFactory · constructor_ | Stores the implementations, treasury and local chain key and stores `Proxy`'s initcode. | tests only | No (constructor) |
-| `conduitSalt(owner, salt, homeChainKey, homeEid, homeOft, destRoot)`<br>_LzOftConduitFactory · public pure_ | The salt a conduit deploys at, from owner, salt, home chain key and eid, home OFT and destination root. | LzOftConduitFactory.predictConduit, LzOftConduitFactory.createTransmitter, LzOftConduitFactory._authenticateBootstrap, SDK ABI trim list; also tests | Yes, anyone (read-only) |
-| `predictConduit(owner, salt, homeChainKey, homeEid, homeOft, destRoot)`<br>_LzOftConduitFactory · public view_ | The conduit address those inputs produce. Declared by `ILzOftConduitFactoryView`. | LzOftConduitFactory._requireDerived, SDK ABI trim list; also tests | Yes, anyone (read-only) |
-| `createTransmitter(salt, homeOft, leaves)`<br>_LzOftConduitFactory · external_ | Caller creates its conduit, reaching exactly the given destination leaves, after checking each leaf against the home OFT's peers. | SDK ts/lzOft.createLzOftTransmitterCalldata, SDK ABI trim list; also tests | Yes, anyone (state-changing) |
-| `bootstrapRoute(conduit, chainKey)`<br>_LzOftConduitFactory · external view_ | Where a conduit's bootstrap to a chain goes, with the home eid, root and proof that the compose carries. Declared by `ILzOftConduitFactoryView`. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `conduitSalt(owner, salt, homeChainKey, homeEid, homeOft, destRoot)`<br>_LzOftConduitFactory · public pure_ | The salt a conduit deploys at, from owner, salt, home chain key and eid, home OFT and destination root. Declared in: ILzOftConduitFactory. | LzOftConduitFactory.createTransmitter, LzOftConduitFactory._authenticateBootstrap, SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `predictConduit(owner, salt, homeChainKey, homeEid, homeOft, destRoot)`<br>_LzOftConduitFactory · public view_ | The conduit address those inputs produce. Declared in: ILzOftConduitFactory. | LzOftConduitFactory._requireDerived, SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `createTransmitter(salt, homeOft, destinations)`<br>_LzOftConduitFactory · external_ | Caller creates its conduit, reaching exactly the given destinations, after checking each against the home OFT's peers. Declared in: ILzOftConduitFactory. | SDK ts/lzOft.createLzOftTransmitterCalldata, SDK ABI trim list; also tests | Yes, anyone (state-changing) |
+| `bootstrapRoute(conduit, chainKey)`<br>_LzOftConduitFactory · external view_ | Where a conduit's bootstrap to a chain goes, with the home eid, root and proof that the compose carries. Declared in: ILzOftConduitFactory. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `destinationOf(conduit, chainKey)`<br>_LzOftConduitFactory · external view_ | The eid and OFT a conduit reaches a chain through. Declared in: ILzOftConduitFactory. | LzOftTransmitter._messageParam, SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `conduitBootstrap(route, owner, salt, body)`<br>_LzOftConduitFactory · external view_ | The bootstrap message the calling conduit sends itself through its home OFT to the destination factory. | tests only | Yes, anyone (read-only) |
 | `signedConduitBootstrap(route, body)`<br>_LzOftConduitFactory · external view_ | The signed-bootstrap message for the calling conduit to send through its own OFT. Declared in: ILzOftSignedConduitFactory. | LzOftTransmitter._quoteSignedBootstrap, LzOftTransmitter._sendSignedBootstrap, SDK ABI trim list; also tests | Yes, anyone (read-only) |
-| `isSigned(conduit)`<br>_LzOftConduitFactory · external view_ | Whether a conduit was created in signed mode. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
+| `isSigned(conduit)`<br>_LzOftConduitFactory · external view_ | Whether a conduit was created in signed mode. Declared in: ILzOftConduitFactory. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `reportsReceiver(bytes32)`<br>_LzOftConduitFactory · external pure_ | Always false: every chain this binding reaches uses Ethereum's CREATE2. | tests only | Yes, anyone (read-only) |
 | `predictReceiver(bytes32, address, bytes32)`<br>_LzOftConduitFactory · external view_ | The calling conduit's receiver address on any destination, which is its own address. | SDK ABI trim list; also tests | Yes, anyone (read-only) |
 | `lzCompose(_from, bytes32, _message, address, bytes)`<br>_LzOftConduitFactory · external payable_ | The OFT delivers a bootstrap compose; authenticates it and creates and arms the receiver. | tests only | Yes, anyone (state-changing) |
 
-Private helpers: `_armSignedReceiver`, `_authenticate`, `_authenticateBootstrap`, `_callerConduit`, `_createReceiver`, `_createSignedReceiver`, `_destination`, `_forwardValue`, `_homeEid`, `_requireDerived`, `_requireLeaves`.
+Private helpers: `_armSignedReceiver`, `_authenticate`, `_authenticateBootstrap`, `_callerConduit`, `_createReceiver`, `_createSignedReceiver`, `_destination`, `_forwardValue`, `_homeEid`, `_requireDerived`, `_requireDestinations`.
 
 
 #### `contracts/evm/src/protocols/layerzero/LzOftMessage.sol`
 
-Library for sending and quoting through an operator's OFT and for the leaf and bootstrap formats the `layerzero-oft` binding's two ends agree on.
+Library for sending and quoting through an operator's OFT and for the bootstrap compose format the `layerzero-oft` binding's two ends agree on.
 
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
 | `sendParam(dstEid, to, composeMsg, attributes, gas)`<br>_public pure_ | Builds the one OFT `SendParam` that a send and its quote both use. | LzOftTransmitter._messageParam; also tests | No (linked library: its host contract calls it by delegatecall) |
 | `send(oft, param, value, refundTo)`<br>_public_ | Calls the OFT's `send` with the fee and refund address. | LzOftTransmitter._sendMessage; also tests | No (linked library: its host contract calls it by delegatecall) |
 | `quote(oft, param)`<br>_public view_ | The OFT's native fee for a `SendParam`. | LzOftTransmitter._quoteMessage; also tests | No (linked library: its host contract calls it by delegatecall) |
-| `requirePeer(oft, eid, expected)`<br>_internal view_ | Reverts unless the OFT still names the expected peer for an eid. | LzOftConduitFactory._authenticateBootstrap, LzOftConduitFactory._requireLeaves, LzOftReceiver.lzCompose, LzOftTransmitter._messageParam; also tests | No |
-| `leaf(chainKey, eid, oft)`<br>_internal pure_ | A destination's leaf in a conduit's root, hashed twice. | LzOftConduitFactory._authenticateBootstrap, LzOftConduitFactory._requireLeaves; also tests | No |
+| `requirePeer(oft, eid, expected)`<br>_internal view_ | Reverts unless the OFT still names the expected peer for an eid. | LzOftConduitFactory._authenticateBootstrap, LzOftConduitFactory._requireDestinations, LzOftReceiver.lzCompose, LzOftTransmitter._messageParam; also tests | No |
 | `encodeBootstrap(b)`<br>_internal pure_ | ABI-encodes a bootstrap compose message. | LzOftConduitFactory.conduitBootstrap; also tests | No |
 | `decodeBootstrap(message)`<br>_internal pure_ | Decodes a bootstrap compose message. | LzOftConduitFactory._authenticate; also tests | No |
-| `root(leaves)`<br>_internal pure_ | Merkle root over leaves in the given order. | LzOftConduitFactory.createTransmitter; also tests | No |
-| `proof(level, index)`<br>_internal pure_ | Sibling path for a leaf index. | LzOftConduitFactory.bootstrapRoute, LzOftConduitFactory.conduitBootstrap, LzOftConduitFactory.signedConduitBootstrap; also tests | No |
 
-Private helpers: `_up`.
 
 
 #### `contracts/evm/src/protocols/layerzero/LzOftReceiver.sol`
@@ -1951,7 +1988,7 @@ Foundry builders for the `layerzero-oft` conduit binding: options attribute, des
 |---|---|---|---|
 | `createTransmitter(salt, homeOft, leaves)`<br>_ILzOftCreate · external_ | The factory's creation entry point, declared so calldata and selector can be built and checked against the pinned ABI. | LzOft.createTransmitterCalldata; also tests | Yes, owner Safe calls it on the factory |
 | `optionsAttribute(rawOptions)`<br>_LzOft · internal pure_ | Builds the only attribute a `layerzero-oft` conduit accepts, carrying raw options that replace the default compose option. | tests only | Yes, from a Foundry script |
-| `leafHash(leaf)`<br>_LzOft · internal pure_ | Hash of one destination leaf, as `LzOftMessage.leaf` computes it. | LzOft.root; also tests | Yes, from a Foundry script |
+| `leafHash(leaf)`<br>_LzOft · internal pure_ | Hash of one destination leaf, as `LzOftConduitAddress.leafHash` computes it. | LzOft.root; also tests | Yes, from a Foundry script |
 | `requireLeaves(leaves)`<br>_LzOft · internal pure_ | Offline form of the factory's leaf checks: at least one leaf, strictly ascending chain key, nonzero eid and OFT; the second overload also rejects a leaf naming the home chain key or eid. | LzOft.root, LzOft.createTransmitterCalldata | Yes, from a Foundry script |
 | `requireLeaves(leaves, homeChainKey, homeEid)`<br>_LzOft · internal pure_ | Offline form of the factory's leaf checks: at least one leaf, strictly ascending chain key, nonzero eid and OFT; the second overload also rejects a leaf naming the home chain key or eid. | LzOft.root, LzOft.createTransmitterCalldata | Yes, from a Foundry script |
 | `root(leaves)`<br>_LzOft · internal pure_ | Merkle root of the destination leaves (ascending chain key), the `destRoot` bound into the conduit address; second overload adds the home-chain checks. | tests only | Yes, from a Foundry script |
@@ -2163,10 +2200,10 @@ TypeScript builders for the `layerzero-oft` binding: options attribute, destinat
 | Function | What it does | Called by | User-called? |
 |---|---|---|---|
 | `lzOptionsAttribute(rawOptions)`<br>_exported_ | The only attribute a `layerzero-oft` conduit accepts, `abi.encodePacked(selector, rawOptions)`. | tests only | Yes (SDK API: `import` from `@crossecute/sdk`) |
-| `lzOftLeafHash(leaf)`<br>_exported_ | `LzOftMessage.leaf`: a destination leaf's hash. | lzOft.lzOftRoot; also tests | Yes (SDK API: `import` from `@crossecute/sdk`) |
+| `lzOftLeafHash(leaf)`<br>_exported_ | `LzOftConduitAddress.leafHash`: a destination leaf's hash. | lzOft.lzOftRoot; also tests | Yes (SDK API: `import` from `@crossecute/sdk`) |
 | `requireLzOftLeaves(leaves, home)`<br>_exported_ | The factory's leaf checks without the peer reads: at least one leaf, strictly ascending chain key, nonzero eid and OFT, and with `home` none naming the home. | lzOft.createLzOftTransmitterCalldata, lzOft.lzOftLeaves, lzOft.lzOftRoot; also tests | Yes (SDK API: `import` from `@crossecute/sdk`) |
 | `lzOftLeaves(destinations, home)`<br>_exported_ | Leaves for destinations in the ascending chain-key order the factory requires, rejecting two destinations on one chain. | tests only | Yes (SDK API: `import` from `@crossecute/sdk`) |
-| `lzOftRoot(leaves, home)`<br>_exported_ | `LzOftMessage.root`: the `destRoot` bound into the conduit's address, over leaves already in order. | tests only | Yes (SDK API: `import` from `@crossecute/sdk`) |
+| `lzOftRoot(leaves, home)`<br>_exported_ | `LzOftConduitAddress.destRoot`: the `destRoot` bound into the conduit's address, over leaves already in order. | tests only | Yes (SDK API: `import` from `@crossecute/sdk`) |
 | `createLzOftTransmitterCalldata(salt, homeOft, leaves)`<br>_exported_ | `LzOftConduitFactory.createTransmitter` calldata, which the owner Safe sends as a CALL. | lzOft.lzOftCreateTx; also tests | Yes (SDK API: `import` from `@crossecute/sdk`) |
 | `lzOftCreateTx(chainId, ownerSafe, factory, nonce, salt, homeOft, leaves)`<br>_exported_ | The owner Safe's CALL transaction to the factory that creates the conduit. | tests only | Yes (SDK API: `import` from `@crossecute/sdk`) |
 | `lzOftConduitSalt(f)`<br>_exported_ | `LzOftConduitFactory.conduitSalt`. | lzOft.predictLzOftConduit; also tests | Yes (SDK API: `import` from `@crossecute/sdk`) |
@@ -2298,8 +2335,8 @@ A dash means that surface has no function for the concept. Only concepts that ha
 | Signed bootstrap body | struct `SignedBootstrap`, checked by `SignedTransmitterLib.requireBootstrapBody` | `SignedDispatch.bootstrapBodySigned` | `encodeBootstrapBodySigned` |
 | Source Safe transaction for a send | - | `SignedDispatch.transaction` | `signedDispatchTx` |
 | Standalone and Merkle wire bodies | `ISignedReceiver` consumes them | `SignedDispatch.standaloneWire`, `merkleWire` | `encodeStandaloneWire`, `encodeMerkleWire` |
-| Merkle root, proof and tree | `DispatchLeaves.requireProof` | `SignedDispatch.root`, `proof`, `tree`, `treeOfHashes` | `dispatchTree`, `dispatchTreeFromHashes`, `verifyDispatchProof` |
-| Leaf hash | `DispatchLeaves.hash` | - | `executionLeafHash`, `dispatchLeafHash` |
+| Merkle root, proof and tree | `OrderedMerkle.root`, `proof`; `DispatchLeaves.requireProof` | `SignedDispatch.root`, `proof`, `tree`, `treeOfHashes` | `dispatchTree`, `dispatchTreeFromHashes`, `verifyDispatchProof` |
+| Leaf hash | `DispatchLeaves.hash`, through `OrderedMerkle.leafHash` | - | `executionLeafHash`, `dispatchLeafHash` |
 | Merkle package build and check | - | `MerklePackages.build`, `requireMerklePlan` | `buildMerklePackage`, `requireMerklePlan` |
 | Merkle package JSON | - | `MerklePackageJson.toJson` | `merklePackageToJsonObject`, `serializeMerklePackage` |
 | Safe transaction hash | `SafeHashes.transactionHash` (guard) | `SafeTxHash.hash` | `safeTxHashes` |
@@ -2308,11 +2345,11 @@ A dash means that surface has no function for the concept. Only concepts that ha
 | Authority graph and record hash | `AuthorityUpdateEncoding.graphHash`, `recordHash` | - | `authorityGraphHash`, `authorityRecordHash` |
 | Select a new authority graph | `ISourceAuthorityGuard.selectAuthority` | - | action `select` in `buildAuthorityProposal` |
 | EVM chain key | `ChainKey.forEvm(chainId)` and `Erc7930.chainKey(envelope)` produce the same key for the same chain | - | `chainKey` |
-| LayerZero OFT leaf | `LzOftMessage.leaf` | `LzOft.leafHash` | `lzOftLeafHash` |
-| LayerZero OFT root | `LzOftMessage.root` | `LzOft.root` | `lzOftRoot` |
-| LayerZero OFT conduit salt and address | `LzOftConduitFactory.conduitSalt`, `predictConduit` | `LzOft.conduitSalt`, `predictConduit` | `lzOftConduitSalt`, `predictLzOftConduit` |
+| LayerZero OFT leaf | `LzOftConduitAddress.leafHash` | `LzOft.leafHash` | `lzOftLeafHash` |
+| LayerZero OFT root | `LzOftConduitAddress.destRoot` | `LzOft.root` | `lzOftRoot` |
+| LayerZero OFT conduit salt and address | `LzOftConduitAddress.conduitSalt`, `predictConduit` | `LzOft.conduitSalt`, `predictConduit` | `lzOftConduitSalt`, `predictLzOftConduit` |
 | LayerZero OFT options attribute | `LzMessage` (options attribute) | `LzOft.optionsAttribute` | `lzOptionsAttribute` |
-| LayerZero OFT leaf check | `LzOftConduitFactory._requireLeaves` | `LzOft.requireLeaves` | `requireLzOftLeaves` |
+| LayerZero OFT leaf check | `LzOftConduitAddress.requireDestinations` | `LzOft.requireLeaves` | `requireLzOftLeaves` |
 | `createTransmitter` calldata | `LzOftConduitFactory.createTransmitter` | `LzOft.createTransmitterCalldata` | `createLzOftTransmitterCalldata`, `lzOftCreateTx` |
 | Provider chain id setter | `setProviderId` on `CcipTransceiverBase`, `HyperlaneTransceiverBase`, `LzTransceiverBase`, `OpStackTransceiver` and `WormholeTransceiver`, each wrapping `ProviderChainId._setProviderId` | - | - |
 
