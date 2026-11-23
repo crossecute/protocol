@@ -192,7 +192,7 @@ contract LzOftConduitFactoryHomeTest is LzOftConduitFactoryBase {
     function test_aDestinationTheHomeOftDoesNotPeerIsRefused() public {
         vm.expectRevert(
             abi.encodeWithSelector(
-                LzOftMessage.PeerChanged.selector,
+                ILzOftConduitFactory.PeerChanged.selector,
                 DEST_EID,
                 bytes32(uint256(uint160(address(0xBAD)))),
                 bytes32(uint256(uint160(DST_OFT)))
@@ -398,7 +398,7 @@ contract LzOftConduitFactoryDestinationTest is LzOftConduitFactoryBase {
     function test_anOftThatNoLongerPeersTheHomeIsRefused() public {
         bytes memory m = _queue(oft, conduit, _bootstrap(root, new bytes32[](0)));
         oft.setPeer(HOME_EID, address(0xBAD));
-        vm.expectPartialRevert(LzOftMessage.PeerChanged.selector);
+        vm.expectPartialRevert(ILzOftConduitFactory.PeerChanged.selector);
         _run(oft, m);
     }
 

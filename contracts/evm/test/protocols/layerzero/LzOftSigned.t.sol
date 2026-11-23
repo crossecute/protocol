@@ -269,7 +269,7 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         SafeTxEvidence memory e = _bootstrapEvidence();
         oft.setPeer(DEST_EID, address(0xBAD));
         guard.stage(address(safe), e.signedSafeTx.safeTx, e.signedSafeTx.signatures);
-        vm.expectPartialRevert(LzOftMessage.PeerChanged.selector);
+        vm.expectPartialRevert(ILzOftConduitFactory.PeerChanged.selector);
         safe.exec(address(transmitter), 0, e.signedSafeTx.safeTx.data);
         assertFalse(transmitter.isBootstrapped(destKey));
         (uint32 eid, address destination) = transmitter.destinationOf(destKey);

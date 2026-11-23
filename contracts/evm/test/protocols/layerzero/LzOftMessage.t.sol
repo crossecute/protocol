@@ -7,6 +7,7 @@ import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
 import {ProviderAttribute} from "src/protocols/ProviderAttribute.sol";
 import {Call} from "src/messaging/Call.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 
 contract PeerOft {
     mapping(uint32 => bytes32) public peers;
@@ -101,7 +102,7 @@ contract LzOftMessageTest is Test {
         oft.setPeer(EID, address(0xBAD));
         vm.expectRevert(
             abi.encodeWithSelector(
-                LzOftMessage.PeerChanged.selector,
+                ILzOftConduitFactory.PeerChanged.selector,
                 EID,
                 bytes32(uint256(uint160(TO))),
                 bytes32(uint256(uint160(address(0xBAD))))

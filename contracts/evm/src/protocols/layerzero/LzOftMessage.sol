@@ -5,6 +5,7 @@ import {IOFT, SendParam} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.
 import {MessagingFee} from "@layerzerolabs/oapp-evm/contracts/oapp/OAppSender.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {LzMessage} from "src/protocols/layerzero/LzMessage.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 import {Call} from "src/messaging/Call.sol";
 
 /// @notice Send and quote through an operator's OFT, and the formats the `layerzero-oft`
@@ -19,9 +20,6 @@ library LzOftMessage {
     ///      the offset private and returns the payload in memory, which a receiver cannot pass
     ///      to `_onMessageFrom`.
     uint256 internal constant COMPOSE_MSG_OFFSET = 76;
-
-    /// @dev The OFT no longer names `expected` as its peer for `eid`.
-    error PeerChanged(uint32 eid, bytes32 expected, bytes32 actual);
 
     /// @notice The bootstrap's compose message: what the destination factory derives the
     ///         conduit from and checks the sending OFT against.
@@ -65,10 +63,11 @@ library LzOftMessage {
     }
 
     /// @notice Refuse unless `oft` still names `expected` as its peer for `eid`.
+    /// @dev The error is the factory interface's, so the shipped ABI decodes it.
     function requirePeer(address oft, uint32 eid, address expected) internal view {
         bytes32 actual = IOAppCore(oft).peers(eid);
         bytes32 want = bytes32(uint256(uint160(expected)));
-        if (actual != want) revert PeerChanged(eid, want, actual);
+        if (actual != want) revert ILzOftConduitFactory.PeerChanged(eid, want, actual);
     }
 
     function encodeBootstrap(Bootstrap memory b) internal pure returns (bytes memory) {

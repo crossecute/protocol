@@ -13,6 +13,7 @@ import {Erc7930} from "src/addressing/Erc7930.sol";
 import {deployConduit} from "test/DeployProxy.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 import {bootstrapPayload} from "test/Harness.sol";
+import {ILzOftConduitFactory} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 
 interface IHomeOft {
     function homeOft() external view returns (address);
@@ -178,7 +179,7 @@ contract LzOftTransmitterTest is Test {
     function test_aRePeeredHomeOftRefusesTheBootstrapAndItsQuote() public {
         oft.setPeer(DEST_EID, address(0xBAD));
         bytes memory err = abi.encodeWithSelector(
-            LzOftMessage.PeerChanged.selector,
+            ILzOftConduitFactory.PeerChanged.selector,
             DEST_EID,
             bytes32(uint256(uint160(DST_OFT))),
             bytes32(uint256(uint160(address(0xBAD))))
@@ -229,10 +230,10 @@ contract LzOftTransmitterTest is Test {
         bytes memory recipient = conduit.recipientOn(DEST);
         bytes memory payload = Payload.encodeCalls(_calls());
 
-        vm.expectPartialRevert(LzOftMessage.PeerChanged.selector);
+        vm.expectPartialRevert(ILzOftConduitFactory.PeerChanged.selector);
         conduit.quoteMessage(recipient, payload, new bytes[](0));
         vm.prank(owner);
-        vm.expectPartialRevert(LzOftMessage.PeerChanged.selector);
+        vm.expectPartialRevert(ILzOftConduitFactory.PeerChanged.selector);
         conduit.sendMessage(recipient, payload, new bytes[](0));
     }
 

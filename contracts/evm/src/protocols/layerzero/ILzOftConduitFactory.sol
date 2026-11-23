@@ -37,6 +37,9 @@ interface ILzOftConduitFactory {
     error NotAnEvmChain(bytes32 chainKey);
     error WrongBootstrapMode();
     error HomeChainMismatch(uint256 sourceChainId, bytes32 homeChainKey);
+    /// @dev The OFT no longer names `expected` as its peer for `eid`: raised at creation, at each
+    ///      send and at each delivery.
+    error PeerChanged(uint32 eid, bytes32 expected, bytes32 actual);
 
     /// @notice Create the caller's conduit, homed on this chain, reaching exactly `destinations`.
     /// @dev The caller is the owner. `destinations` must be in strictly ascending `chainKey`
