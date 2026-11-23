@@ -9,6 +9,7 @@ import {AuthoritySelection} from "@crossecute/safe-guard/authority/AuthorityUpda
 import {AuthorityGraph} from "src/messaging/authority/AuthorityGraph.sol";
 import {ChildUpdate} from "src/messaging/authority/ChildUpdate.sol";
 import {ReceiverAuthority} from "src/messaging/authority/ReceiverAuthority.sol";
+import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
 import {IConduitTransceiver} from "src/messaging/outbound/TransmitterBase.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {DispatchLeaves} from "src/messaging/signed/DispatchLeaves.sol";
@@ -67,12 +68,6 @@ library SignedTransmitterLib {
         return _standalone(ISignedTransmitterView(address(this)).deployer(), abi.decode(args, (SafeTxEvidence)));
     }
 
-    /// @dev The destination reports its receiver or is not EVM; signed receivers are created
-    ///      only where the home derives them.
-    error SignedReceiverNotDerivable(bytes32 destinationChainKey);
-    error NoSignedAuthority(address safe);
-    error BootstrapAuthorityMismatch();
-
     /// @notice Consume the owner's staged transaction without reading it.
     /// @dev Consumption admits only a signed owner execution targeting this transmitter.
     function consumeStaged() external {
@@ -90,7 +85,7 @@ library SignedTransmitterLib {
     {
         ISignedTransmitterView self = ISignedTransmitterView(address(this));
         IConduitTransceiver t = IConduitTransceiver(self.transceiver());
-        if (!typed || t.reportsReceiver(chainKey)) revert SignedReceiverNotDerivable(chainKey);
+        if (!typed || t.reportsReceiver(chainKey)) revert ISignedTransmitter.SignedReceiverNotDerivable(chainKey);
         return _bootstrapAuthority(self.deployer(), body);
     }
 
@@ -99,11 +94,11 @@ library SignedTransmitterLib {
         Payload.decodeCallsFromMemory(bootstrap.setupCalls);
         address guard = GuardDiscovery.transactionGuard(safe);
         AuthoritySelection memory selected = ISourceAuthorityGuard(guard).selection(safe);
-        if (selected.authorityHash == bytes32(0)) revert NoSignedAuthority(safe);
+        if (selected.authorityHash == bytes32(0)) revert ISignedTransmitter.NoSignedAuthority(safe);
         if (
             guard != bootstrap.guard || selected.updateHead != bootstrap.updateHead
                 || selected.authorityHash != ReceiverAuthority.encodedGraphHash(block.chainid, bootstrap.authority)
-        ) revert BootstrapAuthorityMismatch();
+        ) revert ISignedTransmitter.BootstrapAuthorityMismatch();
         return body;
     }
 
@@ -132,8 +127,6 @@ library SignedTransmitterLib {
         return (root, leafHash, leaf.destination, leaf.attributes, wire);
     }
 
-    error AuthorityNotPublished(bytes32 updateHead);
-
     /// @notice Require the exact portable evidence published by source execution.
     /// @dev Live owners may have rotated since publication; recollecting approvals would change
     ///      the portable quorum that the guard verified. Destinations still verify independently.
@@ -145,7 +138,7 @@ library SignedTransmitterLib {
             ISourceAuthorityGuard(GuardDiscovery.transactionGuard(safe)).publishedAuthority(safe, head)
                 != keccak256(submission)
         ) {
-            revert AuthorityNotPublished(head);
+            revert ISignedTransmitter.AuthorityNotPublished(head);
         }
         wire = abi.encode(WIRE_AUTHORITY, submission);
     }

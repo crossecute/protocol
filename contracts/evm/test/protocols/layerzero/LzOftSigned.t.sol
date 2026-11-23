@@ -7,7 +7,6 @@ import {LzOftConduitFactory} from "src/protocols/layerzero/LzOftConduitFactory.s
 import {LzOftTransmitter} from "src/protocols/layerzero/LzOftTransmitter.sol";
 import {LzOftReceiver} from "src/protocols/layerzero/LzOftReceiver.sol";
 import {LzOftMessage} from "src/protocols/layerzero/LzOftMessage.sol";
-import {SignedTransmitter} from "src/messaging/outbound/SignedTransmitter.sol";
 import {ISignedTransmitter} from "src/messaging/outbound/ISignedTransmitter.sol";
 import {ISignedReceiver} from "src/messaging/inbound/ISignedReceiver.sol";
 import {Call} from "src/messaging/Call.sol";
@@ -19,7 +18,6 @@ import {StubSafe, StubGuard} from "test/signed/StubSafe.sol";
 import {Conduits} from "src/conduit/Conduits.sol";
 import {Payload} from "src/messaging/Payload.sol";
 import {SafeAuthorityGraph} from "src/messaging/signed/SafeAuthorityGraph.sol";
-import {SignedTransmitterLib} from "src/messaging/outbound/SignedTransmitterLib.sol";
 import {SafeSigs, Records} from "test/signed/SignedFixtures.sol";
 import {MockOft} from "test/protocols/layerzero/MockOft.sol";
 
@@ -419,17 +417,17 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         (bytes memory payload, bytes[] memory attributes) =
             abi.decode(_args(e.signedSafeTx.safeTx.data), (bytes, bytes[]));
         guard.setSelection(address(safe), bytes32(uint256(2)), bytes32(uint256(3)));
-        vm.expectRevert(SignedTransmitterLib.BootstrapAuthorityMismatch.selector);
+        vm.expectRevert(ISignedTransmitter.BootstrapAuthorityMismatch.selector);
         transmitter.quoteBootstrap(payload, attributes);
         guard.stage(address(safe), e.signedSafeTx.safeTx, e.signedSafeTx.signatures);
-        vm.expectRevert(SignedTransmitterLib.BootstrapAuthorityMismatch.selector);
+        vm.expectRevert(ISignedTransmitter.BootstrapAuthorityMismatch.selector);
         safe.exec(address(transmitter), 0, e.signedSafeTx.safeTx.data);
         assertFalse(transmitter.isBootstrapped(destKey));
     }
 
     function test_signedOwnershipCannotMove() public {
         vm.prank(address(safe));
-        vm.expectRevert(SignedTransmitter.OwnershipFixed.selector);
+        vm.expectRevert(ISignedTransmitter.OwnershipFixed.selector);
         transmitter.transferOwnership(address(0xBAD));
     }
 }

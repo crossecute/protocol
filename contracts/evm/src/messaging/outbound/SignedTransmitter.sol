@@ -39,23 +39,6 @@ abstract contract SignedTransmitter is OwnableTransmitter, ISignedTransmitter, I
     bytes32 private constant SIGNED_TRANSMITTER_STORAGE =
         0x8566b709a423746963d200f6840e900d54ab8ebbe69c13e71ed1cbb86e81aa00;
 
-    event SignedTransmitterInitialized();
-    event RootRegistered(bytes32 indexed root);
-    event AuthorityRelayed(bytes32 indexed updateHead, address indexed relayer);
-    event LeafRelayed(bytes32 indexed leafHash, address indexed relayer);
-
-    error NotSigned();
-    error AlreadySigned();
-    error OwnershipFixed();
-    error SignedQuoteRequired();
-    error RootNotPublished(bytes32 root);
-    error RootNotRegistered(bytes32 root);
-    error LeafAlreadyRelayed(bytes32 leafHash);
-    error InsufficientPayment(uint256 fee, uint256 paid);
-    error RefundFailed();
-    error BalanceChanged(uint256 before, uint256 afterwards);
-    error RelayReentered();
-
     function _signedStorage() private pure returns (SignedTransmitterStorage storage $) {
         assembly ("memory-safe") {
             $.slot := SIGNED_TRANSMITTER_STORAGE
