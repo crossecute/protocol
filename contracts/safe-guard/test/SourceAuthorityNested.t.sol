@@ -21,7 +21,6 @@ import {SafeTx, SignedSafeTx} from "../src/ICrossecuteGuard.sol";
 import {SafeHashes} from "../src/SafeHashes.sol";
 import {AuthorityUpdate} from "../src/authority/AuthorityUpdateTypes.sol";
 import {ISourceAuthorityGuard} from "../src/authority/ISourceAuthorityGuard.sol";
-import {SourceAuthorityGuard} from "../src/authority/SourceAuthorityGuard.sol";
 import {Batch} from "./Batch.sol";
 import {SourceAuthorityBase} from "./SourceAuthorityBase.sol";
 
@@ -184,7 +183,7 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
         Batch.Call[] memory calls = _activationCalls(a, graph, _aSigners(KEY_C));
         vm.expectRevert(
             abi.encodeWithSelector(
-                SourceAuthorityGuard.PositionNotExecuted.selector, address(b), bytes32(uint256(0xBAD))
+                ISourceAuthorityGuard.PositionNotExecuted.selector, address(b), bytes32(uint256(0xBAD))
             )
         );
         batch.run(calls);
@@ -194,7 +193,7 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
         SafeAuthorityRecord memory wrong = _record(b);
         wrong.owners[0] = SafeOwner(vm.addr(KEY_D), OWNER_EOA);
         Batch.Call[] memory calls = _activationCalls(a, _aGraph(wrong, bHead0), _aSigners(KEY_C));
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.PositionNotExecuted.selector, address(b), bHead0));
+        vm.expectRevert(abi.encodeWithSelector(ISourceAuthorityGuard.PositionNotExecuted.selector, address(b), bHead0));
         batch.run(calls);
     }
 
@@ -218,7 +217,7 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
             _activationCalls(parent, _graph(_record(parent, kinds), _record(never), bytes32(uint256(1))), signers);
         vm.expectRevert(
             abi.encodeWithSelector(
-                SourceAuthorityGuard.PositionNotExecuted.selector, address(never), bytes32(uint256(1))
+                ISourceAuthorityGuard.PositionNotExecuted.selector, address(never), bytes32(uint256(1))
             )
         );
         batch.run(calls);
@@ -280,7 +279,9 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
         AuthorityGraph memory next = _aGraph(bNext.nodes[0].record, position);
         bytes memory sig = _selectSig(next, KEY_C);
         Batch.Call[] memory calls = _selectCalls(next, children, sig, sig);
-        vm.expectRevert(abi.encodeWithSelector(SourceAuthorityGuard.PositionNotExecuted.selector, address(b), position));
+        vm.expectRevert(
+            abi.encodeWithSelector(ISourceAuthorityGuard.PositionNotExecuted.selector, address(b), position)
+        );
         batch.run(calls);
     }
 
@@ -421,7 +422,7 @@ contract SourceAuthorityNestedTest is SourceAuthorityBase {
         );
         _install(withModule, signers, guard, _permissiveConfig(), true);
         Batch.Call[] memory calls = _activationCalls(withModule, _graph(_record(withModule)), signers);
-        vm.expectRevert(SourceAuthorityGuard.ModulesEnabled.selector);
+        vm.expectRevert(ISourceAuthorityGuard.ModulesEnabled.selector);
         batch.run(calls);
     }
 }

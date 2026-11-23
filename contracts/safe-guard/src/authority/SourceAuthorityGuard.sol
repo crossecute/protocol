@@ -67,24 +67,6 @@ abstract contract SourceAuthorityGuard is ISourceAuthorityGuard {
     // solhint-disable-next-line private-vars-leading-underscore
     mapping(address safe => mapping(bytes32 head => bytes32 submissionHash)) public publishedAuthority;
 
-    error SafeBusy(address safe);
-    error NotActivated(address safe);
-    error AlreadyActivated(address safe);
-    error NoStagedUpdate(address safe);
-    error UnexpectedAuthorityCall(address safe);
-    error ActivationChildUpdates();
-    error GuardNotInstalled(uint256 slot);
-    error UnrecognizedSingleton(address singleton);
-    error UnrecognizedHandler(address handler);
-    error ModulesEnabled();
-    error OwnersMismatch();
-    error PositionNotExecuted(address safe, bytes32 position);
-    error SelfCallDenied();
-    error DelegatecallDenied(address target);
-    error OrdinaryBatchDenied();
-    error FinalOwnersMismatch();
-    error AuthorityHashMismatch(bytes32 live, bytes32 txHash);
-
     constructor(Pins memory pins) {
         MULTISEND_CALL_ONLY = pins.multiSendCallOnly;
         SIGN_MESSAGE_LIB = pins.signMessageLib;

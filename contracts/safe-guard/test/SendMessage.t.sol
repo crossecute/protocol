@@ -12,7 +12,7 @@ import {AccessSelector} from "policy-engine/libraries/AccessSelector.sol";
 import {AllowPolicy} from "policy-engine/policies/AllowPolicy.sol";
 import {Safe} from "safe-smart-account/Safe.sol";
 import {Enum} from "safe-smart-account/libraries/Enum.sol";
-import {SourceAuthorityGuard} from "../src/authority/SourceAuthorityGuard.sol";
+import {ISourceAuthorityGuard} from "../src/authority/ISourceAuthorityGuard.sol";
 import {GuardDiscovery} from "../src/GuardDiscovery.sol";
 import {ICrossecuteGuard, SafeTx, SignedSafeTx} from "../src/ICrossecuteGuard.sol";
 import {SafeHashes} from "../src/SafeHashes.sol";
@@ -402,7 +402,7 @@ contract SendMessageTest is GuardTestBase {
         bytes memory batchData = abi.encodePacked(uint8(0), address(transmitter), uint256(0), data.length, data);
         bytes memory call = abi.encodeCall(multiSend.multiSend, (batchData));
         bytes memory sigs = _signFor(safe, _signers(), address(multiSend), 0, call, Enum.Operation.DelegateCall);
-        vm.expectRevert(SourceAuthorityGuard.OrdinaryBatchDenied.selector);
+        vm.expectRevert(ISourceAuthorityGuard.OrdinaryBatchDenied.selector);
         _execWith(safe, address(multiSend), 0, call, Enum.Operation.DelegateCall, sigs);
     }
 
