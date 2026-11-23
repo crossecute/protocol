@@ -229,11 +229,11 @@ the receiver's frame; the OFT's own lzReceive gas is the operator's enforced opt
 
 | Delivery, `layerzero-oft` | Gas |
 | --- | --- |
-| Bootstrap to the factory, 1 destination, no calls | 469,932 |
-| Bootstrap to the factory, 8 destinations, one call | 477,481 |
+| Bootstrap to the factory, 1 destination, no calls | 469,908 |
+| Bootstrap to the factory, 8 destinations, one call | 477,459 |
 | Payload to an existing receiver, no calls | 34,357 |
 
-Measured 2026-11-23 at `b9e60f8` against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
+Measured 2026-11-23 at `b45a484` against the mock endpoint and OFT. `LzOftForkDeliveryGasTest`
 (`test/fork/LzOftFork.t.sol`) measures the same way through frxUSD on a fork of each destination:
 homed on Fraxtal, to Ethereum and Arbitrum; homed on Ethereum, to Fraxtal, the only one of these
 chains Ethereum's frxUSD peers. It runs lzCompose through the real `EndpointV2` into the factory
