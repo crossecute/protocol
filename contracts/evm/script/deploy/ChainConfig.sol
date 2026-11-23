@@ -127,7 +127,7 @@ library ChainConfig {
 
     function _providerIds(string memory toml, ChainEntry[] memory cs)
         private
-        view
+        pure
         returns (string[] memory names, uint256[] memory ids)
     {
         uint256 bits = VM.parseTomlUint(toml, ".id_bits");

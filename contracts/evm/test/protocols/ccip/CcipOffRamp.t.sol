@@ -189,13 +189,14 @@ abstract contract CcipOffRampFixture is Test {
         return MessageV1Codec._encodeMessageV1(m);
     }
 
-    function _proof(bytes memory message, uint256 key) internal returns (bytes memory) {
+    function _proof(bytes memory message, uint256 key) internal pure returns (bytes memory) {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, keccak256(message));
         return abi.encode(v, r, s);
     }
 
     function _attestations(bytes memory message, bool includeAdditional)
         internal
+        view
         returns (address[] memory ccvs, bytes[] memory proofs)
     {
         ccvs = new address[](includeAdditional ? 2 : 1);

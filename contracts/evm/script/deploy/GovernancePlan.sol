@@ -285,7 +285,7 @@ library GovernancePlan {
 
     function _chainCalls(Plan memory p, ChainEntry memory local, address registry, Call[] memory calls, uint256 n)
         private
-        view
+        pure
         returns (uint256)
     {
         for (uint256 i; i < p.chains.length; ++i) {
@@ -303,7 +303,7 @@ library GovernancePlan {
     ///      to itself.
     function _providerCalls(Plan memory p, ChainEntry memory local, address registry, Call[] memory calls, uint256 n)
         private
-        view
+        pure
         returns (uint256)
     {
         uint256 providers = p.g.providers.length;
@@ -365,7 +365,7 @@ library GovernancePlan {
     /// @dev The same batch goes to every registry. A pair is `Pending` in all of them or in none.
     function rotationBatch(Plan memory p, address newDeployer, PendingPair[] memory pending)
         internal
-        view
+        pure
         returns (address[] memory targets, uint256[] memory values, bytes[] memory payloads)
     {
         address registry = address(ChainDeploy.predict(p.g).registry);
@@ -387,7 +387,7 @@ library GovernancePlan {
 
     function scheduleRotation(Plan memory p, address newDeployer, PendingPair[] memory pending)
         internal
-        view
+        pure
         returns (Call memory)
     {
         (address[] memory targets, uint256[] memory values, bytes[] memory payloads) =
@@ -404,7 +404,7 @@ library GovernancePlan {
     /// @notice The transaction anyone submits on any chain once its timelock's delay has passed.
     function executeRotation(Plan memory p, address newDeployer, PendingPair[] memory pending)
         internal
-        view
+        pure
         returns (Tx memory)
     {
         (address[] memory targets, uint256[] memory values, bytes[] memory payloads) =
@@ -420,7 +420,7 @@ library GovernancePlan {
     ///         through the first proposer's transmitter.
     function rotateHome(Plan memory p, address newDeployer, PendingPair[] memory pending)
         internal
-        view
+        pure
         returns (Tx[] memory txs)
     {
         Call[] memory schedule = new Call[](1);
@@ -434,7 +434,7 @@ library GovernancePlan {
     ///         proposer of that chain's timelock.
     function rotateRemote(Plan memory p, address newDeployer, PendingPair[] memory pending)
         internal
-        view
+        pure
         returns (Tx[] memory txs)
     {
         string memory name = p.g.proposers[0];

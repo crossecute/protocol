@@ -200,10 +200,11 @@ library Records {
     /// @notice Convert test private keys into ordered EOA owner entries.
     /// @dev Graph records and signature fixtures must agree on the same owner addresses and
     ///      kinds.
-    function eoaOwners(uint256[] memory pks) internal pure returns (SafeOwner[] memory owners) {
-        owners = new SafeOwner[](pks.length);
-        for (uint256 i; i < pks.length; ++i) {
-            owners[i] = SafeOwner(Vm(address(uint160(uint256(keccak256("hevm cheat code"))))).addr(pks[i]), OWNER_EOA);
+    function eoaOwners(uint256[] memory privateKeys) internal pure returns (SafeOwner[] memory owners) {
+        owners = new SafeOwner[](privateKeys.length);
+        for (uint256 i; i < privateKeys.length; ++i) {
+            owners[i] =
+                SafeOwner(Vm(address(uint160(uint256(keccak256("hevm cheat code"))))).addr(privateKeys[i]), OWNER_EOA);
         }
     }
 

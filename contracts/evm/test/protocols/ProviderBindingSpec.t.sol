@@ -1050,8 +1050,7 @@ abstract contract ProviderSignedLockSpec is ProviderReceiveSpec, ProviderFixture
         assertEq(reason, abi.encodeWithSignature("ReentrancyGuardReentrantCall()"));
         // A provider may record the failure instead of reverting, so the head check after the
         // outer delivery is what proves this did not apply.
-        // forge-lint: disable-next-line(unchecked-call) outcome checked through the head below
-        address(this).call(abi.encodeCall(this.deliverAuthority, ()));
+        try this.deliverAuthority() {} catch {}
     }
 
     function deliverAuthority() external {
