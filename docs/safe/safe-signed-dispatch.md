@@ -673,8 +673,8 @@ How the pieces fit:
 signed mode, and the owner's live graph must be derivable. The receiver's authority is selected
 at bootstrap. The conduit stores its creation-time mode, deployer and salt.
 `isSigned(conduit)` reports that mode for registered source conduits.
-`signedConduitBootstrap` reads the calling conduit's deployer and salt and checks its address
-against the stored route. Both modes use
+`signedConduitBootstrap` takes the calling conduit's deployer and salt and checks that they
+derive its address from the stored route, as `conduitBootstrap` does. Both modes use
 `keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot))` as their CREATE2 salt.
 The six-argument `predictConduit` exposes derivation; `isSigned(conduit)` and
 `SignedConduitCreated` expose the selected source mode. The route root authenticates OFT routing.

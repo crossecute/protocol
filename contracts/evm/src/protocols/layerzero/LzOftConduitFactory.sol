@@ -25,12 +25,6 @@ import {ISignedTransmitterInit} from "src/messaging/outbound/ISignedTransmitter.
 import {ISignedReceiverInit} from "src/messaging/inbound/ISignedReceiver.sol";
 import {Call} from "src/messaging/Call.sol";
 
-/// @dev A conduit's creation-time identity, which it fixes for life.
-interface IConduitIdentity {
-    function deployer() external view returns (address);
-    function conduitSalt() external view returns (bytes32);
-}
-
 /// @title LzOftConduitFactory
 /// @notice Creates every `layerzero-oft` conduit: the transmitter on its home, when its
 ///         operator calls `createTransmitter`, and each receiver, when the conduit's bootstrap
@@ -176,52 +170,43 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
     /// @notice The bootstrap the calling conduit sends itself, through its home OFT, to this
     ///         factory on the chain `route` names.
     /// @dev The conduit sends it, not this factory: the destination authenticates the conduit as
-    ///      the compose's `composeFrom`. `(owner, salt)` must derive the caller with its stored
-    ///      fields, so the compose names the conduit the destination will derive.
+    ///      the compose's `composeFrom`.
     function conduitBootstrap(bytes calldata route, address owner, bytes32 salt, bytes calldata body)
         external
         view
         returns (bytes memory recipient, bytes memory message)
     {
-        Conduit memory a = _callerConduit();
-        _requireDerived(a, owner, salt);
-        if (ISignedTransmitterInit(msg.sender).isSigned()) revert WrongBootstrapMode();
-        bytes32 chainKey = keccak256(route);
-        Erc7930.Interop memory io = Erc7930.parseStrict(route);
-        if (io.chainType != Erc7930.CT_EIP155) revert NotAnEvmChain(chainKey);
-        CommittedDestination memory d = _destination(msg.sender, chainKey);
-
-        message = LzOftMessage.encodeBootstrap(
-            LzOftMessage.Bootstrap(
-                owner,
-                salt,
-                localChainKey,
-                a.homeEid,
-                a.homeOft,
-                a.destRoot,
-                OrderedMerkle.proof(_leafHashes[msg.sender], d.index),
-                Payload.decodeCalls(body)
-            )
-        );
-        recipient = Erc7930.encode(io.chainType, io.chainRef, abi.encodePacked(address(this)));
+        LzOftMessage.Bootstrap memory b;
+        (recipient, b) = _bootstrap(route, owner, salt, false, Payload.decodeCalls(body));
+        message = LzOftMessage.encodeBootstrap(b);
     }
 
-    /// @notice Build a signed bootstrap for the calling conduit to send through its own OFT.
-    function signedConduitBootstrap(bytes calldata route, bytes calldata body)
+    /// @inheritdoc ILzOftSignedConduitFactory
+    function signedConduitBootstrap(bytes calldata route, address owner, bytes32 salt, bytes calldata body)
         external
         view
         returns (bytes memory recipient, bytes memory message)
     {
+        LzOftMessage.Bootstrap memory b;
+        (recipient, b) = _bootstrap(route, owner, salt, true, new Call[](0));
+        message = abi.encode(SIGNED_BOOTSTRAP, b, block.chainid, body);
+    }
+
+    /// @dev `(owner, salt)` must derive the caller from its stored fields, so the compose names
+    ///      the conduit the destination derives, and the caller's mode must be `signed`.
+    function _bootstrap(bytes calldata route, address owner, bytes32 salt, bool signed, Call[] memory calls)
+        private
+        view
+        returns (bytes memory recipient, LzOftMessage.Bootstrap memory b)
+    {
         Conduit memory a = _callerConduit();
-        address owner = IConduitIdentity(msg.sender).deployer();
-        bytes32 salt = IConduitIdentity(msg.sender).conduitSalt();
         _requireDerived(a, owner, salt);
-        if (!ISignedTransmitterInit(msg.sender).isSigned()) revert WrongBootstrapMode();
-        bytes32 chainKey = ChainKey.fromIdentifier(route);
-        CommittedDestination memory d = _destination(msg.sender, chainKey);
+        if (ISignedTransmitterInit(msg.sender).isSigned() != signed) revert WrongBootstrapMode();
         Erc7930.Interop memory io = Erc7930.parseStrict(route);
+        bytes32 chainKey = ChainKey.fromParsed(io);
         if (io.chainType != Erc7930.CT_EIP155) revert NotAnEvmChain(chainKey);
-        LzOftMessage.Bootstrap memory b = LzOftMessage.Bootstrap(
+        CommittedDestination memory d = _destination(msg.sender, chainKey);
+        b = LzOftMessage.Bootstrap(
             owner,
             salt,
             localChainKey,
@@ -229,10 +214,9 @@ contract LzOftConduitFactory is ILzOftSignedConduitFactory, ILayerZeroComposer {
             a.homeOft,
             a.destRoot,
             OrderedMerkle.proof(_leafHashes[msg.sender], d.index),
-            new Call[](0)
+            calls
         );
         recipient = Erc7930.encode(io.chainType, io.chainRef, abi.encodePacked(address(this)));
-        message = abi.encode(SIGNED_BOOTSTRAP, b, block.chainid, body);
     }
 
     /// @inheritdoc ILzOftConduitFactory

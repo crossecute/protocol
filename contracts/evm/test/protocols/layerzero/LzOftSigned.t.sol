@@ -209,22 +209,21 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
 
         vm.prank(address(unsignedTx));
         vm.expectRevert(ILzOftConduitFactory.WrongBootstrapMode.selector);
-        factory.signedConduitBootstrap(route, "");
+        factory.signedConduitBootstrap(route, address(0xE0A), keccak256("unsigned"), "");
 
         vm.prank(address(transmitter));
         vm.expectRevert(ILzOftConduitFactory.WrongBootstrapMode.selector);
         factory.conduitBootstrap(route, address(safe), SALT, abi.encode(new Call[](0)));
 
         vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.UnknownConduit.selector, address(this)));
-        factory.signedConduitBootstrap(route, "");
+        factory.signedConduitBootstrap(route, address(safe), SALT, "");
     }
 
-    /// @notice The signed builder derives the caller from the identity the conduit holds and
-    ///         names the same envelope the conduit's own bootstrap carries.
+    /// @notice The signed builder names the owner and salt that derive the calling conduit.
     function test_theSignedBootstrapNamesTheConduitsOwnerAndSalt() public {
         bytes memory route = Erc7930.encodeEvmChain(DEST);
         vm.prank(address(transmitter));
-        (, bytes memory message) = factory.signedConduitBootstrap(route, hex"1234");
+        (, bytes memory message) = factory.signedConduitBootstrap(route, address(safe), SALT, hex"1234");
         (, LzOftMessage.Bootstrap memory b,, bytes memory body) =
             abi.decode(message, (uint256, LzOftMessage.Bootstrap, uint256, bytes));
         assertEq(b.owner, address(safe));
@@ -232,6 +231,18 @@ contract LzOftSignedTest is LzOftConduitFactoryBase {
         assertEq(body, hex"1234");
         (,,, bytes32 root,) = factory.bootstrapRoute(address(transmitter), destKey);
         assertEq(b.destRoot, root);
+    }
+
+    /// @notice An owner or salt that does not derive the calling conduit is refused, so a
+    ///         conduit cannot name another conduit's identity in its compose.
+    function test_theSignedBootstrapRefusesAnotherIdentity() public {
+        bytes memory route = Erc7930.encodeEvmChain(DEST);
+        vm.prank(address(transmitter));
+        vm.expectPartialRevert(ILzOftConduitFactory.NotTheConduit.selector);
+        factory.signedConduitBootstrap(route, address(0xBAD), SALT, "");
+        vm.prank(address(transmitter));
+        vm.expectPartialRevert(ILzOftConduitFactory.NotTheConduit.selector);
+        factory.signedConduitBootstrap(route, address(safe), keccak256("other"), "");
     }
 
     function test_signedBootstrapAndProviderDeliveryShareReplayWithDirectSubmission() public {

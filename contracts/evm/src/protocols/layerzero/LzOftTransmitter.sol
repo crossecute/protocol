@@ -79,7 +79,7 @@ contract LzOftTransmitter is SignedTransmitter, ILzOftTransmitterInit {
         returns (uint256)
     {
         (bytes memory recipient, bytes memory message) =
-            ILzOftSignedConduitFactory(transceiver).signedConduitBootstrap(route, body);
+            ILzOftSignedConduitFactory(transceiver).signedConduitBootstrap(route, deployer, conduitSalt, body);
         return _quoteMessage(recipient, message, attributes);
     }
 
@@ -91,8 +91,8 @@ contract LzOftTransmitter is SignedTransmitter, ILzOftTransmitterInit {
         bytes[] memory attributes,
         uint256 fee
     ) internal override {
-        (bytes memory recipient, bytes memory message) =
-            ILzOftSignedConduitFactory(transceiver).signedConduitBootstrap(route, body);
+        (bytes memory recipient, bytes memory message) = ILzOftSignedConduitFactory(transceiver)
+            .signedConduitBootstrap(route, deployer, conduitSalt, body);
         _sendMessage(recipient, message, attributes, fee);
     }
 

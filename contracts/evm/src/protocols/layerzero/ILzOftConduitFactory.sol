@@ -104,7 +104,8 @@ interface ILzOftConduitFactory {
 interface ILzOftSignedConduitFactory is ILzOftConduitFactory {
     /// @notice Encode the calling conduit's signed bootstrap and its destination factory route.
     /// @dev Quote and send use identical bytes without making the factory the composeFrom.
-    function signedConduitBootstrap(bytes calldata route, bytes calldata body)
+    ///      `(owner, salt)` must derive the caller, as for `conduitBootstrap`.
+    function signedConduitBootstrap(bytes calldata route, address owner, bytes32 salt, bytes calldata body)
         external
         view
         returns (bytes memory recipient, bytes memory message);
